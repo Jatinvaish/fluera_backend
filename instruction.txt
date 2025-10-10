@@ -1,0 +1,310 @@
+INSTALLATION COMMANDS:
+
+1) npm install -g @nestjs/cli
+2) nest new .
+3) for check and update the npm packages
+    npx npm-check-updates -u
+    npm install
+4) for start the project
+    npm run start:dev
+    npm run start:prod   -- for production
+
+
+
+-- for grant access
+ALTER SERVER ROLE dbcreator ADD MEMBER fluera_platform;
+GO
+
+-- Also keep sysadmin
+ALTER SERVER ROLE sysadmin ADD MEMBER fluera_platform;
+GO
+
+
+
+
+
+
+--
+EXEC xp_readerrorlog 0, 1, N'Server is listening on'
+
+
+
+
+6. GOOGLE SOCIAL LOGIN
+-----------------------
+GET {{baseUrl}}/api/v1/auth/google
+(Browser redirect to Google)
+
+Callback:
+GET {{baseUrl}}/api/v1/auth/google/callback
+(Auto returns tokens)
+
+7. MICROSOFT SOCIAL LOGIN
+--------------------------
+GET {{baseUrl}}/api/v1/auth/microsoft
+(Browser redirect to Microsoft)
+
+Callback:
+GET {{baseUrl}}/api/v1/auth/microsoft/callback
+(Auto returns tokens)
+
+*/
+
+
+
+APIS OLD
+
+
+
+/*
+==============================================
+POSTMAN COLLECTION - FLUERA AUTH & ABAC
+==============================================
+
+1. AGENCY REGISTRATION
+-----------------------
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "agency@example.com",
+  "password": "SecurePass123!",
+  "firstName": "John",
+  "lastName": "Agency",
+  "organizationName": "Digital Marketing Agency",
+  "organizationType": "agency"
+}
+
+2. CREATOR SELF-REGISTRATION
+-----------------------------
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "creator@example.com",
+  "password": "CreatorPass123!",
+  "firstName": "Jane",
+  "lastName": "Creator",
+  "organizationName": "Jane's Content Studio",
+  "organizationType": "creator"
+}
+
+3. BRAND SELF-REGISTRATION
+---------------------------
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "brand@example.com",
+  "password": "BrandPass123!",
+  "firstName": "Mike",
+  "lastName": "Brand",
+  "organizationName": "Awesome Brand Inc",
+  "organizationType": "brand"
+}
+
+4. LOGIN (ANY USER TYPE)
+-------------------------
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "agency@example.com",
+  "password": "SecurePass123!"
+}
+
+Response:
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "1",
+      "email": "agency@example.com",
+      "firstName": "John",
+      "lastName": "Agency",
+      "organizationId": "1"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+
+5. SEND EMAIL VERIFICATION CODE
+--------------------------------
+POST {{baseUrl}}/api/v1/auth/send-verification
+Content-Type: application/json
+
+{
+  "email": "agency@example.com",
+  "codeType": "email_verify"
+}
+
+6. VERIFY EMAIL CODE
+--------------------
+POST {{baseUrl}}/api/v1/auth/verify-code
+Content-Type: application/json
+
+{
+  "email": "agency@example.com",
+  "code": "123456",
+  "codeType": "email_verify"
+}
+
+7. SEND INVITATION (AGENCY INVITING CREATOR)
+---------------------------------------------
+POST {{baseUrl}}/api/v1/auth/invitation/send
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "inviteeEmail": "newcreator@example.com",
+  "inviteeName": "New Creator",
+  "inviteeType": "creator",
+  "invitationMessage": "Join our creator network!"
+}
+
+8. ACCEPT INVITATION
+--------------------
+POST {{baseUrl}}/api/v1/auth/invitation/accept
+Content-Type: application/json
+
+{
+  "token": "a1b2c3d4e5f6...",
+  "password": "NewCreatorPass123!",
+  "firstName": "New",
+  "lastName": "Creator"
+}
+
+9. PASSWORD RESET REQUEST
+--------------------------
+POST {{baseUrl}}/api/v1/auth/password-reset/request
+Content-Type: application/json
+
+{
+  "email": "agency@example.com"
+}
+
+10. PASSWORD RESET CONFIRM
+---------------------------
+POST {{baseUrl}}/api/v1/auth/password-reset/confirm
+Content-Type: application/json
+
+{
+  "token": "reset-token-here",
+  "newPassword": "NewSecurePass123!"
+}
+
+11. REFRESH TOKEN
+-----------------
+POST {{baseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+
+==============================================
+ABAC POLICIES SETUP
+==============================================
+
+12. CREATE ABAC ATTRIBUTE
+--------------------------
+POST {{baseUrl}}/api/v1/abac/attributes
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "department",
+  "category": "user",
+  "dataType": "string",
+  "description": "User department",
+  "validationRules": "{\"enum\": [\"sales\", \"marketing\", \"finance\"]}",
+  "isRequired": false
+}
+
+13. CREATE ABAC POLICY - Agency Campaign Access
+------------------------------------------------
+POST {{baseUrl}}/api/v1/abac/policies
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Agency Admin Campaign Access",
+  "description": "Allow agency admins full campaign access",
+  "policyDocument": "{\"actions\": [\"GET\", \"POST\", \"PUT\", \"DELETE\"], \"resources\": [\"/api/v1/campaigns/*\"], \"conditions\": {\"userType\": \"owner\"}}",
+  "priority": 100,
+  "effect": "PERMIT",
+  "targetConditions": "{\"userType\": [\"owner\", \"agency_admin\"]}"
+}
+
+14. CREATE ABAC POLICY - Creator Read-Only
+-------------------------------------------
+POST {{baseUrl}}/api/v1/abac/policies
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Creator Campaign Read Access",
+  "description": "Allow creators to read assigned campaigns only",
+  "policyDocument": "{\"actions\": [\"GET\"], \"resources\": [\"/api/v1/campaigns/*\"], \"conditions\": {\"userType\": \"creator\", \"assignedTo\": \"{{userId}}\"}}",
+  "priority": 50,
+  "effect": "PERMIT",
+  "targetConditions": "{\"userType\": [\"creator\"]}"
+}
+
+15. CREATE ABAC POLICY - Brand Campaign Access
+-----------------------------------------------
+POST {{baseUrl}}/api/v1/abac/policies
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Brand Campaign Management",
+  "description": "Allow brands to manage their campaigns",
+  "policyDocument": "{\"actions\": [\"GET\", \"POST\", \"PUT\"], \"resources\": [\"/api/v1/campaigns/*\"], \"conditions\": {\"userType\": \"brand_admin\", \"brandId\": \"{{brandId}}\"}}",
+  "priority": 75,
+  "effect": "PERMIT",
+  "targetConditions": "{\"userType\": [\"brand_admin\"]}"
+}
+
+16. EVALUATE ABAC POLICY
+-------------------------
+POST {{baseUrl}}/api/v1/abac/evaluate
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "organizationId": 1,
+  "action": "POST",
+  "resource": "/api/v1/campaigns/123",
+  "context": {
+    "ip": "192.168.1.1",
+    "userAgent": "PostmanRuntime/7.32.0",
+    "timestamp": "2025-10-09T10:00:00Z"
+  }
+}
+
+17. GET ALL ABAC POLICIES
+--------------------------
+POST {{baseUrl}}/api/v1/abac/policies/query
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "organizationId": 1
+}
+
+18. GET ALL ABAC ATTRIBUTES
+----------------------------
+GET {{baseUrl}}/api/v1/abac/attributes
+Authorization: Bearer {{accessToken}}
+
+==============================================
+ENVIRONMENT VARIABLES (Postman)
+==============================================
+baseUrl: http://localhost:3000
+accessToken: (set after login)
+refreshToken: (set after login)
+
+*/

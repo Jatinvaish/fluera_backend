@@ -1,0 +1,374 @@
+/**
+ * =====================================================
+ * FLUERA SAAS PLATFORM - NESTJS ARCHITECTURE
+ * Monolithic → Microservices Ready
+ * =====================================================
+ */
+
+/**
+ * 📁 PROJECT FOLDER STRUCTURE
+ * =====================================================
+ */
+
+/*
+fluera-backend/
+├── src/
+│   ├── main.ts                          # Application entry point (Fastify setup)
+│   ├── app.module.ts                    # Root application module
+│   │
+│   ├── config/                          # 🔧 Configuration
+│   │   ├── database.config.ts           # SQL Server + MongoDB config
+│   │   ├── jwt.config.ts                # JWT configuration
+│   │   ├── app.config.ts                # Global app settings
+│   │   └── index.ts
+│   │
+│   ├── core/                            # 🔐 Core Infrastructure
+│   │   ├── database/
+│   │   │   ├── sql-server.service.ts    # Your existing SQL Server service
+│   │   │   ├── mongodb.service.ts       # MongoDB connection
+│   │   │   ├── transaction.manager.ts   # Transaction wrapper
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── decorators/                  # Custom decorators
+│   │   │   ├── current-user.decorator.ts
+│   │   │   ├── roles.decorator.ts
+│   │   │   ├── api-version.decorator.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── guards/                      # Authentication & Authorization
+│   │   │   ├── jwt-auth.guard.ts
+│   │   │   ├── roles.guard.ts
+│   │   │   ├── permissions.guard.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── interceptors/                # Global interceptors
+│   │   │   ├── logging.interceptor.ts
+│   │   │   ├── response.interceptor.ts
+│   │   │   ├── audit.interceptor.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── filters/                     # Exception filters
+│   │   │   ├── http-exception.filter.ts
+│   │   │   ├── all-exception.filter.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── pipes/                       # Validation pipes
+│   │   │   ├── validation.pipe.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   └── middlewares/                 # Global middlewares
+│   │       ├── logger.middleware.ts
+│   │       ├── correlation-id.middleware.ts
+│   │       └── index.ts
+│   │
+│   ├── common/                          # 🔄 Shared Utilities
+│   │   ├── constants/
+│   │   │   ├── user-types.constant.ts
+│   │   │   ├── status.constant.ts
+│   │   │   ├── roles.constant.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── dto/                         # Base DTOs
+│   │   │   ├── base-query.dto.ts
+│   │   │   ├── pagination.dto.ts
+│   │   │   ├── response.dto.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── interfaces/                  # Shared interfaces
+│   │   │   ├── base-entity.interface.ts
+│   │   │   ├── jwt-payload.interface.ts
+│   │   │   ├── api-response.interface.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── utils/                       # Utility functions
+│   │   │   ├── date.util.ts
+│   │   │   ├── encryption.util.ts
+│   │   │   ├── token.util.ts
+│   │   │   ├── query-builder.util.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   └── helpers/                     # Helper functions
+│   │       ├── response.helper.ts
+│   │       ├── error.helper.ts
+│   │       └── index.ts
+│   │
+│   ├── modules/                         # 📦 Feature Modules
+│   │   │
+│   │   ├── auth/                        # 🔐 Authentication Module
+│   │   │   ├── auth.module.ts
+│   │   │   ├── auth.controller.ts
+│   │   │   ├── auth.service.ts
+│   │   │   ├── strategies/
+│   │   │   │   ├── jwt.strategy.ts
+│   │   │   │   ├── google.strategy.ts
+│   │   │   │   ├── microsoft.strategy.ts
+│   │   │   │   └── index.ts
+│   │   │   ├── dto/
+│   │   │   │   ├── login.dto.ts
+│   │   │   │   ├── register.dto.ts
+│   │   │   │   ├── social-login.dto.ts
+│   │   │   │   ├── verify-otp.dto.ts
+│   │   │   │   └── index.ts
+│   │   │   └── interfaces/
+│   │   │       ├── jwt-payload.interface.ts
+│   │   │       └── index.ts
+│   │   │
+│   │   ├── users/                       # 👤 User Management
+│   │   │   ├── users.module.ts
+│   │   │   ├── users.controller.ts
+│   │   │   ├── users.service.ts
+│   │   │   ├── users.repository.ts
+│   │   │   ├── dto/
+│   │   │   │   ├── create-user.dto.ts
+│   │   │   │   ├── update-user.dto.ts
+│   │   │   │   ├── query-user.dto.ts
+│   │   │   │   └── index.ts
+│   │   │   ├── entities/
+│   │   │   │   └── user.entity.ts
+│   │   │   └── interfaces/
+│   │   │       └── user.interface.ts
+│   │   │
+│   │   ├── organizations/               # 🏢 Organization Management
+│   │   │   ├── organizations.module.ts
+│   │   │   ├── organizations.controller.ts
+│   │   │   ├── organizations.service.ts
+│   │   │   ├── organizations.repository.ts
+│   │   │   ├── dto/
+│   │   │   ├── entities/
+│   │   │   └── interfaces/
+│   │   │
+│   │   ├── invitations/                 # 📧 Invitation System
+│   │   │   ├── invitations.module.ts
+│   │   │   ├── invitations.controller.ts
+│   │   │   ├── invitations.service.ts
+│   │   │   ├── invitations.repository.ts
+│   │   │   ├── dto/
+│   │   │   └── entities/
+│   │   │
+│   │   ├── verification/                # ✅ OTP & Verification
+│   │   │   ├── verification.module.ts
+│   │   │   ├── verification.controller.ts
+│   │   │   ├── verification.service.ts
+│   │   │   ├── verification.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── onboarding/                  # 🚀 Onboarding
+│   │   │   ├── onboarding.module.ts
+│   │   │   ├── onboarding.controller.ts
+│   │   │   ├── onboarding.service.ts
+│   │   │   ├── onboarding.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── roles-permissions/           # 🔑 RBAC System
+│   │   │   ├── roles-permissions.module.ts
+│   │   │   ├── roles.controller.ts
+│   │   │   ├── permissions.controller.ts
+│   │   │   ├── roles.service.ts
+│   │   │   ├── permissions.service.ts
+│   │   │   ├── roles.repository.ts
+│   │   │   ├── permissions.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── creators/                    # 🎨 Creator Management
+│   │   │   ├── creators.module.ts
+│   │   │   ├── creators.controller.ts
+│   │   │   ├── creators.service.ts
+│   │   │   ├── creators.repository.ts
+│   │   │   ├── dto/
+│   │   │   ├── entities/
+│   │   │   └── submodules/
+│   │   │       ├── creator-social/
+│   │   │       ├── creator-rate-cards/
+│   │   │       ├── creator-staff/
+│   │   │       └── creator-metrics/
+│   │   │
+│   │   ├── brands/                      # 🏷️ Brand Management
+│   │   │   ├── brands.module.ts
+│   │   │   ├── brands.controller.ts
+│   │   │   ├── brands.service.ts
+│   │   │   ├── brands.repository.ts
+│   │   │   ├── dto/
+│   │   │   └── submodules/
+│   │   │       ├── brand-users/
+│   │   │       ├── agency-brands/
+│   │   │       └── brand-creators/
+│   │   │
+│   │   ├── campaigns/                   # 📊 Campaign Management
+│   │   │   ├── campaigns.module.ts
+│   │   │   ├── campaigns.controller.ts
+│   │   │   ├── campaigns.service.ts
+│   │   │   ├── campaigns.repository.ts
+│   │   │   ├── dto/
+│   │   │   └── submodules/
+│   │   │       ├── campaign-creators/
+│   │   │       └── campaign-tasks/
+│   │   │
+│   │   ├── content/                     # 🎬 Content Management
+│   │   │   ├── content.module.ts
+│   │   │   ├── content.controller.ts
+│   │   │   ├── content.service.ts
+│   │   │   ├── content.repository.ts
+│   │   │   ├── dto/
+│   │   │   └── submodules/
+│   │   │       ├── content-submissions/
+│   │   │       ├── content-reviews/
+│   │   │       ├── content-comments/
+│   │   │       └── content-performance/
+│   │   │
+│   │   ├── contracts/                   # 📄 Contract Management
+│   │   │   ├── contracts.module.ts
+│   │   │   ├── contracts.controller.ts
+│   │   │   ├── contracts.service.ts
+│   │   │   ├── contracts.repository.ts
+│   │   │   ├── dto/
+│   │   │   └── submodules/
+│   │   │       ├── contract-reviews/
+│   │   │       ├── contract-modifications/
+│   │   │       ├── contract-signatures/
+│   │   │       └── contract-versions/
+│   │   │
+│   │   ├── payments/                    # 💰 Payment Management
+│   │   │   ├── payments.module.ts
+│   │   │   ├── payments.controller.ts
+│   │   │   ├── payments.service.ts
+│   │   │   ├── payments.repository.ts
+│   │   │   ├── dto/
+│   │   │   └── submodules/
+│   │   │       ├── invoices/
+│   │   │       ├── payment-methods/
+│   │   │       └── payout-batches/
+│   │   │
+│   │   ├── portfolios/                  # 📁 Portfolio Management
+│   │   │   ├── portfolios.module.ts
+│   │   │   ├── portfolios.controller.ts
+│   │   │   ├── portfolios.service.ts
+│   │   │   ├── portfolios.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── emails/                      # 📧 Email Management
+│   │   │   ├── emails.module.ts
+│   │   │   ├── emails.controller.ts
+│   │   │   ├── emails.service.ts
+│   │   │   ├── emails.repository.ts
+│   │   │   ├── dto/
+│   │   │   └── submodules/
+│   │   │       ├── email-accounts/
+│   │   │       ├── email-messages/
+│   │   │       ├── email-sync/
+│   │   │       └── email-rules/
+│   │   │
+│   │   ├── chat/                        # 💬 Messaging System
+│   │   │   ├── chat.module.ts
+│   │   │   ├── chat.controller.ts
+│   │   │   ├── chat.service.ts
+│   │   │   ├── chat.repository.ts
+│   │   │   ├── chat.gateway.ts          # WebSocket gateway
+│   │   │   └── dto/
+│   │   │
+│   │   ├── workflows/                   # 🔄 Workflow Automation
+│   │   │   ├── workflows.module.ts
+│   │   │   ├── workflows.controller.ts
+│   │   │   ├── workflows.service.ts
+│   │   │   ├── workflows.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── ai/                          # 🤖 AI Assistant
+│   │   │   ├── ai.module.ts
+│   │   │   ├── ai.controller.ts
+│   │   │   ├── ai.service.ts
+│   │   │   ├── ai.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── notifications/               # 🔔 Notification System
+│   │   │   ├── notifications.module.ts
+│   │   │   ├── notifications.controller.ts
+│   │   │   ├── notifications.service.ts
+│   │   │   ├── notifications.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── files/                       # 📎 File Management
+│   │   │   ├── files.module.ts
+│   │   │   ├── files.controller.ts
+│   │   │   ├── files.service.ts
+│   │   │   ├── files.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── analytics/                   # 📈 Analytics & Reporting
+│   │   │   ├── analytics.module.ts
+│   │   │   ├── analytics.controller.ts
+│   │   │   ├── analytics.service.ts
+│   │   │   ├── analytics.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   ├── webhooks/                    # 🔗 Webhooks & Integrations
+│   │   │   ├── webhooks.module.ts
+│   │   │   ├── webhooks.controller.ts
+│   │   │   ├── webhooks.service.ts
+│   │   │   ├── webhooks.repository.ts
+│   │   │   └── dto/
+│   │   │
+│   │   └── global-modules/              # 🌐 Global CRUD Modules
+│   │       ├── system-config/
+│   │       │   ├── system-config.module.ts
+│   │       │   ├── system-config.controller.ts
+│   │       │   ├── system-config.service.ts
+│   │       │   ├── system-config.repository.ts
+│   │       │   └── dto/
+│   │       │
+│   │       ├── audit-logs/
+│   │       │   ├── audit-logs.module.ts
+│   │       │   ├── audit-logs.controller.ts
+│   │       │   ├── audit-logs.service.ts
+│   │       │   ├── audit-logs.repository.ts
+│   │       │   └── dto/
+│   │       │
+│   │       └── system-events/
+│   │           ├── system-events.module.ts
+│   │           ├── system-events.controller.ts
+│   │           ├── system-events.service.ts
+│   │           ├── system-events.repository.ts
+│   │           └── dto/
+│   │
+│   └── types/                           # 📝 TypeScript Types
+│       ├── express.d.ts
+│       └── global.d.ts
+│
+├── test/                                # 🧪 Testing
+│   ├── unit/
+│   ├── integration/
+│   └── e2e/
+│
+├── .env.example                         # Environment variables template
+├── .eslintrc.js                         # ESLint configuration
+├── .prettierrc                          # Prettier configuration
+├── nest-cli.json                        # NestJS CLI configuration
+├── package.json                         # Dependencies
+├── tsconfig.json                        # TypeScript configuration
+└── README.md                            # Project documentation
+*/
+
+
+
+
+//
+
+//MAIN
+src/
+├── config/           # Environment configs (app, db, jwt, encryption)
+├── core/             # Core infrastructure
+│   ├── database/     # SQL Server + MongoDB services
+│   ├── guards/       # JWT, RBAC, Permissions, ABAC
+│   ├── decorators/   # @CurrentUser, @Public, @Roles, @Permissions, @AbacPolicy
+│   ├── interceptors/ # Response formatting, Logging, Audit
+│   ├── middlewares/  # CorrelationId, Logger
+│   └── filters/      # Global exception handler
+├── common/           # Shared services (Encryption, Hashing)
+├── modules/
+│   ├── auth/         # Authentication (Register, Login, Refresh, Logout)
+│   ├── abac/         # Attribute-Based Access Control
+│   └── global-modules/
+│       ├── system-config/  # Key-value config with encryption
+│       ├── audit-logs/     # All actions tracked
+│       └── system-events/  # System-level events
+└── main.ts          # Bootstrap
+
