@@ -8,7 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { SqlServerService } from '../../core/database/sql-server.service';
 import { LoginDto, RegisterDto } from './dto/register.dto';
 import { HashingService } from 'src/common/hashing.service';
-import { EmailService } from 'src/common/email.service';
+import { EmailService } from '../email-templates/email.service';
 
 @Injectable()
 export class AuthService {
@@ -654,6 +654,7 @@ export class AuthService {
 
     // Send email (implement with your email service)
     console.log(`Password reset token for ${email}: ${token}`);
+    await this.emailService.sendPasswordReset(email,token);
 
     return { message: 'If email exists, reset link will be sent' };
   }

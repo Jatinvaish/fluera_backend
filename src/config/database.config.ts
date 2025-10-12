@@ -46,7 +46,7 @@ import { registerAs } from '@nestjs/config';
 export default registerAs('database', () => ({
   sqlServer: {
     server: process.env.DB_HOST || 'localhost',
-    port:  process.env.DB_PORT || 1433,
+    port:  1433,
     user: process.env.DB_USERNAME || 'sa',
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE || 'fluera_db',

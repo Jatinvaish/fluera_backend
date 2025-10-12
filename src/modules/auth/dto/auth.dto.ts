@@ -3,7 +3,7 @@
 // 4. UPDATED AUTH DTOs (Add to existing)
 // ============================================
 // modules/auth/dto/auth.dto.ts
-import { IsEmail, IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsEmail, IsString, IsOptional, IsEnum, MinLength } from 'class-validator';
 
 export class SendVerificationDto {
   @IsEmail()
@@ -62,6 +62,7 @@ export class AcceptInvitationDto {
   token: string;
 
   @IsString()
+  @MinLength(8)
   password: string;
 
   @IsString()

@@ -23,3 +23,21 @@ describe('AppController (e2e)', () => {
       .expect('Hello World!');
   });
 });
+
+
+// describe('EmailService', () => {
+//   it('should send email with organization template', async () => {
+//     const result = await emailService.sendInvitation(
+//       'test@example.com',
+//       'token123',
+//       'John',
+//       'Acme',
+//       organizationId
+//     );
+//     expect(result).toBeDefined();
+//   });
+  
+//   it('should fallback to global template', async () => {
+//     // Test with non-existent org template
+//   });
+// });
