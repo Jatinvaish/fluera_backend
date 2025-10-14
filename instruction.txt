@@ -308,3 +308,43 @@ accessToken: (set after login)
 refreshToken: (set after login)
 
 */
+
+
+
+-- Access control
+User Login → JWT Token Generation → Extract User Data → 
+Load Roles (from user_roles) → Load Permissions (via role_permissions) → 
+Attach to Request Context → Guard Validation
+```
+
+### 2. **Guard Hierarchy (Execution Order)**
+```
+1. JwtAuthGuard: Validates token & loads user
+2. RolesGuard: Checks if user has required roles
+3. PermissionsGuard: Checks if user has required permissions
+4. AbacGuard: Evaluates attribute-based policies
+```
+
+### 3. **RBAC Flow**
+```
+User → assigned to → Roles (user_roles table)
+Roles → have → Permissions (role_permissions table)
+Permissions → define → Actions on Resources
+
+Flow: user.roles → role.permissions → check action
+```
+
+### 4. **ABAC Flow**
+```
+User → has → Attributes (user_attributes)
+Resource → has → Attributes (resource_attributes)
+Policy → evaluates → (User Attrs + Resource Attrs + Context) → PERMIT/DENY
+```
+
+### 5. **Complete Access Check**
+```
+Request → JwtAuthGuard (authenticate) →
+RolesGuard (check role) →
+PermissionsGuard (check permission) →
+AbacGuard (policy evaluation) →
+Allow/Deny Access
