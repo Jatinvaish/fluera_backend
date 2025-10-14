@@ -6,7 +6,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { SqlServerService } from 'src/core/database/sql-server.service';
- 
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -40,9 +40,9 @@ export class EmailService {
       // Get template from database
       const result = await this.sqlService.query(
         'EXEC sp_GetEmailTemplate @organizationId, @category',
-        { 
-          organizationId: organizationId || null, 
-          category 
+        {
+          organizationId: organizationId || null,
+          category
         }
       );
 
@@ -51,12 +51,12 @@ export class EmailService {
       }
 
       const template = result[0];
-      
+
       // Replace variables in subject and body
       const subject = this.replaceVariables(template.subject, variables);
       const html = this.replaceVariables(template.body_html, variables);
-      const text = template.body_text 
-        ? this.replaceVariables(template.body_text, variables) 
+      const text = template.body_text
+        ? this.replaceVariables(template.body_text, variables)
         : undefined;
 
       // Send email
@@ -102,14 +102,14 @@ export class EmailService {
    * @param organizationId - Optional organization ID for custom template
    */
   async sendInvitation(
-    email: string, 
-    token: string, 
-    inviterName: string, 
-    orgName: string, 
+    email: string,
+    token: string,
+    inviterName: string,
+    orgName: string,
     organizationId?: bigint
   ): Promise<void> {
     const inviteLink = `${this.configService.get('APP_URL')}/accept-invite/${token}`;
-    
+
     await this.sendTemplatedEmail('invitation', email, {
       inviterName,
       orgName,
@@ -124,12 +124,12 @@ export class EmailService {
    * @param organizationId - Optional organization ID for custom template
    */
   async sendPasswordReset(
-    email: string, 
-    token: string, 
+    email: string,
+    token: string,
     organizationId?: bigint
   ): Promise<void> {
-    const resetLink = `${this.configService.get('APP_URL')}/reset-password/${token}`;
-    
+    const resetLink = `${this.configService.get('APP_URL')}/reset-password?token=${token}`;
+
     await this.sendTemplatedEmail('password_reset', email, {
       resetLink,
     }, organizationId);
@@ -143,13 +143,13 @@ export class EmailService {
    * @param organizationId - Optional organization ID for custom template
    */
   async sendVerificationCode(
-    email: string, 
-    code: string, 
-    firstName?: string, 
+    email: string,
+    code: string,
+    firstName?: string,
     organizationId?: bigint
   ): Promise<void> {
     const expiryMinutes = this.configService.get('VERIFICATION_CODE_EXPIRY_MINUTES') || 10;
-    
+
     await this.sendTemplatedEmail('email_verification', email, {
       firstName: firstName || 'there',
       code,
@@ -165,12 +165,12 @@ export class EmailService {
    * @param organizationId - Optional organization ID for custom template
    */
   async sendWelcomeEmail(
-    email: string, 
-    firstName: string, 
+    email: string,
+    firstName: string,
     organizationId?: bigint
   ): Promise<void> {
     const loginUrl = `${this.configService.get('APP_URL')}/login`;
-    
+
     await this.sendTemplatedEmail('welcome', email, {
       firstName,
       loginUrl,
