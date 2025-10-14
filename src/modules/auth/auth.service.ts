@@ -70,15 +70,11 @@ export class AuthService {
       await this.sqlService.query(
         `UPDATE users 
        SET password_hash = @passwordHash, 
-           first_name = @firstName, 
-           last_name = @lastName,
            updated_at = GETUTCDATE()
        WHERE id = @userId`,
         {
           userId,
           passwordHash,
-          firstName: registerDto.firstName,
-          lastName: registerDto.lastName,
         }
       );
 
@@ -93,8 +89,8 @@ export class AuthService {
       const result = await this.sqlService.transaction(async (transaction) => {
         // Create organization
         const orgResult = await transaction.request()
-          .input('name', registerDto.organizationName || `${registerDto.firstName}'s ${orgType.charAt(0).toUpperCase() + orgType.slice(1)}`)
-          .input('slug', this.generateSlug(registerDto.organizationName || registerDto.firstName))
+          .input('name', registerDto.organizationName || `${registerDto?.firstName}'s ${orgType.charAt(0).toUpperCase() + orgType.slice(1)}`)
+          .input('slug', this.generateSlug(registerDto?.email ))
           .input('maxUsers', maxUsers)
           .input('maxCreators', maxCreators)
           .input('maxBrands', maxBrands)
@@ -118,8 +114,8 @@ export class AuthService {
           .input('organizationId', orgId)
           .input('email', registerDto.email)
           .input('passwordHash', passwordHash)
-          .input('firstName', registerDto.firstName)
-          .input('lastName', registerDto.lastName)
+          .input('firstName', registerDto?.firstName || '')
+          .input('lastName', registerDto?.lastName || '')
           .input('userType', userType)
           .query(`
           INSERT INTO users (
