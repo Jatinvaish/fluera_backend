@@ -4,9 +4,9 @@
 // ============================================
 // modules/auth/services/invitation.service.ts
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
-import { EmailService } from 'src/common/email.service';
 import { HashingService } from 'src/common/hashing.service';
 import { SqlServerService } from 'src/core/database';
+import { EmailService } from '../email-templates/email.service';
 
 @Injectable()
 export class InvitationService {

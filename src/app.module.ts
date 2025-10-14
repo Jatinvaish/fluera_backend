@@ -27,6 +27,8 @@ import { SystemEventsModule } from './modules/global-modules/system-events/syste
 import { AbacModule } from './modules/abac/abac.module';
 import { CommonModule } from './common/common.module';
 import { RbacModule } from './modules/rbac/rbac.module';
+import { EmailModule } from './modules/email-templates/email.module';
+import { ChatModule } from './modules/message-system/chat.module';
 
 @Module({
   imports: [
@@ -53,6 +55,8 @@ import { RbacModule } from './modules/rbac/rbac.module';
     SystemEventsModule,
     AbacModule,
     RbacModule,
+    EmailModule,
+    ChatModule
   ],
   providers: [
     // Global guards

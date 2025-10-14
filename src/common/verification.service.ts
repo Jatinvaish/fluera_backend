@@ -5,8 +5,8 @@
 // modules/auth/services/verification.service.ts
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { SqlServerService } from 'src/core/database';
-import { EmailService } from './email.service';
 import { HashingService } from './hashing.service';
+import { EmailService } from 'src/modules/email-templates/email.service';
 
 @Injectable()
 export class VerificationService {
