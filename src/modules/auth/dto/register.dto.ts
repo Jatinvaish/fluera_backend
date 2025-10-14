@@ -12,12 +12,12 @@ export class RegisterDto {
   @IsString()
   @MinLength(2)
   @MaxLength(100)
-  firstName: string;
+  firstName?: string;
 
   @IsString()
   @MinLength(2)
   @MaxLength(100)
-  lastName: string;
+  lastName?: string;
 
   @IsString()
   @IsOptional()
