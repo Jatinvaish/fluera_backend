@@ -10,22 +10,16 @@ export class RegisterDto {
   password: string;
 
   @IsString()
-  @MinLength(2)
-  @MaxLength(100)
+  @IsOptional()
   firstName?: string;
-
+  
   @IsString()
-  @MinLength(2)
-  @MaxLength(100)
+  @IsOptional()
   lastName?: string;
 
   @IsString()
   @IsOptional()
   organizationName?: string;
-
-  // @IsEnum(['agency', 'creator', 'brand'])
-  // @IsOptional()
-  // organizationType?: 'agency' | 'creator' | 'brand';
 
   @IsEnum(['agency_admin', 'creator', 'brand_admin'])
   @IsOptional()
