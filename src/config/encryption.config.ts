@@ -6,7 +6,7 @@ import { registerAs } from '@nestjs/config';
 
 export default registerAs('encryption', () => ({
   algorithm: 'aes-256-gcm',
-  key: process.env.ENCRYPTION_KEY || 'change-this-32-character-key!!!',
+  key: process.env.ENCRYPTION_KEY || 'your-32-character-encryption-key-min-length',
   ivLength: 16,
   saltLength: 64,
   tagLength: 16,

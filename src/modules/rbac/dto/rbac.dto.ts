@@ -1,7 +1,7 @@
 // ============================================
 // modules/rbac/dto/rbac.dto.ts
 // ============================================
-import { IsString, IsOptional, IsBoolean, IsNumber, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsNumber, IsArray, IsEnum } from 'class-validator';
 
 export class CreateRoleDto {
   @IsString()
@@ -80,4 +80,33 @@ export class AssignRoleDto {
 
   @IsNumber()
   roleId: number;
+}
+
+
+
+export class CreateRoleLimitDto {
+  @IsNumber()
+  roleId: number;
+
+  @IsString()
+  @IsEnum(['invitations', 'campaigns', 'contracts', 'storage', 'creators', 'brands'])
+  limitType: string;
+
+  @IsNumber()
+  limitValue: number;
+
+  @IsString()
+  @IsEnum(['daily', 'monthly', 'yearly', 'never'])
+  @IsOptional()
+  resetPeriod?: string;
+}
+
+export class UpdateRoleLimitDto {
+  @IsNumber()
+  @IsOptional()
+  limitValue?: number;
+
+  @IsString()
+  @IsOptional()
+  resetPeriod?: string;
 }

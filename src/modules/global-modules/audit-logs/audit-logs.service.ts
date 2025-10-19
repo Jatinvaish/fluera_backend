@@ -8,7 +8,7 @@ import { CreateAuditLogDto, QueryAuditLogsDto } from './dto/audit-logs.dto';
 
 @Injectable()
 export class AuditLogsService {
-  constructor(private sqlService: SqlServerService) {}
+  constructor(private sqlService: SqlServerService) { }
 
   async createAuditLog(dto: CreateAuditLogDto) {
     const result = await this.sqlService.query(
@@ -90,5 +90,76 @@ export class AuditLogsService {
       { id }
     );
     return result[0] || null;
+  }
+  // modules/global-modules/audit-logs/audit-logs.service.ts - ADD
+
+  async getAuditStatistics(organizationId?: bigint, days: number = 30) {
+    const params: any = { days };
+    let orgFilter = '';
+
+    if (organizationId) {
+      orgFilter = 'AND organization_id = @organizationId';
+      params.organizationId = organizationId;
+    }
+
+    const stats = await this.sqlService.query(
+      `SELECT 
+      COUNT(*) as total_logs,
+      COUNT(DISTINCT user_id) as unique_users,
+      COUNT(DISTINCT entity_type) as entity_types,
+      COUNT(CASE WHEN action_type = 'CREATE' THEN 1 END) as creates,
+      COUNT(CASE WHEN action_type = 'UPDATE' THEN 1 END) as updates,
+      COUNT(CASE WHEN action_type = 'DELETE' THEN 1 END) as deletes,
+      COUNT(CASE WHEN action_type = 'READ' THEN 1 END) as reads
+    FROM audit_logs
+    WHERE created_at >= DATEADD(day, -@days, GETUTCDATE()) ${orgFilter}`,
+      params
+    );
+
+    return stats[0];
+  }
+
+  async getTopUsers(organizationId?: bigint, limit: number = 10) {
+    const params: any = { limit };
+    let orgFilter = '';
+
+    if (organizationId) {
+      orgFilter = 'AND al.organization_id = @organizationId';
+      params.organizationId = organizationId;
+    }
+
+    return this.sqlService.query(
+      `SELECT TOP (@limit)
+      u.id, u.email, u.first_name, u.last_name,
+      COUNT(*) as action_count
+    FROM audit_logs al
+    JOIN users u ON al.user_id = u.id
+    WHERE al.created_at >= DATEADD(day, -30, GETUTCDATE()) ${orgFilter}
+    GROUP BY u.id, u.email, u.first_name, u.last_name
+    ORDER BY action_count DESC`,
+      params
+    );
+  }
+
+  async getActivityTimeline(organizationId?: bigint, hours: number = 24) {
+    const params: any = { hours };
+    let orgFilter = '';
+
+    if (organizationId) {
+      orgFilter = 'AND organization_id = @organizationId';
+      params.organizationId = organizationId;
+    }
+
+    return this.sqlService.query(
+      `SELECT 
+      DATEADD(hour, DATEDIFF(hour, 0, created_at), 0) as hour,
+      COUNT(*) as count,
+      action_type
+    FROM audit_logs
+    WHERE created_at >= DATEADD(hour, -@hours, GETUTCDATE()) ${orgFilter}
+    GROUP BY DATEADD(hour, DATEDIFF(hour, 0, created_at), 0), action_type
+    ORDER BY hour DESC`,
+      params
+    );
   }
 }

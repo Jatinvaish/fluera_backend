@@ -366,4 +366,81 @@ export class AbacService {
     );
     return { message: 'Resource attribute removed successfully' };
   }
+
+  async createPolicyVersion(policyId: bigint, userId: bigint) {
+    // Get current policy
+    const current = await this.sqlService.query(
+      'SELECT * FROM abac_policies WHERE id = @policyId',
+      { policyId }
+    );
+
+    if (current.length === 0) {
+      throw new NotFoundException('Policy not found');
+    }
+
+    const policy = current[0];
+
+    // Create new version
+    const result = await this.sqlService.query(
+      `INSERT INTO abac_policies (
+      name, description, organization_id, policy_document, priority, effect,
+      target_conditions, is_active, version, parent_policy_id, created_by
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+      @name, @description, @organizationId, @policyDocument, @priority, @effect,
+      @targetConditions, 0, @version, @parentPolicyId, @userId
+    )`,
+      {
+        name: policy.name,
+        description: policy.description,
+        organizationId: policy.organization_id,
+        policyDocument: policy.policy_document,
+        priority: policy.priority,
+        effect: policy.effect,
+        targetConditions: policy.target_conditions,
+        version: policy.version + 1,
+        parentPolicyId: policy.parent_policy_id || policyId,
+        userId,
+      }
+    );
+
+    return result[0];
+  }
+
+  async getPolicyVersions(policyId: bigint) {
+    return this.sqlService.query(
+      `SELECT * FROM abac_policies 
+     WHERE id = @policyId OR parent_policy_id = @policyId
+     ORDER BY version DESC`,
+      { policyId }
+    );
+  }
+
+  async activatePolicyVersion(versionId: bigint, userId: bigint) {
+    // Deactivate all versions
+    const version = await this.sqlService.query(
+      'SELECT parent_policy_id FROM abac_policies WHERE id = @versionId',
+      { versionId }
+    );
+
+    const parentId = version[0].parent_policy_id || versionId;
+
+    await this.sqlService.query(
+      `UPDATE abac_policies 
+     SET is_active = 0 
+     WHERE id = @parentId OR parent_policy_id = @parentId`,
+      { parentId }
+    );
+
+    // Activate selected version
+    await this.sqlService.query(
+      `UPDATE abac_policies 
+     SET is_active = 1, updated_by = @userId, updated_at = GETUTCDATE()
+     WHERE id = @versionId`,
+      { versionId, userId }
+    );
+
+    return { message: 'Policy version activated' };
+  }
 }
