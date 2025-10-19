@@ -4,7 +4,7 @@
 // ============================================
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
-import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto } from './dto/rbac.dto';
+import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto, CreateRoleLimitDto, UpdateRoleLimitDto } from './dto/rbac.dto';
 
 @Injectable()
 export class RbacService {
@@ -387,5 +387,90 @@ export class RbacService {
       permissions: createdPermissions.length,
       roles: createdRoles.length,
     };
+  }
+
+  async createRoleLimit(dto: CreateRoleLimitDto, userId: bigint) {
+    const result = await this.sqlService.query(
+      `INSERT INTO role_limits (role_id, limit_type, limit_value, reset_period, current_usage, created_by)
+     OUTPUT INSERTED.*
+     VALUES (@roleId, @limitType, @limitValue, @resetPeriod, 0, @userId)`,
+      {
+        roleId: BigInt(dto.roleId),
+        limitType: dto.limitType,
+        limitValue: dto.limitValue,
+        resetPeriod: dto.resetPeriod || 'never',
+        userId,
+      }
+    );
+    return result[0];
+  }
+
+  async getRoleLimits(roleId: bigint) {
+    return this.sqlService.query(
+      `SELECT * FROM role_limits WHERE role_id = @roleId ORDER BY limit_type`,
+      { roleId }
+    );
+  }
+
+  async updateRoleLimit(roleId: bigint, limitType: string, dto: UpdateRoleLimitDto, userId: bigint) {
+    const result = await this.sqlService.query(
+      `UPDATE role_limits
+     SET limit_value = COALESCE(@limitValue, limit_value),
+         reset_period = COALESCE(@resetPeriod, reset_period),
+         updated_by = @userId,
+         updated_at = GETUTCDATE()
+     OUTPUT INSERTED.*
+     WHERE role_id = @roleId AND limit_type = @limitType`,
+      {
+        roleId,
+        limitType,
+        limitValue: dto.limitValue,
+        resetPeriod: dto.resetPeriod,
+        userId,
+      }
+    );
+    return result[0];
+  }
+
+  async checkRoleLimit(roleId: bigint, limitType: string): Promise<{ allowed: boolean; remaining: number }> {
+    const limits = await this.sqlService.query(
+      `SELECT limit_value, current_usage FROM role_limits 
+     WHERE role_id = @roleId AND limit_type = @limitType`,
+      { roleId, limitType }
+    );
+
+    if (limits.length === 0) {
+      return { allowed: true, remaining: Infinity };
+    }
+
+    const limit = limits[0];
+    const remaining = limit.limit_value - limit.current_usage;
+
+    return {
+      allowed: limit.current_usage < limit.limit_value,
+      remaining: Math.max(0, remaining),
+    };
+  }
+
+  async incrementRoleUsage(roleId: bigint, limitType: string) {
+    await this.sqlService.query(
+      `UPDATE role_limits 
+     SET current_usage = current_usage + 1 
+     WHERE role_id = @roleId AND limit_type = @limitType`,
+      { roleId, limitType }
+    );
+  }
+
+  async resetRoleLimits() {
+    // Called by cron job
+    await this.sqlService.query(
+      `UPDATE role_limits 
+     SET current_usage = 0, last_reset_at = GETUTCDATE()
+     WHERE (
+       (reset_period = 'daily' AND last_reset_at < DATEADD(day, -1, GETUTCDATE())) OR
+       (reset_period = 'monthly' AND last_reset_at < DATEADD(month, -1, GETUTCDATE())) OR
+       (reset_period = 'yearly' AND last_reset_at < DATEADD(year, -1, GETUTCDATE()))
+     )`
+    );
   }
 }

@@ -1,41 +1,50 @@
+// import { Injectable } from '@nestjs/common';
+// import { ConfigService } from '@nestjs/config';
+// import * as CryptoJS from 'crypto-js';
 
-// common/services/encryption.service.ts
-// ============================================
+// @Injectable()
+// export class EncryptionService {
+//   private readonly masterKey: string;
+
+//   constructor(private readonly configService: ConfigService) {
+//     const key = this.configService.get<string>('encryption.key');
+//     if (!key) {
+//       throw new Error('ENCRYPTION_KEY not found');
+//     }
+//     this.masterKey = key;
+//   }
+
+//   encrypt(text: string): string {
+//     return CryptoJS.AES.encrypt(text, this.masterKey).toString();
+//   }
+
+//   decrypt(encryptedData: string): string {
+//     const decrypted = CryptoJS.AES.decrypt(encryptedData, this.masterKey).toString(CryptoJS.enc.Utf8);
+//     return decrypted;
+//   }
+// }
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
+import * as CryptoJS from 'crypto-js';
 
 @Injectable()
 export class EncryptionService {
-  private algorithm: string | any;
-  private key: Buffer;
+  private masterKey: string;
 
   constructor(private configService: ConfigService) {
-    this.algorithm = this.configService.get('encryption.algorithm');
-    const keyString = this.configService.get('encryption.key');
-    this.key = crypto.scryptSync(keyString, 'salt', 32);
+    const key = this.configService.get('encryption.key');
+    if (!key) {
+      throw new Error('ENCRYPTION_KEY not found in environment');
+    }
+    this.masterKey = key;
   }
 
   encrypt(text: string): string {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(this.algorithm, this.key, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    const authTag = cipher.getAuthTag();
-    return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+    return CryptoJS.AES.encrypt(text, this.masterKey).toString();
   }
 
   decrypt(encryptedData: string): string {
-    const parts = encryptedData.split(':');
-    const iv = Buffer.from(parts[0], 'hex');
-    const authTag = Buffer.from(parts[1], 'hex');
-    const encrypted = parts[2];
-
-    const decipher = crypto.createDecipheriv(this.algorithm, this.key, iv);
-    decipher.setAuthTag(authTag);
-
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
+    const decrypted = CryptoJS.AES.decrypt(encryptedData, this.masterKey).toString(CryptoJS.enc.Utf8);
     return decrypted;
   }
 }

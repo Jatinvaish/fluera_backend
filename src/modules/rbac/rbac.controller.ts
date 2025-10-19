@@ -3,16 +3,17 @@
 // modules/rbac/rbac.controller.ts
 // ============================================
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
-import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto, AssignPermissionsDto, AssignRoleDto } from './dto/rbac.dto';
+import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto, AssignPermissionsDto, AssignRoleDto, CreateRoleLimitDto, UpdateRoleLimitDto } from './dto/rbac.dto';
 import { CurrentUser, Public } from 'src/core/decorators';
 import { RbacService } from './rbac.service';
+import { Permissions } from '../../core/decorators/permissions.decorator';
 
 @Controller('rbac')
 export class RbacController {
-  constructor(private rbacService: RbacService) {}
+  constructor(private rbacService: RbacService) { }
 
   // ==================== ROLES ====================
-  
+
   @Get('roles')
   @Public() // Make public for initial setup
   async getAllRoles() {
@@ -128,5 +129,41 @@ export class RbacController {
   @Public()
   async seedSystemData() {
     return this.rbacService.seedSystemRolesAndPermissions();
+  }
+
+  @Post('roles/:roleId/limits')
+  @Permissions('rbac:manage')
+  async createRoleLimit(
+    @Param('roleId', ParseIntPipe) roleId: number,
+    @Body() dto: CreateRoleLimitDto,
+    @CurrentUser('id') userId: bigint,
+  ) {
+    return this.rbacService.createRoleLimit(dto, userId);
+  }
+
+  @Get('roles/:roleId/limits')
+  @Permissions('rbac:read')
+  async getRoleLimits(@Param('roleId', ParseIntPipe) roleId: number) {
+    return this.rbacService.getRoleLimits(BigInt(roleId));
+  }
+
+  @Put('roles/:roleId/limits/:limitType')
+  @Permissions('rbac:manage')
+  async updateRoleLimit(
+    @Param('roleId', ParseIntPipe) roleId: number,
+    @Param('limitType') limitType: string,
+    @Body() dto: UpdateRoleLimitDto,
+    @CurrentUser('id') userId: bigint,
+  ) {
+    return this.rbacService.updateRoleLimit(BigInt(roleId), limitType, dto, userId);
+  }
+
+  @Post('roles/:roleId/limits/:limitType/check')
+  @Permissions('rbac:read')
+  async checkRoleLimit(
+    @Param('roleId', ParseIntPipe) roleId: number,
+    @Param('limitType') limitType: string,
+  ) {
+    return this.rbacService.checkRoleLimit(BigInt(roleId), limitType);
   }
 }

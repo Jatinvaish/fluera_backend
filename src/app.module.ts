@@ -12,6 +12,12 @@ import encryptionConfig from './config/encryption.config';
 import { DatabaseModule } from './core/database/database.module';
 import { LoggerMiddleware } from './core/middlewares/logger.middleware';
 import { CorrelationIdMiddleware } from './core/middlewares/correlation-id.middleware';
+import { DecryptionMiddleware } from './core/middlewares/decryption.middleware';
+import { EncryptionDefaultMiddleware } from './core/middlewares/encryption-default.middleware';
+
+// Interceptors
+import { ResponseInterceptor } from './core/interceptors/response.interceptor';
+import { LoggingInterceptor } from './core/interceptors/logging.interceptor';
 
 // Guards
 import { JwtAuthGuard } from './core/guards/jwt-auth.guard';
@@ -29,10 +35,11 @@ import { CommonModule } from './common/common.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { EmailModule } from './modules/email-templates/email.module';
 import { ChatModule } from './modules/message-system/chat.module';
+import { FeatureLimitGuard } from './core/guards/feature-limit.guard';
+import { OrganizationsModule } from './modules/organizations/organization-features.module';
 
 @Module({
   imports: [
-    // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig, databaseConfig, jwtConfig, encryptionConfig],
@@ -40,26 +47,25 @@ import { ChatModule } from './modules/message-system/chat.module';
       cache: true,
     }),
 
-    // Database
     DatabaseModule,
-
-    // Common services
     CommonModule,
-
-    // Core modules
     AuthModule,
-    
-    // Global CRUD modules
+
     SystemConfigModule,
     AuditLogsModule,
     SystemEventsModule,
     AbacModule,
     RbacModule,
     EmailModule,
+    OrganizationsModule,
     ChatModule
   ],
   providers: [
-    // Global guards
+    // Interceptors
+    ResponseInterceptor,
+    LoggingInterceptor,
+
+    // Guards
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
@@ -76,12 +82,30 @@ import { ChatModule } from './modules/message-system/chat.module';
       provide: APP_GUARD,
       useClass: AbacGuard,
     },
+    {
+      provide: APP_GUARD,
+      useClass: FeatureLimitGuard,
+    },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(CorrelationIdMiddleware, LoggerMiddleware)
+      .apply(
+        CorrelationIdMiddleware,
+        EncryptionDefaultMiddleware,
+        LoggerMiddleware,
+      )
       .forRoutes('*');
   }
+  // configure(consumer: MiddlewareConsumer) {
+  //   consumer
+  //     .apply(
+  //       CorrelationIdMiddleware,
+  //       EncryptionDefaultMiddleware,
+  //       DecryptionMiddleware,
+  //       LoggerMiddleware,
+  //     )
+  //     .forRoutes('*');
+  // }
 }
