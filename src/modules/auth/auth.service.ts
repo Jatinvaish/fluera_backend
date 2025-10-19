@@ -1,4 +1,3 @@
-
 // ============================================
 // modules/auth/auth.service.ts
 // ============================================
@@ -20,6 +19,11 @@ export class AuthService {
     private emailService: EmailService,
   ) { }
 
+  /**
+   * STEP 1: Register with email and password only
+   * Creates user with 'pending' status
+   * User type defaults to 'staff' - will be set during onboarding
+   */
   async register(registerDto: RegisterDto) {
     const existingUser = await this.sqlService.query(
       'SELECT id, email_verified_at, status FROM users WHERE email = @email',
@@ -32,33 +36,6 @@ export class AuthService {
     }
 
     const passwordHash = await this.hashingService.hashPassword(registerDto.password);
-    const orgType = registerDto.organizationType || 'agency_admin';
-
-    // If user exists but not verified, delete old verification codes
-    if (existingUser.length > 0) {
-      await this.sqlService.query(
-        `DELETE FROM verification_codes WHERE email = @email`,
-        { email: registerDto.email }
-      );
-    }
-
-    // Determine user type and limits
-    let userType = orgType;
-    let maxUsers = 10, maxCreators = 100, maxBrands = 50, maxCampaigns = 100;
-
-    if (orgType === 'creator') {
-      userType = 'creator';
-      maxUsers = 3;
-      maxCreators = 1;
-      maxBrands = 0;
-      maxCampaigns = 50;
-    } else if (orgType === 'brand_admin') {
-      userType = 'brand_admin';
-      maxUsers = 5;
-      maxCreators = 0;
-      maxBrands = 1;
-      maxCampaigns = 100;
-    }
 
     let userId: bigint;
     let organizationId: bigint;
@@ -69,13 +46,16 @@ export class AuthService {
 
       await this.sqlService.query(
         `UPDATE users 
-       SET password_hash = @passwordHash, 
-           updated_at = GETUTCDATE()
-       WHERE id = @userId`,
-        {
-          userId,
-          passwordHash,
-        }
+         SET password_hash = @passwordHash, 
+             updated_at = GETUTCDATE()
+         WHERE id = @userId`,
+        { userId, passwordHash }
+      );
+
+      // Delete old verification codes
+      await this.sqlService.query(
+        `DELETE FROM verification_codes WHERE email = @email`,
+        { email: registerDto.email }
       );
 
       // Get organization ID
@@ -85,49 +65,43 @@ export class AuthService {
       );
       organizationId = userOrg[0].organization_id;
     } else {
-      // Create new user and organization
+      // Create new user with minimal info
       const result = await this.sqlService.transaction(async (transaction) => {
-        // Create organization
+        // Create placeholder organization (will be updated during onboarding)
         const orgResult = await transaction.request()
-          .input('name', registerDto.organizationName || `${registerDto?.firstName}'s ${orgType.charAt(0).toUpperCase() + orgType.slice(1)}`)
-          .input('slug', this.generateSlug(registerDto?.email ))
-          .input('maxUsers', maxUsers)
-          .input('maxCreators', maxCreators)
-          .input('maxBrands', maxBrands)
-          .input('maxCampaigns', maxCampaigns)
+          .input('name', `${registerDto.email}'s Organization`)
+          .input('slug', this.generateSlug(registerDto.email))
           .query(`
-          INSERT INTO organizations (
-            name, slug, is_trial, trial_started_at, trial_ends_at,
-            subscription_status, max_users, max_creators, max_brands, max_campaigns
-          )
-          OUTPUT INSERTED.id
-          VALUES (
-            @name, @slug, 1, GETUTCDATE(), DATEADD(day, 14, GETUTCDATE()),
-            'trial', @maxUsers, @maxCreators, @maxBrands, @maxCampaigns
-          )
-        `);
+            INSERT INTO organizations (
+              name, slug, is_trial, trial_started_at, trial_ends_at,
+              subscription_status, max_users, max_creators, max_brands, max_campaigns
+            )
+            OUTPUT INSERTED.id
+            VALUES (
+              @name, @slug, 1, GETUTCDATE(), DATEADD(day, 14, GETUTCDATE()),
+              'trial', 10, 100, 50, 100
+            )
+          `);
 
         const orgId = orgResult.recordset[0].id;
 
-        // Create user (email_verified_at is NULL)
+        // Create user with minimal info - status 'pending', user_type 'staff' (default)
+        // user_type will be updated during onboarding
         const userResult = await transaction.request()
           .input('organizationId', orgId)
           .input('email', registerDto.email)
           .input('passwordHash', passwordHash)
-          .input('firstName', registerDto?.firstName || '')
-          .input('lastName', registerDto?.lastName || '')
-          .input('userType', userType)
           .query(`
-          INSERT INTO users (
-            organization_id, email, password_hash, first_name, last_name,
-            user_type, status
-          )
-          OUTPUT INSERTED.id, INSERTED.organization_id
-          VALUES (
-            @organizationId, @email, @passwordHash, @firstName, @lastName,
-            @userType, 'pending'
-          )
-        `);
+            INSERT INTO users (
+              organization_id, email, password_hash, 
+              user_type, status
+            )
+            OUTPUT INSERTED.id, INSERTED.organization_id
+            VALUES (
+              @organizationId, @email, @passwordHash,
+              'staff', 'pending'
+            )
+          `);
 
         return {
           userId: userResult.recordset[0].id,
@@ -145,7 +119,7 @@ export class AuthService {
 
     await this.sqlService.query(
       `INSERT INTO verification_codes (user_id, email, code, code_type, expires_at, max_attempts)
-     VALUES (@userId, @email, @code, 'email_verify', @expiresAt, 5)`,
+       VALUES (@userId, @email, @code, 'email_verify', @expiresAt, 5)`,
       { userId, email: registerDto.email, code, expiresAt }
     );
 
@@ -153,7 +127,7 @@ export class AuthService {
     await this.emailService.sendVerificationCode(
       registerDto.email,
       code,
-      registerDto.firstName
+      registerDto.email.split('@')[0] // Use email prefix as temporary name
     );
 
     return {
@@ -163,16 +137,21 @@ export class AuthService {
     };
   }
 
+  /**
+   * STEP 2: Verify email with code
+   * Activates user and allows login
+   * Onboarding still required after login
+   */
   async verifyRegistration(email: string, code: string) {
     // Verify code
     const verification = await this.sqlService.query(
-      `SELECT vc.*, u.first_name, u.organization_id, u.user_type
-     FROM verification_codes vc
-     INNER JOIN users u ON vc.user_id = u.id
-     WHERE vc.email = @email AND vc.code = @code 
-     AND vc.code_type = 'email_verify'
-     AND vc.expires_at > GETUTCDATE() 
-     AND vc.used_at IS NULL`,
+      `SELECT vc.*, u.organization_id
+       FROM verification_codes vc
+       INNER JOIN users u ON vc.user_id = u.id
+       WHERE vc.email = @email AND vc.code = @code 
+       AND vc.code_type = 'email_verify'
+       AND vc.expires_at > GETUTCDATE() 
+       AND vc.used_at IS NULL`,
       { email, code }
     );
 
@@ -180,15 +159,14 @@ export class AuthService {
       // Increment attempt count
       await this.sqlService.query(
         `UPDATE verification_codes 
-       SET attempts = attempts + 1 
-       WHERE email = @email AND code_type = 'email_verify' AND used_at IS NULL`,
+         SET attempts = attempts + 1 
+         WHERE email = @email AND code_type = 'email_verify' AND used_at IS NULL`,
         { email }
       );
       throw new BadRequestException('Invalid or expired verification code');
     }
 
     const verif = verification[0];
-    console.log("🚀 ~ AuthService ~ verifyRegistration ~ verif:", verif)
 
     if (verif.attempts >= verif.max_attempts) {
       throw new BadRequestException('Maximum verification attempts exceeded. Please request a new code.');
@@ -201,56 +179,19 @@ export class AuthService {
         .input('id', verif.id)
         .query(`UPDATE verification_codes SET used_at = GETUTCDATE() WHERE id = @id`);
 
-      // Activate user
+      // Activate user - email verified but onboarding not complete
       await transaction.request()
         .input('userId', verif.user_id)
         .query(`
-        UPDATE users 
-        SET email_verified_at = GETUTCDATE(), status = 'active'
-        WHERE id = @userId
-      `);
-
-      // Assign role
-      const roleName = verif.user_type === 'creator' ? 'creator' :
-        verif.user_type === 'brand_admin' ? 'brand_admin' : 'admin';
-
-      await transaction.request()
-        .input('userId', verif.user_id)
-        .input('roleName', roleName)
-        .query(`
-        DECLARE @roleId BIGINT
-        SELECT @roleId = id FROM roles WHERE name = @roleName AND is_system_role = 1
-        
-        IF @roleId IS NOT NULL AND NOT EXISTS (
-          SELECT 1 FROM user_roles WHERE user_id = @userId AND role_id = @roleId
-        )
-        BEGIN
-          INSERT INTO user_roles (user_id, role_id, is_active)
-          VALUES (@userId, @roleId, 1)
-        END
-      `);
-
-      // Create creator/brand profiles if needed
-      if (verif.user_type === 'creator') {
-        await transaction.request()
-          .input('organizationId', verif.organization_id)
-          .input('userId', verif.user_id)
-          .input('email', email)
-          .input('firstName', verif.first_name)
-          .query(`
-          IF NOT EXISTS (SELECT 1 FROM creators WHERE user_id = @userId)
-          BEGIN
-            INSERT INTO creators (
-              organization_id, user_id, email, first_name, status, onboarding_status
-            )
-            VALUES (@organizationId, @userId, @email, @firstName, 'active', 'pending')
-          END
+          UPDATE users 
+          SET email_verified_at = GETUTCDATE(), 
+              status = 'active'
+          WHERE id = @userId
         `);
-      }
     });
 
     // Send welcome email
-    await this.emailService.sendWelcomeEmail(email, verif.first_name);
+    await this.emailService.sendWelcomeEmail(email, email.split('@')[0]);
 
     // Get full user details
     const users = await this.sqlService.query(
@@ -265,60 +206,29 @@ export class AuthService {
     await this.createSession(user.id, tokens.refreshToken);
 
     return {
-      message: 'Email verified successfully',
+      message: 'Email verified successfully. Please complete your profile.',
       user: {
         id: user.id,
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
         organizationId: user.organization_id,
+        userType: user.user_type,
+        onboardingRequired: true, // Flag for frontend
       },
       ...tokens,
     };
   }
 
-  async resendVerificationCode(email: string) {
-    const users = await this.sqlService.query(
-      'SELECT id, email_verified_at, first_name, status FROM users WHERE email = @email',
-      { email }
-    );
-
-    if (users.length === 0) {
-      throw new BadRequestException('User not found');
-    }
-
-    const user = users[0];
-
-    if (user.email_verified_at) {
-      throw new BadRequestException('Email already verified');
-    }
-
-    // Delete old codes
-    await this.sqlService.query(
-      'DELETE FROM verification_codes WHERE email = @email AND code_type = \'email_verify\'',
-      { email }
-    );
-
-    // Generate new code
-    const code = this.hashingService.generateNumericCode(6);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    await this.sqlService.query(
-      `INSERT INTO verification_codes (user_id, email, code, code_type, expires_at, max_attempts)
-     VALUES (@userId, @email, @code, 'email_verify', @expiresAt, 5)`,
-      { userId: user.id, email, code, expiresAt }
-    );
-
-    await this.emailService.sendVerificationCode(email, code, user.first_name);
-
-    return { message: 'Verification code sent successfully' };
-  }
-
+  /**
+   * STEP 3: Login (allowed after email verification)
+   * User can login even if onboarding is incomplete
+   */
   async login(loginDto: LoginDto) {
     const users = await this.sqlService.query(
       `SELECT id, email, password_hash, organization_id, first_name, last_name, 
-            status, email_verified_at
-     FROM users WHERE email = @email`,
+              status, email_verified_at, user_type
+       FROM users WHERE email = @email`,
       { email: loginDto.email }
     );
 
@@ -353,13 +263,16 @@ export class AuthService {
     // Update last login
     await this.sqlService.query(
       `UPDATE users 
-     SET last_login_at = GETUTCDATE(), login_count = login_count + 1
-     WHERE id = @userId`,
+       SET last_login_at = GETUTCDATE(), login_count = login_count + 1
+       WHERE id = @userId`,
       { userId: user.id }
     );
 
     const tokens = await this.generateTokens(user);
     await this.createSession(user.id, tokens.refreshToken);
+
+    // Check if onboarding is complete
+    const onboardingRequired = !user.first_name || user.user_type === 'staff';
 
     return {
       user: {
@@ -368,9 +281,195 @@ export class AuthService {
         firstName: user.first_name,
         lastName: user.last_name,
         organizationId: user.organization_id,
+        userType: user.user_type,
+        onboardingRequired, // Frontend uses this to redirect to onboarding
       },
       ...tokens,
     };
+  }
+
+  /**
+   * STEP 4: Complete onboarding (new method)
+   * Updates user profile and organization based on onboarding responses
+   */
+  async completeOnboarding(userId: bigint, onboardingData: {
+    firstName: string;
+    lastName: string;
+    organizationType: 'agency_admin' | 'creator' | 'brand_admin';
+    organizationName: string;
+    phone?: string;
+    timezone?: string;
+  }) {
+    // Determine limits based on organization type
+    let userType = onboardingData.organizationType;
+    let maxUsers = 10, maxCreators = 100, maxBrands = 50, maxCampaigns = 100;
+
+    if (onboardingData.organizationType === 'creator') {
+      userType = 'creator';
+      maxUsers = 3;
+      maxCreators = 1;
+      maxBrands = 0;
+      maxCampaigns = 50;
+    } else if (onboardingData.organizationType === 'brand_admin') {
+      userType = 'brand_admin';
+      maxUsers = 5;
+      maxCreators = 0;
+      maxBrands = 1;
+      maxCampaigns = 100;
+    }
+
+    await this.sqlService.transaction(async (transaction) => {
+      // Get user's organization
+      const userResult = await transaction.request()
+        .input('userId', userId)
+        .query('SELECT organization_id, email FROM users WHERE id = @userId');
+
+      const organizationId = userResult.recordset[0].organization_id;
+      const email = userResult.recordset[0].email;
+
+      // Update organization
+      await transaction.request()
+        .input('organizationId', organizationId)
+        .input('name', onboardingData.organizationName)
+        .input('slug', this.generateSlug(onboardingData.organizationName))
+        .input('maxUsers', maxUsers)
+        .input('maxCreators', maxCreators)
+        .input('maxBrands', maxBrands)
+        .input('maxCampaigns', maxCampaigns)
+        .query(`
+          UPDATE organizations 
+          SET name = @name,
+              slug = @slug,
+              max_users = @maxUsers,
+              max_creators = @maxCreators,
+              max_brands = @maxBrands,
+              max_campaigns = @maxCampaigns,
+              updated_at = GETUTCDATE()
+          WHERE id = @organizationId
+        `);
+
+      // Update user
+      await transaction.request()
+        .input('userId', userId)
+        .input('firstName', onboardingData.firstName)
+        .input('lastName', onboardingData.lastName)
+        .input('phone', onboardingData.phone || null)
+        .input('timezone', onboardingData.timezone || 'UTC')
+        .input('userType', userType)
+        .query(`
+          UPDATE users 
+          SET first_name = @firstName,
+              last_name = @lastName,
+              phone = @phone,
+              timezone = @timezone,
+              user_type = @userType,
+              updated_at = GETUTCDATE()
+          WHERE id = @userId
+        `);
+
+      // Assign role
+      const roleName = userType === 'creator' ? 'creator' :
+        userType === 'brand_admin' ? 'brand_admin' : 'admin';
+
+      await transaction.request()
+        .input('userId', userId)
+        .input('roleName', roleName)
+        .query(`
+          DECLARE @roleId BIGINT
+          SELECT @roleId = id FROM roles WHERE name = @roleName AND is_system_role = 1
+          
+          IF @roleId IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM user_roles WHERE user_id = @userId AND role_id = @roleId
+          )
+          BEGIN
+            INSERT INTO user_roles (user_id, role_id, is_active)
+            VALUES (@userId, @roleId, 1)
+          END
+        `);
+
+      // Create creator profile if needed
+      if (userType === 'creator') {
+        await transaction.request()
+          .input('organizationId', organizationId)
+          .input('userId', userId)
+          .input('email', email)
+          .input('firstName', onboardingData.firstName)
+          .input('lastName', onboardingData.lastName)
+          .query(`
+            IF NOT EXISTS (SELECT 1 FROM creators WHERE user_id = @userId)
+            BEGIN
+              INSERT INTO creators (
+                organization_id, user_id, email, first_name, last_name, 
+                status, onboarding_status
+              )
+              VALUES (@organizationId, @userId, @email, @firstName, @lastName,
+                      'active', 'completed')
+            END
+          `);
+      }
+    });
+
+    // Get updated user details
+    const users = await this.sqlService.query(
+      'SELECT * FROM users WHERE id = @userId',
+      { userId }
+    );
+
+    const user = users[0];
+
+    return {
+      message: 'Onboarding completed successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        organizationId: user.organization_id,
+        userType: user.user_type,
+        onboardingRequired: false,
+      },
+    };
+  }
+
+  async resendVerificationCode(email: string) {
+    const users = await this.sqlService.query(
+      'SELECT id, email_verified_at, first_name, status FROM users WHERE email = @email',
+      { email }
+    );
+
+    if (users.length === 0) {
+      throw new BadRequestException('User not found');
+    }
+
+    const user = users[0];
+
+    if (user.email_verified_at) {
+      throw new BadRequestException('Email already verified');
+    }
+
+    // Delete old codes
+    await this.sqlService.query(
+      'DELETE FROM verification_codes WHERE email = @email AND code_type = \'email_verify\'',
+      { email }
+    );
+
+    // Generate new code
+    const code = this.hashingService.generateNumericCode(6);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await this.sqlService.query(
+      `INSERT INTO verification_codes (user_id, email, code, code_type, expires_at, max_attempts)
+       VALUES (@userId, @email, @code, 'email_verify', @expiresAt, 5)`,
+      { userId: user.id, email, code, expiresAt }
+    );
+
+    await this.emailService.sendVerificationCode(
+      email, 
+      code, 
+      user.first_name || email.split('@')[0]
+    );
+
+    return { message: 'Verification code sent successfully' };
   }
 
   async loginWithSocial(provider: string, profile: any) {
@@ -380,11 +479,11 @@ export class AuthService {
         .input('provider', provider)
         .input('providerId', profile.providerId)
         .query(`
-        SELECT sa.*, u.* 
-        FROM user_social_accounts sa
-        JOIN users u ON sa.user_id = u.id
-        WHERE sa.provider = @provider AND sa.provider_user_id = @providerId
-      `);
+          SELECT sa.*, u.* 
+          FROM user_social_accounts sa
+          JOIN users u ON sa.user_id = u.id
+          WHERE sa.provider = @provider AND sa.provider_user_id = @providerId
+        `);
 
       let user;
 
@@ -397,21 +496,21 @@ export class AuthService {
           .input('accessToken', profile.accessToken)
           .input('refreshToken', profile.refreshToken || null)
           .query(`
-          UPDATE user_social_accounts 
-          SET access_token = @accessToken, 
-              refresh_token = @refreshToken,
-              token_expires_at = DATEADD(hour, 1, GETUTCDATE())
-          WHERE id = @id
-        `);
+            UPDATE user_social_accounts 
+            SET access_token = @accessToken, 
+                refresh_token = @refreshToken,
+                token_expires_at = DATEADD(hour, 1, GETUTCDATE())
+            WHERE id = @id
+          `);
 
         await transaction.request()
           .input('userId', user.user_id)
           .query(`
-          UPDATE users 
-          SET last_login_at = GETUTCDATE(), 
-              login_count = login_count + 1
-          WHERE id = @userId
-        `);
+            UPDATE users 
+            SET last_login_at = GETUTCDATE(), 
+                login_count = login_count + 1
+            WHERE id = @userId
+          `);
       } else {
         // Check if user exists with email
         const existingUser = await transaction.request()
@@ -419,18 +518,19 @@ export class AuthService {
           .query('SELECT * FROM users WHERE email = @email');
 
         if (existingUser.recordset.length > 0) {
-          // Link social account to existing user and verify email
+          // Link social account to existing user
           user = existingUser.recordset[0];
 
           await transaction.request()
             .input('userId', user.id)
+            .input('avatarUrl', profile.avatar || null)
             .query(`
-            UPDATE users 
-            SET email_verified_at = GETUTCDATE(), 
-                status = 'active',
-                avatar_url = @avatarUrl
-            WHERE id = @userId AND email_verified_at IS NULL
-          `);
+              UPDATE users 
+              SET email_verified_at = GETUTCDATE(), 
+                  status = 'active',
+                  avatar_url = @avatarUrl
+              WHERE id = @userId AND email_verified_at IS NULL
+            `);
 
           await transaction.request()
             .input('userId', user.id)
@@ -440,24 +540,24 @@ export class AuthService {
             .input('accessToken', profile.accessToken)
             .input('refreshToken', profile.refreshToken || null)
             .query(`
-            INSERT INTO user_social_accounts (
-              user_id, provider, provider_user_id, provider_email,
-              access_token, refresh_token, token_expires_at
-            ) VALUES (
-              @userId, @provider, @providerId, @email,
-              @accessToken, @refreshToken, DATEADD(hour, 1, GETUTCDATE())
-            )
-          `);
+              INSERT INTO user_social_accounts (
+                user_id, provider, provider_user_id, provider_email,
+                access_token, refresh_token, token_expires_at
+              ) VALUES (
+                @userId, @provider, @providerId, @email,
+                @accessToken, @refreshToken, DATEADD(hour, 1, GETUTCDATE())
+              )
+            `);
         } else {
-          // Create new organization and user (auto-verified)
+          // Create new user (auto-verified via social)
           const orgResult = await transaction.request()
             .input('name', `${profile.firstName}'s Organization`)
             .input('slug', this.generateSlug(profile.firstName))
             .query(`
-            INSERT INTO organizations (name, slug, subscription_status)
-            OUTPUT INSERTED.id
-            VALUES (@name, @slug, 'trial')
-          `);
+              INSERT INTO organizations (name, slug, subscription_status)
+              OUTPUT INSERTED.id
+              VALUES (@name, @slug, 'trial')
+            `);
 
           const organizationId = orgResult.recordset[0].id;
 
@@ -467,17 +567,17 @@ export class AuthService {
             .input('firstName', profile.firstName)
             .input('lastName', profile.lastName)
             .input('avatarUrl', profile.avatar || null)
-            .input('userType', 'owner')
+            .input('userType', 'staff')
             .query(`
-            INSERT INTO users (
-              organization_id, email, first_name, last_name, avatar_url,
-              user_type, status, email_verified_at
-            ) OUTPUT INSERTED.*
-            VALUES (
-              @organizationId, @email, @firstName, @lastName, @avatarUrl,
-              @userType, 'active', GETUTCDATE()
-            )
-          `);
+              INSERT INTO users (
+                organization_id, email, first_name, last_name, avatar_url,
+                user_type, status, email_verified_at
+              ) OUTPUT INSERTED.*
+              VALUES (
+                @organizationId, @email, @firstName, @lastName, @avatarUrl,
+                @userType, 'active', GETUTCDATE()
+              )
+            `);
 
           user = userResult.recordset[0];
 
@@ -490,28 +590,14 @@ export class AuthService {
             .input('accessToken', profile.accessToken)
             .input('refreshToken', profile.refreshToken || null)
             .query(`
-            INSERT INTO user_social_accounts (
-              user_id, provider, provider_user_id, provider_email,
-              access_token, refresh_token, token_expires_at
-            ) VALUES (
-              @userId, @provider, @providerId, @email,
-              @accessToken, @refreshToken, DATEADD(hour, 1, GETUTCDATE())
-            )
-          `);
-
-          // Assign admin role
-          await transaction.request()
-            .input('userId', user.id)
-            .query(`
-            DECLARE @roleId BIGINT
-            SELECT @roleId = id FROM roles WHERE name = 'admin' AND is_system_role = 1
-            
-            IF @roleId IS NOT NULL
-            BEGIN
-              INSERT INTO user_roles (user_id, role_id, is_active)
-              VALUES (@userId, @roleId, 1)
-            END
-          `);
+              INSERT INTO user_social_accounts (
+                user_id, provider, provider_user_id, provider_email,
+                access_token, refresh_token, token_expires_at
+              ) VALUES (
+                @userId, @provider, @providerId, @email,
+                @accessToken, @refreshToken, DATEADD(hour, 1, GETUTCDATE())
+              )
+            `);
 
           // Send welcome email
           await this.emailService.sendWelcomeEmail(user.email, user.first_name);
@@ -521,6 +607,9 @@ export class AuthService {
       const tokens = await this.generateTokens(user);
       await this.createSession(user.id || user.user_id, tokens.refreshToken);
 
+      // Check if onboarding required
+      const onboardingRequired = !user.first_name || user.user_type === 'staff';
+
       return {
         user: {
           id: user.id || user.user_id,
@@ -528,12 +617,13 @@ export class AuthService {
           firstName: user.first_name,
           lastName: user.last_name,
           organizationId: user.organization_id,
+          userType: user.user_type,
+          onboardingRequired,
         },
         ...tokens,
       };
     });
   }
-
 
   async refreshToken(refreshToken: string) {
     try {
@@ -626,7 +716,6 @@ export class AuthService {
     );
     return { message: 'Logged out successfully' };
   }
-  
 
   async requestPasswordReset(email: string) {
     const users = await this.sqlService.query(
@@ -635,22 +724,19 @@ export class AuthService {
     );
 
     if (users.length === 0) {
-      // Don't reveal if email exists
       return { message: 'If email exists, reset link will be sent' };
     }
 
     const token = this.hashingService.generateRandomToken(64);
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
     await this.sqlService.query(
       `INSERT INTO password_reset_tokens (user_id, token, expires_at)
-     VALUES (@userId, @token, @expiresAt)`,
+       VALUES (@userId, @token, @expiresAt)`,
       { userId: users[0].id, token, expiresAt }
     );
 
-    // Send email (implement with your email service)
-    console.log(`Password reset token for ${email}: ${token}`);
-    await this.emailService.sendPasswordReset(email,token);
+    await this.emailService.sendPasswordReset(email, token);
 
     return { message: 'If email exists, reset link will be sent' };
   }
@@ -658,7 +744,7 @@ export class AuthService {
   async resetPassword(token: string, newPassword: string) {
     const result = await this.sqlService.query(
       `SELECT * FROM password_reset_tokens 
-     WHERE token = @token AND expires_at > GETUTCDATE() AND used_at IS NULL`,
+       WHERE token = @token AND expires_at > GETUTCDATE() AND used_at IS NULL`,
       { token }
     );
 
@@ -674,21 +760,20 @@ export class AuthService {
         .input('userId', resetToken.user_id)
         .input('passwordHash', passwordHash)
         .query(`
-        UPDATE users 
-        SET password_hash = @passwordHash, password_changed_at = GETUTCDATE()
-        WHERE id = @userId
-      `);
+          UPDATE users 
+          SET password_hash = @passwordHash, password_changed_at = GETUTCDATE()
+          WHERE id = @userId
+        `);
 
       await transaction.request()
         .input('tokenId', resetToken.id)
         .query(`
-        UPDATE password_reset_tokens 
-        SET used_at = GETUTCDATE()
-        WHERE id = @tokenId
-      `);
+          UPDATE password_reset_tokens 
+          SET used_at = GETUTCDATE()
+          WHERE id = @tokenId
+        `);
     });
 
     return { message: 'Password reset successful' };
   }
-
 }

@@ -1,46 +1,80 @@
-
 // ============================================
 // modules/auth/auth.controller.ts
 // ============================================
 import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto, RefreshTokenDto, RegisterDto, ResendVerificationDto, VerifyRegistrationDto } from './dto/register.dto';
+import { 
+  LoginDto, 
+  RefreshTokenDto, 
+  RegisterDto, 
+  ResendVerificationDto, 
+  VerifyRegistrationDto,
+  CompleteOnboardingDto 
+} from './dto/register.dto';
 import { Public, CurrentUser } from 'src/core/decorators';
 import { VerificationService } from 'src/common/verification.service';
 import { InvitationService } from './invitation.service';
 import { AuthGuard } from '@nestjs/passport';
-import { SendVerificationDto, VerifyCodeDto, ResetPasswordRequestDto, ResetPasswordDto, SendInvitationDto, AcceptInvitationDto } from './dto/auth.dto';
+import { 
+  SendVerificationDto, 
+  VerifyCodeDto, 
+  ResetPasswordRequestDto, 
+  ResetPasswordDto, 
+  SendInvitationDto, 
+  AcceptInvitationDto 
+} from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService,
+  constructor(
+    private authService: AuthService,
     private verificationService: VerificationService,
     private invitationService: InvitationService,
   ) { }
 
+  // STEP 1: Register with email and password only
   @Post('register')
   @Public()
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }
 
+  // STEP 2: Verify email with code
   @Post('verify-registration')
   @Public()
   async verifyRegistration(@Body() dto: VerifyRegistrationDto) {
     return this.authService.verifyRegistration(dto.email, dto.code);
   }
 
+  // Resend verification code
   @Post('resend-verification')
   @Public()
   async resendVerification(@Body() dto: ResendVerificationDto) {
     return this.authService.resendVerificationCode(dto.email);
   }
 
+  // STEP 3: Login (after email verification)
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  // STEP 4: Complete onboarding (after login)
+  @Post('onboarding/complete')
+  @HttpCode(HttpStatus.OK)
+  async completeOnboarding(
+    @CurrentUser('id') userId: bigint,
+    @Body() onboardingDto: CompleteOnboardingDto
+  ) {
+    return this.authService.completeOnboarding(userId, onboardingDto);
+  }
+
+  // Get current user profile (includes onboarding status)
+  @Get('me')
+  async getProfile(@CurrentUser() user: any) {
+    return { user };
   }
 
   @Public()
@@ -54,11 +88,6 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async logout(@CurrentUser('id') userId: bigint) {
     return this.authService.logout(userId);
-  }
-
-  @Get('me')
-  async getProfile(@CurrentUser() user: any) {
-    return { user };
   }
 
   @Post('send-verification')
@@ -94,7 +123,6 @@ export class AuthController {
   ) {
     return this.invitationService.sendInvitation(organizationId, userId, dto);
   }
-
 
   @Post('invitation/accept')
   @Public()
@@ -142,5 +170,4 @@ export class AuthController {
   async twitterCallback(@Req() req) {
     return this.authService.loginWithSocial('twitter', req.user);
   }
-
 }
