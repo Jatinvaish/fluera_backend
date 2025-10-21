@@ -11,7 +11,7 @@ export class FeatureLimitGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private featuresService: OrganizationFeaturesService,
-  ) {}
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const featureKey = this.reflector.getAllAndOverride<string>(FEATURE_KEY, [
@@ -45,19 +45,22 @@ export class FeatureLimitGuard implements CanActivate {
 
     return true;
   }
+
+  // USE CASES
+
+  // @Post('campaigns')
+  // @RequireFeature('campaigns:create')
+  // @Permissions('campaigns:create')
+  // async createCampaign(@Body() dto: CreateCampaignDto) {
+  //   // After successful creation, increment usage
+  //   await this.featuresService.incrementFeatureUsage(
+  //     user.organizationId,
+  //     'campaigns:create'
+  //   );
+  //   return this.campaignsService.create(dto);
+  // }
+
 }
 
 
 
-
-// @Post('campaigns')
-// @RequireFeature('campaigns:create')
-// @Permissions('campaigns:create')
-// async createCampaign(@Body() dto: CreateCampaignDto) {
-//   // After successful creation, increment usage
-//   await this.featuresService.incrementFeatureUsage(
-//     user.organizationId,
-//     'campaigns:create'
-//   );
-//   return this.campaignsService.create(dto);
-// }

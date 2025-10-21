@@ -37,6 +37,7 @@ import { EmailModule } from './modules/email-templates/email.module';
 import { ChatModule } from './modules/message-system/chat.module';
 import { FeatureLimitGuard } from './core/guards/feature-limit.guard';
 import { OrganizationsModule } from './modules/organizations/organization-features.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 
 @Module({
   imports: [
@@ -50,7 +51,7 @@ import { OrganizationsModule } from './modules/organizations/organization-featur
     DatabaseModule,
     CommonModule,
     AuthModule,
-
+    PermissionsModule,
     SystemConfigModule,
     AuditLogsModule,
     SystemEventsModule,
