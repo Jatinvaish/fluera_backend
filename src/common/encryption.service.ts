@@ -1,28 +1,3 @@
-// import { Injectable } from '@nestjs/common';
-// import { ConfigService } from '@nestjs/config';
-// import * as CryptoJS from 'crypto-js';
-
-// @Injectable()
-// export class EncryptionService {
-//   private readonly masterKey: string;
-
-//   constructor(private readonly configService: ConfigService) {
-//     const key = this.configService.get<string>('encryption.key');
-//     if (!key) {
-//       throw new Error('ENCRYPTION_KEY not found');
-//     }
-//     this.masterKey = key;
-//   }
-
-//   encrypt(text: string): string {
-//     return CryptoJS.AES.encrypt(text, this.masterKey).toString();
-//   }
-
-//   decrypt(encryptedData: string): string {
-//     const decrypted = CryptoJS.AES.decrypt(encryptedData, this.masterKey).toString(CryptoJS.enc.Utf8);
-//     return decrypted;
-//   }
-// }
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as CryptoJS from 'crypto-js';

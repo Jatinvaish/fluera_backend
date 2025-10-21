@@ -110,3 +110,25 @@ export class UpdateRoleLimitDto {
   @IsOptional()
   resetPeriod?: string;
 }
+
+export class LinkMenuPermissionDto {
+  @IsString()
+  menuKey: string;
+
+  @IsNumber()
+  permissionId: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isRequired?: boolean;
+}
+
+export class BulkLinkMenuPermissionsDto {
+  @IsArray()
+  mappings: LinkMenuPermissionDto[];
+}
+
+export class GetUserMenuAccessDto {
+  @IsNumber()
+  userId: number;
+}

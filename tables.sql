@@ -2383,3 +2383,128 @@ CREATE NONCLUSTERED INDEX [IX_notifications_recipient] ON [dbo].[notifications] 
 -- =====================================================
 -- END OF SCHEMA
 -- =====================================================
+
+
+
+
+CREATE TABLE [dbo].[resource_permissions] (
+    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [resource_type] NVARCHAR(50) NOT NULL, -- 'email', 'message', 'document', 'campaign'
+    [resource_id] BIGINT NOT NULL,
+    [entity_type] NVARCHAR(20) NOT NULL, -- 'user', 'role', 'team'
+    [entity_id] BIGINT NOT NULL,
+    [permission_type] NVARCHAR(20) NOT NULL, -- 'read', 'write', 'share', 'delete', 'comment'
+    [granted_by] BIGINT NOT NULL,
+    [expires_at] DATETIME2(7),
+    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    UNIQUE([resource_type], [resource_id], [entity_type], [entity_id], [permission_type])
+);
+
+-- CREATE INDEX [IX_resource_permissions_lookup] 
+-- ON [dbo].[resource_permissions] ([resource_type], [resource_id], [entity_type], [entity_id]);
+-- 2. Sharing & Collaboration Permissions
+-- For Google Docs-style sharing:
+-- sql-- Add to email_messages, chat_channels, content_submissions
+ALTER TABLE [dbo].[email_messages] ADD [sharing_settings] NVARCHAR(MAX); -- JSON
+ALTER TABLE [dbo].[chat_channels] ADD [access_policy] NVARCHAR(MAX); -- JSON
+ALTER TABLE [dbo].[content_submissions] ADD [viewer_permissions] NVARCHAR(MAX); -- JSON
+
+-- Sharing links table
+CREATE TABLE [dbo].[resource_shares] (
+    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [resource_type] NVARCHAR(50) NOT NULL,
+    [resource_id] BIGINT NOT NULL,
+    [share_token] NVARCHAR(255) UNIQUE NOT NULL,
+    [share_type] NVARCHAR(20) NOT NULL, -- 'view', 'comment', 'edit'
+    [recipient_email] NVARCHAR(320),
+    [recipient_user_id] BIGINT,
+    [password_protected] BIT DEFAULT 0,
+    [password_hash] NVARCHAR(255),
+    [requires_login] BIT DEFAULT 1,
+    [allow_download] BIT DEFAULT 0,
+    [expires_at] DATETIME2(7),
+    [max_views] INT,
+    [view_count] INT DEFAULT 0,
+    [revoked_at] DATETIME2(7),
+    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [created_by] BIGINT,
+    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [updated_by] BIGINT
+);
+
+-- Activity log for audit
+CREATE TABLE [dbo].[resource_access_logs] (
+    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [resource_type] NVARCHAR(50) NOT NULL,
+    [resource_id] BIGINT NOT NULL,
+    [user_id] BIGINT,
+    [action] NVARCHAR(50) NOT NULL, -- 'view', 'edit', 'share', 'download', 'delete'
+    [ip_address] NVARCHAR(45),
+    [user_agent] NVARCHAR(MAX),
+    [metadata] NVARCHAR(MAX),
+    [accessed_at] DATETIME2(7) DEFAULT GETUTCDATE()
+);
+
+CREATE INDEX [IX_resource_access_logs] 
+ON [dbo].[resource_access_logs] ([resource_type], [resource_id], [accessed_at] DESC);
+
+
+
+CREATE TABLE menu_permissions (
+  id BIGINT PRIMARY KEY IDENTITY,
+  menu_key VARCHAR(100) NOT NULL,
+  permission_id BIGINT NOT NULL,
+  is_required BIT DEFAULT 1,
+  created_at DATETIME2 DEFAULT GETUTCDATE(),
+  created_by BIGINT,
+  CONSTRAINT FK_menu_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id),
+  CONSTRAINT FK_menu_permissions_user FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT UQ_menu_permission UNIQUE (menu_key, permission_id)
+);
+
+CREATE INDEX IX_menu_permissions_key ON menu_permissions(menu_key);
+CREATE INDEX IX_menu_permissions_permission ON menu_permissions(permission_id);
+
+-- Seed initial menu-permission mappings
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'dashboard', id, 1 FROM permissions WHERE name = 'dashboard:view';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'access-control', id, 1 FROM permissions WHERE name = 'rbac:read';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'access-control.roles', id, 1 FROM permissions WHERE name = 'rbac:manage';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'access-control.permissions', id, 1 FROM permissions WHERE name = 'rbac:manage';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'access-control.role-permissions', id, 1 FROM permissions WHERE name = 'rbac:manage';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'access-control.user-roles', id, 1 FROM permissions WHERE name = 'rbac:manage';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'access-control.attributes', id, 1 FROM permissions WHERE name = 'abac:manage';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'access-control.policies', id, 1 FROM permissions WHERE name = 'abac:manage';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'documents', id, 1 FROM permissions WHERE name = 'documents:read';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'documents.upload', id, 1 FROM permissions WHERE name = 'documents:create';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'mail', id, 1 FROM permissions WHERE name = 'mail:receive';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'mail.compose', id, 1 FROM permissions WHERE name = 'mail:send';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'chat', id, 1 FROM permissions WHERE name = 'chat:join_channel';
+
+INSERT INTO menu_permissions (menu_key, permission_id, is_required)
+SELECT 'users', id, 1 FROM permissions WHERE name = 'users:read';
+*/
