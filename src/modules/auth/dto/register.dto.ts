@@ -8,22 +8,6 @@ export class RegisterDto {
   @MinLength(8)
   @MaxLength(100)
   password: string;
-
-  // @IsString()
-  // @IsOptional()
-  // firstName?: string;
-  
-  // @IsString()
-  // @IsOptional()
-  // lastName?: string;
-
-  // @IsString()
-  // @IsOptional()
-  // organizationName?: string;
-
-  // @IsEnum(['agency_admin', 'creator', 'brand_admin'])
-  // @IsOptional()
-  // organizationType?: 'agency_admin' | 'creator' | 'brand_admin';
 }
 
 export class LoginDto {

@@ -5,12 +5,12 @@
 import { Module } from '@nestjs/common';
 import { RbacController } from './rbac.controller';
 import { RbacService } from './rbac.service';
-import { MenuPermissionController } from './menu-permission.controller';
-import { MenuPermissionService } from './menu-permission.service';
+import { MenuPermissionsController } from './menu-permission.controller';
+import { MenuPermissionsService } from './menu-permission.service';
 
 @Module({
-  controllers: [RbacController, MenuPermissionController],
-  providers: [RbacService, MenuPermissionService],
-  exports: [RbacService, MenuPermissionService],
+  controllers: [RbacController, MenuPermissionsController],
+  providers: [RbacService, MenuPermissionsService],
+  exports: [RbacService, MenuPermissionsService],
 })
 export class RbacModule {}

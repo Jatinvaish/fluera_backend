@@ -1,119 +1,240 @@
-import { Injectable } from '@nestjs/common';
+// modules/menu-permissions/menu-permissions.service.ts
+import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
 
 @Injectable()
-export class MenuPermissionService {
-  constructor(private sqlService: SqlServerService) {}
+export class MenuPermissionsService {
+  constructor(private sqlService: SqlServerService) { }
 
-  /**
-   * Link a menu to a required permission
-   */
-  async linkMenuPermission(
-    menuKey: string,
-    permissionId: bigint,
-    isRequired: boolean = true,
-    createdBy?: bigint
-  ) {
+  async linkMenuPermission(menuKey: string, permissionId: bigint, isRequired: boolean, createdBy: bigint, userType: string) {
+    if (userType !== 'owner' && userType !== 'superadmin') {
+      throw new ForbiddenException('Only super admins can manage menu permissions');
+    }
+
     try {
-      const result = await this.sqlService.query(
+      const result: any = await this.sqlService.query(
         `INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
-         OUTPUT INSERTED.*
-         VALUES (@menuKey, @permissionId, @isRequired, @createdBy)`,
-        { menuKey, permissionId, isRequired, createdBy: createdBy || null }
+         OUTPUT INSERTED.* VALUES (@menuKey, @permissionId, @isRequired, @createdBy)`,
+        { menuKey, permissionId, isRequired, createdBy }
       );
-      return result[0];
+      return {
+        success: true,
+        data: result[0],
+        message: 'Menu permission linked successfully'
+      };
     } catch (error) {
-      // If duplicate, update instead
-      await this.sqlService.query(
+      // If exists, update instead
+      const updateResult: any = await this.sqlService.query(
         `UPDATE menu_permissions 
          SET is_required = @isRequired 
+         OUTPUT INSERTED.*
          WHERE menu_key = @menuKey AND permission_id = @permissionId`,
         { menuKey, permissionId, isRequired }
       );
-      return { message: 'Menu permission updated' };
+      return {
+        success: true,
+        data: updateResult[0],
+        message: 'Menu permission updated successfully'
+      };
     }
   }
 
-  /**
-   * Bulk link multiple menus to permissions
-   */
-  async bulkLinkMenuPermissions(
-    mappings: Array<{ menuKey: string; permissionId: number; isRequired?: boolean }>,
-    createdBy?: bigint
-  ) {
-    const results:any = [];
+  async bulkLinkMenuPermissions(mappings: any[], createdBy: bigint, userType: string) {
+    if (userType !== 'owner' && userType !== 'superadmin') {
+      throw new ForbiddenException('Only super admins can manage menu permissions');
+    }
+
+    const results: any[] = [];
     for (const mapping of mappings) {
       const result = await this.linkMenuPermission(
         mapping.menuKey,
         BigInt(mapping.permissionId),
         mapping.isRequired ?? true,
-        createdBy
+        createdBy,
+        userType
       );
-      results.push(result);
+      results.push(result.data);
     }
+
     return {
+      success: true,
+      data: results,
       message: 'Menu permissions linked successfully',
       created: results.length,
       total: mappings.length
     };
   }
 
-  /**
-   * Get accessible menu keys for a user based on their permissions
-   */
-  async getUserAccessibleMenus(userId: bigint) {
-    // Get user's permissions
-    const userPermissions = await this.sqlService.query(
-      `SELECT DISTINCT p.name
-       FROM permissions p
-       JOIN role_permissions rp ON p.id = rp.permission_id
-       JOIN user_roles ur ON rp.role_id = ur.role_id
-       WHERE ur.user_id = @userId AND ur.is_active = 1`,
-      { userId }
-    );
-
-    const permissionNames = userPermissions.map((p: any) => p.name);
-
-    // Get all menus with their required permissions
-    const menuPermissions = await this.sqlService.query(
-      `SELECT DISTINCT 
-         mp.menu_key,
-         p.name as permission_name,
-         mp.is_required
-       FROM menu_permissions mp
-       JOIN permissions p ON mp.permission_id = p.id`
-    );
-
-    // Filter menus based on user permissions
-    const menuMap = new Map<string, boolean>();
-    
-    for (const mp of menuPermissions) {
-      const hasPermission = permissionNames.includes(mp.permission_name);
-      
-      if (mp.is_required) {
-        // Required permission - must have it
-        if (hasPermission) {
-          menuMap.set(mp.menu_key, true);
-        } else {
-          menuMap.set(mp.menu_key, false);
-        }
-      } else {
-        // Optional permission - having it is enough
-        if (hasPermission && !menuMap.has(mp.menu_key)) {
-          menuMap.set(mp.menu_key, true);
-        }
-      }
+  async unlinkMenuPermission(menuKey: string, permissionId: bigint, userType: string) {
+    if (userType === 'owner' || userType === 'superadmin') {
+      throw new ForbiddenException('Only super admins can manage menu permissions');
     }
 
-    // Return list of accessible menu keys
-    const accessibleMenus = Array.from(menuMap.entries())
-      .filter(([_, hasAccess]) => hasAccess)
-      .map(([menuKey, _]) => menuKey);
+    const result: any = await this.sqlService.query(
+      `DELETE FROM menu_permissions OUTPUT DELETED.* WHERE menu_key = @menuKey AND permission_id = @permissionId`,
+      { menuKey, permissionId }
+    );
+
+    if (result.length === 0) {
+      throw new NotFoundException('Menu permission not found');
+    }
 
     return {
-      userId,
-      accessibleMenus,
-      permissions: permissionNames
+      success: true,
+      data: result[0],
+      message: 'Menu permission unlinked successfully'
+    };
+  }
+
+  async getMenuPermissions(menuKey: string) {
+    const result = await this.sqlService.query(
+      `SELECT mp.*, p.name as permissionname, p.resource, p.action, p.category
+       FROM menu_permissions mp
+       JOIN permissions p ON mp.permission_id = p.id
+       WHERE mp.menu_key = @menuKey`,
+      { menuKey }
+    );
+
+    return {
+      success: true,
+      data: result || [],
+      message: 'Menu permissions retrieved successfully'
+    };
+  }
+
+  async listMenuPermissions(dto: any) {
+    try {
+      const result = await this.sqlService.execute(
+        'sp_ListMenuPermissions',
+        {
+          page: dto.page || 1,
+          limit: dto.limit || 10,
+          search: dto.search || null,
+          menuKey: dto.menuKey || null,
+          category: dto.category || null,
+          sortBy: dto.sortBy || 'created_at',
+          sortOrder: dto.sortOrder || 'DESC'
+        }
+      );
+      if (!result || result.length === 0) {
+        return {
+          success: true,
+          data: {
+            menuPermissionsList: [],
+            meta: {
+              currentPage: dto.page || 1,
+              itemsPerPage: dto.limit || 10,
+              totalItems: 0,
+              totalPages: 0,
+              hasNextPage: 0,
+              hasPreviousPage: 0
+            }
+          }
+        };
+      }
+
+      const menuPermissionsList = result[0];
+      const meta = result[1]?.[0] || {
+        currentPage: dto.page || 1,
+        itemsPerPage: dto.limit || 10,
+        totalItems: 0,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false
+      };
+      return {
+        success: true,
+        data: {
+          menuPermissionsList,
+          meta
+        },
+        message: 'Menu permissions list retrieved successfully'
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async getUserAccessibleMenus(userId: bigint) {
+    try {
+      const result = await this.sqlService.execute(
+        'sp_GetUserAccessibleMenus',
+        {
+          userId: userId
+        }
+      );
+      console.log("🚀 ~ MenuPermissionsService ~ getUserAccessibleMenus ~ result:", result)
+
+      if (!result || result.length === 0) {
+        return {
+          success: true,
+          data: {
+            userId,
+            userPermissions: [],
+            accessibleMenus: [],
+            blockedMenus: []
+          }
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          userId,
+          userPermissions: result[0] || [],
+          accessibleMenus: result[1] || [],
+          blockedMenus: result[2] || []
+        },
+        message: 'User accessible menus retrieved successfully'
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async updateMenuPermission(id: bigint, menuKey: string, permissionId: bigint, isRequired: boolean, userType: string) {
+    if (userType !== 'owner' && userType !== 'superadmin') {
+      throw new ForbiddenException('Only super admins can manage menu permissions');
+    }
+
+    const result: any = await this.sqlService.query(
+      `UPDATE menu_permissions 
+       SET menu_key = @menuKey, permission_id = @permissionId, is_required = @isRequired, updated_at = GETUTCDATE()
+       OUTPUT INSERTED.*
+       WHERE id = @id`,
+      { id, menuKey, permissionId, isRequired }
+    );
+
+    if (result.length === 0) {
+      throw new NotFoundException('Menu permission not found');
+    }
+
+    return {
+      success: true,
+      data: result[0],
+      message: 'Menu permission updated successfully'
+    };
+  }
+
+  async getMenuPermissionById(id: bigint) {
+    const result: any = await this.sqlService.query(
+      `SELECT 
+         mp.id, mp.menu_key, mp.permission_id, mp.is_required, mp.created_at,
+         p.name as permissionname, p.resource, p.action, p.category
+       FROM menu_permissions mp
+       JOIN permissions p ON mp.permission_id = p.id
+       WHERE mp.id = @id`,
+      { id }
+    );
+
+    if (result.length === 0) {
+      throw new NotFoundException('Menu permission not found');
+    }
+
+    return {
+      success: true,
+      data: result[0],
+      message: 'Menu permission retrieved successfully'
     };
   }
 }

@@ -1,6 +1,4 @@
-// ============================================
 // core/database/sql-server.service.ts
-// ============================================
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as sql from 'mssql';
@@ -42,6 +40,13 @@ export class SqlServerService implements OnModuleInit {
       }
 
       const result = await request.query(queryString);
+      
+      // Return all recordsets for stored procedures that return multiple result sets
+      // If only one recordset, return it directly for backward compatibility
+      if (Array.isArray(result.recordsets) && result.recordsets.length > 1) {
+        return result.recordsets as any;
+      }
+      
       return result.recordset as T[];
     } catch (error) {
       this.logger.error('Query execution failed', error);
@@ -60,7 +65,13 @@ export class SqlServerService implements OnModuleInit {
       }
 
       const result = await request.execute(procedureName);
-      return result;
+      
+      // Return all recordsets for stored procedures that return multiple result sets
+      if (Array.isArray(result.recordsets) && result.recordsets.length > 1) {
+        return result.recordsets;
+      }
+      
+      return result.recordset;
     } catch (error) {
       this.logger.error(`Stored procedure ${procedureName} execution failed`, error);
       throw error;
