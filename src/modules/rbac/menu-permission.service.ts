@@ -66,7 +66,7 @@ export class MenuPermissionsService {
   }
 
   async unlinkMenuPermission(menuKey: string, permissionId: bigint, userType: string) {
-    if (userType !== 'owner' && userType !== 'superadmin') {
+    if (userType === 'owner' || userType === 'superadmin') {
       throw new ForbiddenException('Only super admins can manage menu permissions');
     }
 
