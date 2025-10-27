@@ -1,116 +1,89 @@
-// modules/permissions/permissions.controller.ts
-import { Controller, Get, Post, Delete, Param, Body, ParseIntPipe } from '@nestjs/common';
-import { ResourcePermissionService } from './resource-permission.service';
-import { CurrentUser } from 'src/core/decorators';
-import { Permissions } from 'src/core/decorators/permissions.decorator';
+// modules/permissions/permissions.controller.ts - COMPLETE
+import { Controller, Post, Body } from '@nestjs/common';
+import { Permissions } from '../../core/decorators/permissions.decorator';
+import { CurrentUser } from '../../core/decorators';
+import { PermissionsService } from './resource-permission.service';
 
 @Controller('permissions')
 export class PermissionsController {
-  constructor(private permissionService: ResourcePermissionService) {}
+  constructor(private permissionsService: PermissionsService) { }
 
-  @Get('check/:resourceType/:resourceId/:permissionType')
-  async checkAccess(
-    @Param('resourceType') resourceType: string,
-    @Param('resourceId', ParseIntPipe) resourceId: number,
-    @Param('permissionType') permissionType: string,
-    @CurrentUser('id') userId: bigint,
-  ) {
-    const hasAccess = await this.permissionService.checkAccess(
-      userId,
-      resourceType,
-      BigInt(resourceId),
-      permissionType
-    );
+  // RBAC PERMISSIONS
+  @Post('list')
+  @Permissions('rbac:read')
+  async listPermissions(@Body() filters: any) {
+    return this.permissionsService.listPermissions(filters);
+  }
+
+  @Post('get')
+  @Permissions('rbac:read')
+  async getPermission(@Body() body: { permissionId: number }) {
+    return this.permissionsService.getPermissionById(BigInt(body.permissionId));
+  }
+
+  @Post('create')
+  @Permissions('rbac:manage')
+  async createPermission(@Body() dto: any, @CurrentUser('id') userId: bigint, @CurrentUser('userType') userType: string) {
+    return this.permissionsService.createPermission(dto, userId, userType);
+  }
+
+  @Post('delete')
+  @Permissions('rbac:manage')
+  async deletePermission(@Body() body: { permissionId: number }, @CurrentUser('userType') userType: string) {
+    return this.permissionsService.deletePermission(BigInt(body.permissionId), userType);
+  }
+
+  // RESOURCE PERMISSIONS
+  @Post('grant')
+  async grantResourcePermission(@Body() dto: any, @CurrentUser('id') grantedBy: bigint, @CurrentUser('userType') userType: string, @CurrentUser('organizationId') organizationId: bigint) {
+    return this.permissionsService.grantResourcePermission(dto, grantedBy, userType, organizationId);
+  }
+
+  @Post('revoke')
+  async revokeResourcePermission(@Body() dto: any, @CurrentUser('id') revokedBy: bigint, @CurrentUser('userType') userType: string, @CurrentUser('organizationId') organizationId: bigint) {
+    return this.permissionsService.revokeResourcePermission(dto, revokedBy, userType, organizationId);
+  }
+
+  @Post('check')
+  async checkResourcePermission(@Body() dto: { resourceType: string; resourceId: number; permissionType: string }, @CurrentUser('id') userId: bigint) {
+    return this.permissionsService.checkResourcePermission(dto.resourceType, BigInt(dto.resourceId), dto.permissionType, userId);
+  }
+
+  @Post('check/batch')
+  async checkBatchPermissions(@Body() dto: { checks: any[] }, @CurrentUser('id') userId: bigint) {
+    return this.permissionsService.checkBatchPermissions(dto.checks, userId);
+  }
+
+  @Post('resource/list')
+  async listResourcePermissions(@Body() dto: { resourceType: string; resourceId: number }, @CurrentUser('id') requestorId: bigint, @CurrentUser('userType') userType: string, @CurrentUser('organizationId') organizationId: bigint) {
+    return this.permissionsService.listResourcePermissions(dto.resourceType, BigInt(dto.resourceId), requestorId, userType, organizationId);
+  }
+
+  // ACCESS CHECK
+  @Post('access/check')
+  async checkAccess(@Body() dto: { resourceType: string; resourceId: number; permissionType: string }, @CurrentUser('id') userId: bigint, @CurrentUser('userType') userType: string, @CurrentUser('organizationId') organizationId: bigint) {
+    const hasAccess = await this.permissionsService.checkAccess(userId, dto.resourceType, BigInt(dto.resourceId), dto.permissionType, userType, organizationId);
     return { hasAccess };
   }
 
-  @Post('grant')
-  @Permissions('permissions:grant')
-  async grantAccess(
-    @Body() payload: {
-      resourceType: string;
-      resourceId: number;
-      entityType: 'user' | 'role' | 'team';
-      entityId: number;
-      permissionType: string;
-      expiresAt?: Date;
-    },
-    @CurrentUser('id') userId: bigint,
-  ) {
-    return this.permissionService.grantAccess(
-      payload.resourceType,
-      BigInt(payload.resourceId),
-      payload.entityType,
-      BigInt(payload.entityId),
-      payload.permissionType,
-      userId,
-      payload.expiresAt
-    );
+  // SHARING
+  @Post('share/create')
+  async createShare(@Body() dto: any, @CurrentUser('id') userId: bigint, @CurrentUser('userType') userType: string, @CurrentUser('organizationId') organizationId: bigint) {
+    return this.permissionsService.createShare(dto, userId, userType, organizationId);
   }
 
-  @Delete('revoke/:resourceType/:resourceId/:entityType/:entityId/:permissionType')
-  @Permissions('permissions:revoke')
-  async revokeAccess(
-    @Param('resourceType') resourceType: string,
-    @Param('resourceId', ParseIntPipe) resourceId: number,
-    @Param('entityType') entityType: 'user' | 'role' | 'team',
-    @Param('entityId', ParseIntPipe) entityId: number,
-    @Param('permissionType') permissionType: string,
-  ) {
-    return this.permissionService.revokeAccess(
-      resourceType,
-      BigInt(resourceId),
-      entityType,
-      BigInt(entityId),
-      permissionType
-    );
+  @Post('share/access')
+  async accessShare(@Body() dto: { shareToken: string; password?: string }, @CurrentUser('id') userId?: bigint) {
+    return this.permissionsService.accessShare(dto.shareToken, dto.password, userId);
   }
 
-  @Get(':resourceType/:resourceId')
-  @Permissions('permissions:view')
-  async listPermissions(
-    @Param('resourceType') resourceType: string,
-    @Param('resourceId', ParseIntPipe) resourceId: number,
-  ) {
-    return this.permissionService.listResourcePermissions(
-      resourceType,
-      BigInt(resourceId)
-    );
+  @Post('share/revoke')
+  async revokeShare(@Body() dto: { shareId: number }, @CurrentUser('id') userId: bigint, @CurrentUser('userType') userType: string) {
+    return this.permissionsService.revokeShare(BigInt(dto.shareId), userId, userType);
   }
 
-  @Post('share')
-  @Permissions('permissions:share')
-  async createShareLink(
-    @Body() payload: {
-      resourceType: string;
-      resourceId: number;
-      shareType: 'view' | 'comment' | 'edit';
-      recipientEmail?: string;
-      recipientUserId?: number;
-      passwordProtected?: boolean;
-      password?: string;
-      requiresLogin?: boolean;
-      allowDownload?: boolean;
-      expiresAt?: Date;
-      maxViews?: number;
-    },
-    @CurrentUser('id') userId: bigint,
-  ) {
-    return this.permissionService.createShareLink(
-      payload.resourceType,
-      BigInt(payload.resourceId),
-      payload.shareType,
-      {
-        recipientEmail: payload.recipientEmail,
-        recipientUserId: payload.recipientUserId ? BigInt(payload.recipientUserId) : undefined,
-        passwordProtected: payload.passwordProtected,
-        password: payload.password,
-        requiresLogin: payload.requiresLogin,
-        allowDownload: payload.allowDownload,
-        expiresAt: payload.expiresAt,
-        maxViews: payload.maxViews,
-      },
-      userId
-    );
+  @Post('share/list')
+  async listShares(@Body() dto: { resourceType: string; resourceId: number }, @CurrentUser('id') userId: bigint, @CurrentUser('userType') userType: string, @CurrentUser('organizationId') organizationId: bigint) {
+    return this.permissionsService.listShares(dto.resourceType, BigInt(dto.resourceId), userId, userType, organizationId);
   }
 }

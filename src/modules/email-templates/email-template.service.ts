@@ -4,7 +4,7 @@
 // ============================================
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SqlServerService } from 'src/core/database/sql-server.service';
- 
+
 export interface EmailTemplate {
   id: bigint;
   organization_id: bigint;
@@ -39,18 +39,18 @@ export interface UpdateTemplateDto extends Partial<CreateTemplateDto> {
 export class EmailTemplateService {
   private readonly logger = new Logger(EmailTemplateService.name);
 
-  constructor(private sqlService: SqlServerService) {}
+  constructor(private sqlService: SqlServerService) { }
 
   /**
    * Get template by category and organization
    */
   async getTemplate(category: string, organizationId?: bigint): Promise<EmailTemplate | null> {
     try {
-      const result = await this.sqlService.query(
-        'EXEC sp_GetEmailTemplate @organizationId, @category',
-        { 
-          organizationId: organizationId || null, 
-          category 
+      const result = await this.sqlService.execute(
+        'sp_GetEmailTemplate',
+        {
+          organizationId: organizationId || null,
+          category
         }
       );
 
@@ -71,11 +71,9 @@ export class EmailTemplateService {
   async upsertTemplate(dto: CreateTemplateDto | UpdateTemplateDto, userId: bigint): Promise<bigint> {
     try {
       const id = 'id' in dto ? dto.id : null;
-      
-      const result = await this.sqlService.query(
-        `EXEC sp_UpsertEmailTemplate 
-          @id, @organizationId, @name, @category, @subject, 
-          @bodyHtml, @bodyText, @variables, @userId, @isActive`,
+
+      const result = await this.sqlService.execute(
+        'sp_UpsertEmailTemplate',
         {
           id: id || null,
           organizationId: dto.organizationId,
@@ -97,16 +95,17 @@ export class EmailTemplateService {
     }
   }
 
+
   /**
    * Get all templates for an organization
    */
   async getOrganizationTemplates(
-    organizationId: bigint, 
+    organizationId: bigint,
     includeGlobal: boolean = true
   ): Promise<EmailTemplate[]> {
     try {
-      const result = await this.sqlService.query(
-        'EXEC sp_GetOrganizationTemplates @organizationId, @includeGlobal',
+      const result = await this.sqlService.execute(
+        'sp_GetOrganizationTemplates',
         { organizationId, includeGlobal: includeGlobal ? 1 : 0 }
       );
 
@@ -117,13 +116,15 @@ export class EmailTemplateService {
     }
   }
 
+
+
   /**
    * Delete a template
    */
   async deleteTemplate(id: bigint, organizationId: bigint): Promise<boolean> {
     try {
-      const result = await this.sqlService.query(
-        'EXEC sp_DeleteEmailTemplate @id, @organizationId',
+      const result = await this.sqlService.execute(
+        'sp_DeleteEmailTemplate',
         { id, organizationId }
       );
 
@@ -138,14 +139,14 @@ export class EmailTemplateService {
    * Validate template variables
    */
   validateTemplateVariables(
-    template: string, 
+    template: string,
     providedVariables: Record<string, any>
   ): { valid: boolean; missing: string[] } {
     // Extract all {{variable}} patterns from template
     const regex = /{{(\w+)}}/g;
     const matches = [...template.matchAll(regex)];
     const requiredVars = new Set(matches.map(m => m[1]));
-    
+
     const providedVars = new Set(Object.keys(providedVariables));
     const missing: string[] = [];
 
@@ -170,7 +171,7 @@ export class EmailTemplateService {
     organizationId?: bigint
   ): Promise<{ subject: string; html: string }> {
     const template = await this.getTemplate(category, organizationId);
-    
+
     if (!template) {
       throw new NotFoundException(`Template not found: ${category}`);
     }

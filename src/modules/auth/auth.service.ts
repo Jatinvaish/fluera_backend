@@ -1,5 +1,5 @@
 // ============================================
-// modules/auth/auth.service.ts
+// modules/auth/auth.service.ts - UPDATED WITH DEVICE INFO
 // ============================================
 import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -8,6 +8,18 @@ import { SqlServerService } from '../../core/database/sql-server.service';
 import { LoginDto, RegisterDto } from './dto/register.dto';
 import { HashingService } from 'src/common/hashing.service';
 import { EmailService } from '../email-templates/email.service';
+import { CreateAgencyDto, CreateBrandDto, CreateCreatorDto } from './dto/auth.dto';
+
+interface DeviceInfo {
+  deviceFingerprint?: string;
+  deviceName?: string;
+  deviceType?: string;
+  browserName?: string;
+  browserVersion?: string;
+  osName?: string;
+  osVersion?: string;
+  ipAddress?: string;
+}
 
 @Injectable()
 export class AuthService {
@@ -19,103 +31,42 @@ export class AuthService {
     private emailService: EmailService,
   ) { }
 
-  /**
-   * STEP 1: Register with email and password only
-   * Creates user with 'pending' status
-   * User type defaults to 'staff' - will be set during onboarding
-   */
   async register(registerDto: RegisterDto) {
     const existingUser = await this.sqlService.query(
       'SELECT id, email_verified_at, status FROM users WHERE email = @email',
       { email: registerDto.email }
     );
 
-    // If user exists and already verified
     if (existingUser.length > 0 && existingUser[0].email_verified_at) {
       throw new ConflictException('Email already registered and verified');
     }
 
     const passwordHash = await this.hashingService.hashPassword(registerDto.password);
-
     let userId: bigint;
-    let organizationId: bigint;
 
     if (existingUser.length > 0) {
-      // User exists but not verified - update password
       userId = existingUser[0].id;
-
       await this.sqlService.query(
-        `UPDATE users 
-         SET password_hash = @passwordHash, 
-             updated_at = GETUTCDATE()
+        `UPDATE users SET password_hash = @passwordHash, updated_at = GETUTCDATE()
          WHERE id = @userId`,
         { userId, passwordHash }
       );
-
-      // Delete old verification codes
       await this.sqlService.query(
         `DELETE FROM verification_codes WHERE email = @email`,
         { email: registerDto.email }
       );
-
-      // Get organization ID
-      const userOrg = await this.sqlService.query(
-        'SELECT organization_id FROM users WHERE id = @userId',
-        { userId }
-      );
-      organizationId = userOrg[0].organization_id;
     } else {
-      // Create new user with minimal info
-      const result = await this.sqlService.transaction(async (transaction) => {
-        // Create placeholder organization (will be updated during onboarding)
-        const orgResult = await transaction.request()
-          .input('name', `${registerDto.email}'s Organization`)
-          .input('slug', this.generateSlug(registerDto.email))
-          .query(`
-            INSERT INTO organizations (
-              name, slug, is_trial, trial_started_at, trial_ends_at,
-              subscription_status, max_users, max_creators, max_brands, max_campaigns
-            )
-            OUTPUT INSERTED.id
-            VALUES (
-              @name, @slug, 1, GETUTCDATE(), DATEADD(day, 14, GETUTCDATE()),
-              'trial', 10, 100, 50, 100
-            )
-          `);
-
-        const orgId = orgResult.recordset[0].id;
-
-        // Create user with minimal info - status 'pending', user_type 'staff' (default)
-        // user_type will be updated during onboarding
-        const userResult = await transaction.request()
-          .input('organizationId', orgId)
-          .input('email', registerDto.email)
-          .input('passwordHash', passwordHash)
-          .query(`
-            INSERT INTO users (
-              organization_id, email, password_hash, 
-              user_type, status
-            )
-            OUTPUT INSERTED.id, INSERTED.organization_id
-            VALUES (
-              @organizationId, @email, @passwordHash,
-              'staff', 'pending'
-            )
-          `);
-
-        return {
-          userId: userResult.recordset[0].id,
-          organizationId: userResult.recordset[0].organization_id,
-        };
-      });
-
-      userId = result.userId;
-      organizationId = result.organizationId;
+      const result = await this.sqlService.query(
+        `INSERT INTO users (email, password_hash, user_type, status)
+         OUTPUT INSERTED.id
+         VALUES (@email, @passwordHash, 'pending', 'pending')`,
+        { email: registerDto.email, passwordHash }
+      );
+      userId = result[0].id;
     }
 
-    // Generate and send verification code
     const code = this.hashingService.generateNumericCode(6);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.sqlService.query(
       `INSERT INTO verification_codes (user_id, email, code, code_type, expires_at, max_attempts)
@@ -123,11 +74,10 @@ export class AuthService {
       { userId, email: registerDto.email, code, expiresAt }
     );
 
-    // Send verification email
     await this.emailService.sendVerificationCode(
       registerDto.email,
       code,
-      registerDto.email.split('@')[0] // Use email prefix as temporary name
+      registerDto.email.split('@')[0]
     );
 
     return {
@@ -137,15 +87,9 @@ export class AuthService {
     };
   }
 
-  /**
-   * STEP 2: Verify email with code
-   * Activates user and allows login
-   * Onboarding still required after login
-   */
   async verifyRegistration(email: string, code: string) {
-    // Verify code
     const verification = await this.sqlService.query(
-      `SELECT vc.*, u.organization_id
+      `SELECT vc.*   
        FROM verification_codes vc
        INNER JOIN users u ON vc.user_id = u.id
        WHERE vc.email = @email AND vc.code = @code 
@@ -156,7 +100,6 @@ export class AuthService {
     );
 
     if (verification.length === 0) {
-      // Increment attempt count
       await this.sqlService.query(
         `UPDATE verification_codes 
          SET attempts = attempts + 1 
@@ -172,14 +115,11 @@ export class AuthService {
       throw new BadRequestException('Maximum verification attempts exceeded. Please request a new code.');
     }
 
-    // Mark code as used and activate user
     await this.sqlService.transaction(async (transaction) => {
-      // Mark verification code as used
       await transaction.request()
         .input('id', verif.id)
         .query(`UPDATE verification_codes SET used_at = GETUTCDATE() WHERE id = @id`);
 
-      // Activate user - email verified but onboarding not complete
       await transaction.request()
         .input('userId', verif.user_id)
         .query(`
@@ -190,10 +130,8 @@ export class AuthService {
         `);
     });
 
-    // Send welcome email
     await this.emailService.sendWelcomeEmail(email, email.split('@')[0]);
 
-    // Get full user details
     const users = await this.sqlService.query(
       'SELECT * FROM users WHERE id = @userId',
       { userId: verif.user_id }
@@ -201,8 +139,12 @@ export class AuthService {
 
     const user = users[0];
 
-    // Generate tokens
-    const tokens = await this.generateTokens(user);
+    const tokens = await this.generateTokens({
+      ...user,
+      userType: user.user_type,
+      onboardingRequired: true,
+    });
+
     await this.createSession(user.id, tokens.refreshToken);
 
     return {
@@ -212,21 +154,16 @@ export class AuthService {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        organizationId: user.organization_id,
         userType: user.user_type,
-        onboardingRequired: true, // Flag for frontend
+        onboardingRequired: true,
       },
       ...tokens,
     };
   }
 
-  /**
-   * STEP 3: Login (allowed after email verification)
-   * User can login even if onboarding is incomplete
-   */
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, deviceInfo?: DeviceInfo) {
     const users = await this.sqlService.query(
-      `SELECT id, email, password_hash, organization_id, first_name, last_name, 
+      `SELECT id, email, password_hash, first_name, last_name, 
               status, email_verified_at, user_type
        FROM users WHERE email = @email`,
       { email: loginDto.email }
@@ -238,9 +175,7 @@ export class AuthService {
 
     const user = users[0];
 
-    // Check if email is verified
     if (!user.email_verified_at) {
-      // Resend verification code
       await this.resendVerificationCode(loginDto.email);
       throw new UnauthorizedException(
         'Email not verified. A new verification code has been sent to your email.'
@@ -260,7 +195,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Update last login
     await this.sqlService.query(
       `UPDATE users 
        SET last_login_at = GETUTCDATE(), login_count = login_count + 1
@@ -268,11 +202,15 @@ export class AuthService {
       { userId: user.id }
     );
 
-    const tokens = await this.generateTokens(user);
-    await this.createSession(user.id, tokens.refreshToken);
+    const tokens = await this.generateTokens({
+      ...user,
+      userType: user.user_type,
+      onboardingRequired: true,
+    });
 
-    // Check if onboarding is complete
-    const onboardingRequired = !user.first_name || user.user_type === 'staff';
+    await this.createSession(user.id, tokens.refreshToken, deviceInfo);
+
+    const onboardingRequired = !user.first_name || user.user_type === 'pending';
 
     return {
       user: {
@@ -280,155 +218,182 @@ export class AuthService {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        organizationId: user.organization_id,
         userType: user.user_type,
-        onboardingRequired, // Frontend uses this to redirect to onboarding
+        onboardingRequired,
       },
       ...tokens,
     };
   }
 
-  /**
-   * STEP 4: Complete onboarding (new method)
-   * Updates user profile and organization based on onboarding responses
-   */
-  async completeOnboarding(userId: bigint, onboardingData: {
-    firstName: string;
-    lastName: string;
-    organizationType: 'agency_admin' | 'creator' | 'brand_admin';
-    organizationName: string;
-    phone?: string;
-    timezone?: string;
-  }) {
-    // Determine limits based on organization type
-    let userType = onboardingData.organizationType;
-    let maxUsers = 10, maxCreators = 100, maxBrands = 50, maxCampaigns = 100;
-
-    if (onboardingData.organizationType === 'creator') {
-      userType = 'creator';
-      maxUsers = 3;
-      maxCreators = 1;
-      maxBrands = 0;
-      maxCampaigns = 50;
-    } else if (onboardingData.organizationType === 'brand_admin') {
-      userType = 'brand_admin';
-      maxUsers = 5;
-      maxCreators = 0;
-      maxBrands = 1;
-      maxCampaigns = 100;
-    }
-
-    await this.sqlService.transaction(async (transaction) => {
-      // Get user's organization
-      const userResult = await transaction.request()
-        .input('userId', userId)
-        .query('SELECT organization_id, email FROM users WHERE id = @userId');
-
-      const organizationId = userResult.recordset[0].organization_id;
-      const email = userResult.recordset[0].email;
-
-      // Update organization
-      await transaction.request()
-        .input('organizationId', organizationId)
-        .input('name', onboardingData.organizationName)
-        .input('slug', this.generateSlug(onboardingData.organizationName))
-        .input('maxUsers', maxUsers)
-        .input('maxCreators', maxCreators)
-        .input('maxBrands', maxBrands)
-        .input('maxCampaigns', maxCampaigns)
+  async loginWithSocial(provider: string, profile: any, deviceInfo?: DeviceInfo) {
+    return this.sqlService.transaction(async (transaction) => {
+      // Check if social account exists
+      let socialAccount = await transaction.request()
+        .input('provider', provider)
+        .input('providerId', profile.providerId)
         .query(`
-          UPDATE organizations 
-          SET name = @name,
-              slug = @slug,
-              max_users = @maxUsers,
-              max_creators = @maxCreators,
-              max_brands = @maxBrands,
-              max_campaigns = @maxCampaigns,
-              updated_at = GETUTCDATE()
-          WHERE id = @organizationId
+          SELECT 
+            sa.id AS social_id,
+            sa.user_id AS linked_user_id,
+            sa.provider,
+            sa.provider_user_id,
+            sa.provider_email,
+            sa.access_token,
+            sa.refresh_token,
+            sa.token_expires_at,
+            sa.created_at AS social_created_at,
+            sa.updated_at AS social_updated_at,
+            u.id AS user_id,
+            u.email,
+            u.username,
+            u.first_name,
+            u.last_name,
+            u.user_type,
+            u.status,
+            u.avatar_url,
+            u.email_verified_at,
+            u.last_login_at,
+            u.login_count,
+            u.last_active_at
+          FROM user_social_accounts sa
+          JOIN users u ON sa.user_id = u.id
+          WHERE sa.provider = @provider AND sa.provider_user_id = @providerId
         `);
 
-      // Update user
-      await transaction.request()
-        .input('userId', userId)
-        .input('firstName', onboardingData.firstName)
-        .input('lastName', onboardingData.lastName)
-        .input('phone', onboardingData.phone || null)
-        .input('timezone', onboardingData.timezone || 'UTC')
-        .input('userType', userType)
-        .query(`
-          UPDATE users 
-          SET first_name = @firstName,
-              last_name = @lastName,
-              phone = @phone,
-              timezone = @timezone,
-              user_type = @userType,
+      let user;
+      if (socialAccount.recordset.length > 0) {
+        const existingRecord = socialAccount.recordset[0];
+
+        // Use consistent fields — no arrays now
+        const userId = existingRecord.user_id;
+        const socialId = existingRecord.social_id;
+        user = existingRecord;
+        await transaction.request()
+          .input('id', socialId)
+          .input('accessToken', profile?.accessToken)
+          .input('refreshToken', profile?.refreshToken || null)
+          .query(`
+          UPDATE user_social_accounts 
+          SET access_token = @accessToken, 
+              refresh_token = @refreshToken,
+              token_expires_at = DATEADD(hour, 1, GETUTCDATE()),
               updated_at = GETUTCDATE()
+          WHERE id = @id
+        `);
+
+        await transaction.request()
+          .input('userId', userId)
+          .query(`
+          UPDATE users 
+          SET last_login_at = GETUTCDATE(), 
+              login_count = login_count + 1,
+              last_active_at = GETUTCDATE()
           WHERE id = @userId
         `);
+        console.log('user', user)
+        const onboardingRequired = !user?.first_name || user?.user_type === 'pending';
+        const tokens = await this.generateTokens({
+          id: user.user_id,
+          email: user.email,
+          user_type: user.user_type || 'pending',
+          onboardingRequired,
+        });
 
-      // Assign role
-      const roleName = userType === 'creator' ? 'creator' :
-        userType === 'brand_admin' ? 'brand_admin' : 'admin';
+        await this.createSession(user.user_id, tokens.refreshToken, deviceInfo);
 
-      await transaction.request()
-        .input('userId', userId)
-        .input('roleName', roleName)
-        .query(`
-          DECLARE @roleId BIGINT
-          SELECT @roleId = id FROM roles WHERE name = @roleName AND is_system_role = 1
-          
-          IF @roleId IS NOT NULL AND NOT EXISTS (
-            SELECT 1 FROM user_roles WHERE user_id = @userId AND role_id = @roleId
-          )
-          BEGIN
-            INSERT INTO user_roles (user_id, role_id, is_active)
-            VALUES (@userId, @roleId, 1)
-          END
-        `);
+        return {
+          user: {
+            id: user.user_id,
+            email: user.email,
+            firstName: user.first_name,
+            lastName: user.last_name,
+            userType: user.user_type || 'pending',
+            onboardingRequired,
+          },
+          ...tokens,
+        };
+      }
+      else {
+        // NEW USER - Check if email exists
+        const existingUser = await transaction.request()
+          .input('email', profile.email)
+          .query('SELECT * FROM users WHERE email = @email');
 
-      // Create creator profile if needed
-      if (userType === 'creator') {
-        await transaction.request()
-          .input('organizationId', organizationId)
-          .input('userId', userId)
-          .input('email', email)
-          .input('firstName', onboardingData.firstName)
-          .input('lastName', onboardingData.lastName)
-          .query(`
-            IF NOT EXISTS (SELECT 1 FROM creators WHERE user_id = @userId)
-            BEGIN
-              INSERT INTO creators (
-                organization_id, user_id, email, first_name, last_name, 
-                status, onboarding_status
+        if (existingUser.recordset.length > 0) {
+          // Link social account to existing user
+          user = existingUser.recordset[0];
+
+          await transaction.request()
+            .input('userId', user.id)
+            .input('avatarUrl', profile.avatar || null)
+            .query(`
+              UPDATE users 
+              SET email_verified_at = COALESCE(email_verified_at, GETUTCDATE()), 
+                  status = 'active',
+                  avatar_url = COALESCE(avatar_url, @avatarUrl),
+                  last_login_at = GETUTCDATE(),
+                  login_count = login_count + 1
+              WHERE id = @userId
+            `);
+        } else {
+          // Create new user
+          const userResult = await transaction.request()
+            .input('email', profile.email)
+            .input('firstName', profile.firstName)
+            .input('lastName', profile.lastName)
+            .input('avatarUrl', profile.avatar || null)
+            .query(`
+              INSERT INTO users (
+                email, first_name, last_name, avatar_url,
+                user_type, status, email_verified_at
+              ) OUTPUT INSERTED.*
+              VALUES (
+                @email, @firstName, @lastName, @avatarUrl,
+                'pending', 'active', GETUTCDATE()
               )
-              VALUES (@organizationId, @userId, @email, @firstName, @lastName,
-                      'active', 'completed')
-            END
+            `);
+
+          user = userResult.recordset[0];
+        }
+        // Create social account
+        await transaction.request()
+          .input('userId', user.id)
+          .input('provider', provider)
+          .input('providerId', profile.providerId)
+          .input('email', profile.email)
+          .input('accessToken', profile.accessToken)
+          .input('refreshToken', profile.refreshToken || null)
+          .query(`
+            INSERT INTO user_social_accounts (
+              user_id, provider, provider_user_id, provider_email,
+              access_token, refresh_token, token_expires_at
+            ) VALUES (
+              @userId, @provider, @providerId, @email,
+              @accessToken, @refreshToken, DATEADD(hour, 1, GETUTCDATE())
+            )
           `);
+
+        const tokens = await this.generateTokens({
+          ...user,
+          userType: 'pending',
+          onboardingRequired: true,
+        });
+        console.log('tokens', tokens)
+        await this.createSession(user.id, tokens.refreshToken, deviceInfo);
+
+        return {
+          user: {
+            id: user.id,
+            email: user.email,
+            firstName: user.first_name,
+            lastName: user.last_name,
+            userType: 'pending',
+            onboardingRequired: true,
+          },
+          ...tokens,
+        };
       }
     });
-
-    // Get updated user details
-    const users = await this.sqlService.query(
-      'SELECT * FROM users WHERE id = @userId',
-      { userId }
-    );
-
-    const user = users[0];
-
-    return {
-      message: 'Onboarding completed successfully',
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        organizationId: user.organization_id,
-        userType: user.user_type,
-        onboardingRequired: false,
-      },
-    };
   }
 
   async resendVerificationCode(email: string) {
@@ -447,13 +412,11 @@ export class AuthService {
       throw new BadRequestException('Email already verified');
     }
 
-    // Delete old codes
     await this.sqlService.query(
       'DELETE FROM verification_codes WHERE email = @email AND code_type = \'email_verify\'',
       { email }
     );
 
-    // Generate new code
     const code = this.hashingService.generateNumericCode(6);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -464,163 +427,256 @@ export class AuthService {
     );
 
     await this.emailService.sendVerificationCode(
-      email, 
-      code, 
+      email,
+      code,
       user.first_name || email.split('@')[0]
     );
 
     return { message: 'Verification code sent successfully' };
   }
 
-  async loginWithSocial(provider: string, profile: any) {
+  async createAgency(dto: CreateAgencyDto, userId: bigint) {
     return this.sqlService.transaction(async (transaction) => {
-      // Check if social account exists
-      let socialAccount = await transaction.request()
-        .input('provider', provider)
-        .input('providerId', profile.providerId)
+      const orgResult = await transaction.request()
+        .input('name', dto.organizationName)
+        .input('owner_user_id', userId)
+        .input('slug', this.generateSlug(dto.organizationName))
+        .input('industry', dto.industry || null)
+        .input('companySize', dto.companySize || null)
+        .input('timezone', dto.timezone || 'UTC')
         .query(`
-          SELECT sa.*, u.* 
-          FROM user_social_accounts sa
-          JOIN users u ON sa.user_id = u.id
-          WHERE sa.provider = @provider AND sa.provider_user_id = @providerId
+          INSERT INTO organizations (
+            name, owner_user_id, slug, industry, company_size, timezone,
+            is_trial, trial_started_at, trial_ends_at,
+            subscription_status, max_users, max_creators, max_brands, max_campaigns
+          ) OUTPUT INSERTED.id
+          VALUES (
+            @name, @owner_user_id, @slug, @industry, @companySize, @timezone,
+            1, GETUTCDATE(), DATEADD(day, 14, GETUTCDATE()),
+            'trial', 10, 100, 50, 100
+          )
         `);
 
-      let user;
+      const organizationId = orgResult.recordset[0].id;
 
-      if (socialAccount.recordset.length > 0) {
-        // Existing user - update tokens
-        user = socialAccount.recordset[0];
+      const roleResult = await transaction.request()
+        .query(`SELECT id FROM roles WHERE name = 'agency_admin' AND is_system_role = 1`);
 
+      if (roleResult.recordset.length > 0) {
         await transaction.request()
-          .input('id', user.id)
-          .input('accessToken', profile.accessToken)
-          .input('refreshToken', profile.refreshToken || null)
-          .query(`
-            UPDATE user_social_accounts 
-            SET access_token = @accessToken, 
-                refresh_token = @refreshToken,
-                token_expires_at = DATEADD(hour, 1, GETUTCDATE())
-            WHERE id = @id
-          `);
-
-        await transaction.request()
-          .input('userId', user.user_id)
-          .query(`
-            UPDATE users 
-            SET last_login_at = GETUTCDATE(), 
-                login_count = login_count + 1
-            WHERE id = @userId
-          `);
-      } else {
-        // Check if user exists with email
-        const existingUser = await transaction.request()
-          .input('email', profile.email)
-          .query('SELECT * FROM users WHERE email = @email');
-
-        if (existingUser.recordset.length > 0) {
-          // Link social account to existing user
-          user = existingUser.recordset[0];
-
-          await transaction.request()
-            .input('userId', user.id)
-            .input('avatarUrl', profile.avatar || null)
-            .query(`
-              UPDATE users 
-              SET email_verified_at = GETUTCDATE(), 
-                  status = 'active',
-                  avatar_url = @avatarUrl
-              WHERE id = @userId AND email_verified_at IS NULL
-            `);
-
-          await transaction.request()
-            .input('userId', user.id)
-            .input('provider', provider)
-            .input('providerId', profile.providerId)
-            .input('email', profile.email)
-            .input('accessToken', profile.accessToken)
-            .input('refreshToken', profile.refreshToken || null)
-            .query(`
-              INSERT INTO user_social_accounts (
-                user_id, provider, provider_user_id, provider_email,
-                access_token, refresh_token, token_expires_at
-              ) VALUES (
-                @userId, @provider, @providerId, @email,
-                @accessToken, @refreshToken, DATEADD(hour, 1, GETUTCDATE())
-              )
-            `);
-        } else {
-          // Create new user (auto-verified via social)
-          const orgResult = await transaction.request()
-            .input('name', `${profile.firstName}'s Organization`)
-            .input('slug', this.generateSlug(profile.firstName))
-            .query(`
-              INSERT INTO organizations (name, slug, subscription_status)
-              OUTPUT INSERTED.id
-              VALUES (@name, @slug, 'trial')
-            `);
-
-          const organizationId = orgResult.recordset[0].id;
-
-          const userResult = await transaction.request()
-            .input('organizationId', organizationId)
-            .input('email', profile.email)
-            .input('firstName', profile.firstName)
-            .input('lastName', profile.lastName)
-            .input('avatarUrl', profile.avatar || null)
-            .input('userType', 'staff')
-            .query(`
-              INSERT INTO users (
-                organization_id, email, first_name, last_name, avatar_url,
-                user_type, status, email_verified_at
-              ) OUTPUT INSERTED.*
-              VALUES (
-                @organizationId, @email, @firstName, @lastName, @avatarUrl,
-                @userType, 'active', GETUTCDATE()
-              )
-            `);
-
-          user = userResult.recordset[0];
-
-          // Create social account
-          await transaction.request()
-            .input('userId', user.id)
-            .input('provider', provider)
-            .input('providerId', profile.providerId)
-            .input('email', profile.email)
-            .input('accessToken', profile.accessToken)
-            .input('refreshToken', profile.refreshToken || null)
-            .query(`
-              INSERT INTO user_social_accounts (
-                user_id, provider, provider_user_id, provider_email,
-                access_token, refresh_token, token_expires_at
-              ) VALUES (
-                @userId, @provider, @providerId, @email,
-                @accessToken, @refreshToken, DATEADD(hour, 1, GETUTCDATE())
-              )
-            `);
-
-          // Send welcome email
-          await this.emailService.sendWelcomeEmail(user.email, user.first_name);
-        }
+          .input('userId', userId)
+          .input('roleId', roleResult.recordset[0].id)
+          .query(`INSERT INTO user_roles (user_id, role_id, is_active) VALUES (@userId, @roleId, 1)`);
       }
 
-      const tokens = await this.generateTokens(user);
-      await this.createSession(user.id || user.user_id, tokens.refreshToken);
+      await transaction.request()
+        .input('userId', userId)
+        .input('firstName', dto.firstName)
+        .input('lastName', dto.lastName)
+        .input('phone', dto.phone || null)
+        .query(`
+          UPDATE users 
+          SET first_name = @firstName,
+              last_name = @lastName,
+              phone = @phone,
+              user_type = 'agency_admin',
+              onboarding_completed_at = GETUTCDATE(),
+              updated_at = GETUTCDATE()
+          WHERE id = @userId
+        `);
 
-      // Check if onboarding required
-      const onboardingRequired = !user.first_name || user.user_type === 'staff';
+      const users = await transaction.request()
+        .input('userId', userId)
+        .query('SELECT * FROM users WHERE id = @userId');
+
+      const user = users.recordset[0];
+
+      const tokens = await this.generateTokens({
+        ...user,
+        userType: 'agency_admin',
+        organizationId,
+        onboardingRequired: false,
+      });
+
+      await this.createSession(userId, tokens.refreshToken);
 
       return {
+        message: 'Agency created successfully',
         user: {
-          id: user.id || user.user_id,
+          id: user.id,
           email: user.email,
           firstName: user.first_name,
           lastName: user.last_name,
-          organizationId: user.organization_id,
-          userType: user.user_type,
-          onboardingRequired,
+          organizationId,
+          userType: 'agency_admin',
+          onboardingRequired: false,
         },
-        ...tokens,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+    });
+  }
+
+  async createBrand(dto: CreateBrandDto, userId: bigint) {
+    return this.sqlService.transaction(async (transaction) => {
+      const brandResult = await transaction.request()
+        .input('userId', userId)
+        .input('name', dto.brandName)
+        .input('slug', this.generateSlug(dto.brandName))
+        .input('website', dto.website || null)
+        .input('industry', dto.industry || null)
+        .input('description', dto.description || null)
+        .query(`
+          INSERT INTO brands (
+            owner_user_id, name, slug, website_url, industry, description,
+            is_direct_brand, subscription_status, is_trial,
+            trial_started_at, trial_ends_at,
+            max_users, max_campaigns, max_invitations, status
+          ) OUTPUT INSERTED.id
+          VALUES (
+            @userId, @name, @slug, @website, @industry, @description,
+            1, 'trial', 1,
+            GETUTCDATE(), DATEADD(day, 14, GETUTCDATE()),
+            5, 50, 20, 'active'
+          )
+        `);
+
+      const brandId = brandResult.recordset[0].id;
+
+      const roleResult = await transaction.request()
+        .query(`SELECT id FROM roles WHERE name = 'brand_admin' AND is_system_role = 1`);
+
+      if (roleResult.recordset.length > 0) {
+        await transaction.request()
+          .input('userId', userId)
+          .input('roleId', roleResult.recordset[0].id)
+          .query(`INSERT INTO user_roles (user_id, role_id, is_active) VALUES (@userId, @roleId, 1)`);
+      }
+
+      await transaction.request()
+        .input('userId', userId)
+        .input('firstName', dto.firstName)
+        .input('lastName', dto.lastName)
+        .input('phone', dto.phone || null)
+        .query(`
+          UPDATE users 
+          SET first_name = @firstName,
+              last_name = @lastName,
+              phone = @phone,
+              user_type = 'brand_admin',
+              onboarding_completed_at = GETUTCDATE(),
+              updated_at = GETUTCDATE()
+          WHERE id = @userId
+        `);
+
+      const users = await transaction.request()
+        .input('userId', userId)
+        .query('SELECT * FROM users WHERE id = @userId');
+
+      const user = users.recordset[0];
+
+      const tokens = await this.generateTokens({
+        ...user,
+        userType: 'brand_admin',
+        brandId,
+        onboardingRequired: false,
+      });
+
+      await this.createSession(userId, tokens.refreshToken);
+
+      return {
+        message: 'Brand created successfully',
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          brandId,
+          userType: 'brand_admin',
+          onboardingRequired: false,
+        },
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+    });
+  }
+
+  async createCreator(dto: CreateCreatorDto, userId: bigint) {
+    return this.sqlService.transaction(async (transaction) => {
+      const creatorResult = await transaction.request()
+        .input('userId', userId)
+        .input('firstName', dto.firstName)
+        .input('lastName', dto.lastName)
+        .input('stageName', dto.stageName || null)
+        .input('phone', dto.phone || null)
+        .input('bio', dto.bio || null)
+        .query(`
+          INSERT INTO creators (
+            user_id, first_name, last_name, stage_name, phone, bio,
+            status, onboarding_status, availability_status
+          ) OUTPUT INSERTED.id
+          VALUES (
+            @userId, @firstName, @lastName, @stageName, @phone, @bio,
+            'active', 'completed', 'available'
+          )
+        `);
+
+      const creatorId = creatorResult.recordset[0].id;
+
+      const roleResult = await transaction.request()
+        .query(`SELECT id FROM roles WHERE name = 'creator' AND is_system_role = 1`);
+
+      if (roleResult.recordset.length > 0) {
+        await transaction.request()
+          .input('userId', userId)
+          .input('roleId', roleResult.recordset[0].id)
+          .query(`INSERT INTO user_roles (user_id, role_id, is_active) VALUES (@userId, @roleId, 1)`);
+      }
+
+      await transaction.request()
+        .input('userId', userId)
+        .input('firstName', dto.firstName)
+        .input('lastName', dto.lastName)
+        .input('phone', dto.phone || null)
+        .query(`
+          UPDATE users 
+          SET first_name = @firstName,
+              last_name = @lastName,
+              phone = @phone,
+              user_type = 'creator',
+              onboarding_completed_at = GETUTCDATE(),
+              updated_at = GETUTCDATE()
+          WHERE id = @userId
+        `);
+
+      const users = await transaction.request()
+        .input('userId', userId)
+        .query('SELECT * FROM users WHERE id = @userId');
+
+      const user = users.recordset[0];
+
+      const tokens = await this.generateTokens({
+        ...user,
+        userType: 'creator',
+        creatorId,
+        onboardingRequired: false,
+      });
+
+      await this.createSession(userId, tokens.refreshToken);
+
+      return {
+        message: 'Creator profile created successfully',
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          creatorId,
+          userType: 'creator',
+          onboardingRequired: false,
+        },
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       };
     });
   }
@@ -652,7 +708,6 @@ export class AuthService {
 
       const tokens = await this.generateTokens(users[0]);
 
-      // Update session
       await this.sqlService.query(
         `UPDATE user_sessions 
          SET refresh_token = @newToken, expires_at = DATEADD(day, 7, GETUTCDATE())
@@ -670,7 +725,9 @@ export class AuthService {
     const payload = {
       sub: user.id,
       email: user.email,
-      organizationId: user.organization_id,
+      userType: user.user_type || user.userType,
+      organizationId: user.organization_id || user.organizationId,
+      onboardingRequired: user.onboardingRequired !== false,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -691,13 +748,32 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  private async createSession(userId: bigint, refreshToken: string) {
+  private async createSession(userId: bigint, refreshToken: string, deviceInfo?: DeviceInfo) {
     const sessionToken = this.hashingService.generateRandomToken();
 
     await this.sqlService.query(
-      `INSERT INTO user_sessions (user_id, session_token, refresh_token, expires_at, is_active)
-       VALUES (@userId, @sessionToken, @refreshToken, DATEADD(day, 7, GETUTCDATE()), 1)`,
-      { userId, sessionToken, refreshToken }
+      `INSERT INTO user_sessions (
+        user_id, session_token, refresh_token, expires_at, is_active,
+        device_fingerprint, device_name, device_type,
+        browser_name, browser_version, os_name, os_version, ip_address
+      ) VALUES (
+        @userId, @sessionToken, @refreshToken, DATEADD(day, 7, GETUTCDATE()), 1,
+        @deviceFingerprint, @deviceName, @deviceType,
+        @browserName, @browserVersion, @osName, @osVersion, @ipAddress
+      )`,
+      {
+        userId,
+        sessionToken,
+        refreshToken,
+        deviceFingerprint: deviceInfo?.deviceFingerprint || null,
+        deviceName: deviceInfo?.deviceName || null,
+        deviceType: deviceInfo?.deviceType || null,
+        browserName: deviceInfo?.browserName || null,
+        browserVersion: deviceInfo?.browserVersion || null,
+        osName: deviceInfo?.osName || null,
+        osVersion: deviceInfo?.osVersion || null,
+        ipAddress: deviceInfo?.ipAddress || null,
+      }
     );
   }
 

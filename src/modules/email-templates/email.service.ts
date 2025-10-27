@@ -38,8 +38,8 @@ export class EmailService {
   ): Promise<void> {
     try {
       // Get template from database
-      const result = await this.sqlService.query(
-        'EXEC sp_GetEmailTemplate @organizationId, @category',
+      const result = await this.sqlService.execute(
+        'sp_GetEmailTemplate',
         {
           organizationId: organizationId || null,
           category
@@ -69,8 +69,8 @@ export class EmailService {
       });
 
       // Increment usage count
-      await this.sqlService.query(
-        'EXEC sp_IncrementTemplateUsage @templateId',
+      await this.sqlService.execute(
+        'sp_IncrementTemplateUsage',
         { templateId: template.id }
       );
 
@@ -80,6 +80,7 @@ export class EmailService {
       throw new Error(`Failed to send ${category} email`);
     }
   }
+
 
   /**
    * Replace variables in template string

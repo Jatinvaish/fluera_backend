@@ -1,182 +1,150 @@
-
-// ============================================
-// modules/rbac/rbac.service.ts
-// ============================================
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
-import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto, CreateRoleLimitDto, UpdateRoleLimitDto } from './dto/rbac.dto';
 
 @Injectable()
 export class RbacService {
   constructor(private sqlService: SqlServerService) { }
 
-  // ==================== ROLES ====================
+  // ============================================
+  // ROLES
+  // ============================================
+  async listRoles(filters: any, userType: string, organizationId: bigint) {
+    try {
+      const result = await this.sqlService.execute('sp_ListRoles', {
+        userType,
+        organizationId,
+        scope: filters.scope || 'all',
+        page: filters.page || 1,
+        limit: filters.limit || 10
+      });
 
-  async getAllRoles() {
-    return this.sqlService.query(`
-      SELECT * FROM roles 
-      ORDER BY hierarchy_level DESC, name
-    `);
+      // Result is array of recordsets: [data[], meta[]]
+      if (!result || !Array.isArray(result) || result.length === 0) {
+        return {
+          data: [],
+          meta: {
+            currentPage: filters.page || 1,
+            itemsPerPage: filters.limit || 10,
+            totalItems: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPreviousPage: false
+          }
+        };
+      }
+
+      const data = result[0] || [];
+      const meta = result[1]?.[0] || {
+        currentPage: filters.page || 1,
+        itemsPerPage: filters.limit || 10,
+        totalItems: 0,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false
+      };
+
+      return {
+        data:
+          { rolesList: data, meta: meta },
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 
-  async getRoleById(id: bigint) {
-    const result = await this.sqlService.query(
-      'SELECT * FROM roles WHERE id = @id',
-      { id }
+  async getRoleById(roleId: bigint, userType: string, organizationId: bigint) {
+    const result: any = await this.sqlService.query(
+      `SELECT * FROM roles WHERE id = @roleId`,
+      { roleId }
     );
-    if (result.length === 0) {
-      throw new NotFoundException('Role not found');
+    if (result.length === 0) throw new NotFoundException('Role not found');
+
+    if (userType !== 'owner' && userType !== 'superadmin') {
+      if (result[0].organization_id && result[0].organization_id !== organizationId) {
+        throw new ForbiddenException('Access denied');
+      }
     }
     return result[0];
   }
 
-  async createRole(dto: CreateRoleDto, userId?: bigint, organizationId?: bigint) {
-    const result = await this.sqlService.query(
-      `INSERT INTO roles (organization_id, name, display_name, description, color, 
-                          is_default, hierarchy_level, created_by)
+  async createRole(dto: any, userId: bigint, organizationId: bigint, userType: string) {
+    const result: any = await this.sqlService.query(
+      `INSERT INTO roles (organization_id, name, display_name, description, color, hierarchy_level, created_by)
        OUTPUT INSERTED.*
-       VALUES (@organizationId, @name, @displayName, @description, @color, 
-               @isDefault, @hierarchyLevel, @userId)`,
+       VALUES (@organizationId, @name, @displayName, @description, @color, @hierarchyLevel, @userId)`,
       {
-        organizationId: organizationId || null,
+        organizationId: dto.organizationId ? BigInt(dto.organizationId) : null,
         name: dto.name,
         displayName: dto.displayName || dto.name,
         description: dto.description || null,
         color: dto.color || null,
-        isDefault: dto.isDefault || false,
         hierarchyLevel: dto.hierarchyLevel || 0,
-        userId: userId || null,
+        userId
       }
     );
     return result[0];
   }
 
-  async updateRole(id: bigint, dto: UpdateRoleDto, userId: bigint) {
-    const result = await this.sqlService.query(
-      `UPDATE roles 
-       SET display_name = COALESCE(@displayName, display_name),
-           description = COALESCE(@description, description),
-           color = COALESCE(@color, color),
-           is_default = COALESCE(@isDefault, is_default),
-           hierarchy_level = COALESCE(@hierarchyLevel, hierarchy_level),
-           updated_by = @userId,
-           updated_at = GETUTCDATE()
+  async updateRole(roleId: bigint, dto: any, userId: bigint, userType: string, organizationId: bigint) {
+    await this.getRoleById(roleId, userType, organizationId);
+
+    const result: any = await this.sqlService.query(
+      `UPDATE roles SET
+         display_name = COALESCE(@displayName, display_name),
+         description = COALESCE(@description, description),
+         color = COALESCE(@color, color),
+         hierarchy_level = COALESCE(@hierarchyLevel, hierarchy_level),
+         updated_by = @userId,
+         updated_at = GETUTCDATE()
        OUTPUT INSERTED.*
-       WHERE id = @id`,
-      {
-        id,
-        displayName: dto.displayName,
-        description: dto.description,
-        color: dto.color,
-        isDefault: dto.isDefault,
-        hierarchyLevel: dto.hierarchyLevel,
-        userId,
-      }
+       WHERE id = @roleId`,
+      { roleId, displayName: dto.displayName, description: dto.description, color: dto.color, hierarchyLevel: dto.hierarchyLevel, userId }
     );
-    if (result.length === 0) {
-      throw new NotFoundException('Role not found');
-    }
+    if (result.length === 0) throw new NotFoundException('Role not found');
     return result[0];
   }
 
-  async deleteRole(id: bigint) {
-    const result = await this.sqlService.query(
-      'DELETE FROM roles OUTPUT DELETED.* WHERE id = @id AND is_system_role = 0',
-      { id }
+  async deleteRole(roleId: bigint, userId: bigint, userType: string, organizationId: bigint) {
+    await this.getRoleById(roleId, userType, organizationId);
+
+    const result: any = await this.sqlService.query(
+      `DELETE FROM roles OUTPUT DELETED.* WHERE id = @roleId AND is_system_role = 0`,
+      { roleId }
     );
-    if (result.length === 0) {
-      throw new NotFoundException('Role not found or is a system role');
-    }
+    if (result.length === 0) throw new NotFoundException('Role not found or is system role');
     return { message: 'Role deleted successfully' };
   }
 
-  // ==================== PERMISSIONS ====================
+  // ============================================
+  // ROLE PERMISSIONS
+  // ============================================
+  async assignPermissionsToRole(roleId: bigint, permissionIds: number[], userId: bigint, userType: string, organizationId: bigint) {
+    await this.getRoleById(roleId, userType, organizationId);
 
-  async getAllPermissions() {
-    return this.sqlService.query(`
-      SELECT * FROM permissions 
-      ORDER BY category, resource, action
-    `);
-  }
-
-  async getPermissionById(id: bigint) {
-    const result = await this.sqlService.query(
-      'SELECT * FROM permissions WHERE id = @id',
-      { id }
-    );
-    if (result.length === 0) {
-      throw new NotFoundException('Permission not found');
-    }
-    return result[0];
-  }
-
-  async createPermission(dto: CreatePermissionDto, userId?: bigint) {
-    const result = await this.sqlService.query(
-      `INSERT INTO permissions (name, resource, action, description, category, created_by)
-       OUTPUT INSERTED.*
-       VALUES (@name, @resource, @action, @description, @category, @userId)`,
-      {
-        name: dto.name,
-        resource: dto.resource,
-        action: dto.action,
-        description: dto.description || null,
-        category: dto.category || null,
-        userId: userId || null,
-      }
-    );
-    return result[0];
-  }
-
-  async deletePermission(id: bigint) {
-    const result = await this.sqlService.query(
-      'DELETE FROM permissions OUTPUT DELETED.* WHERE id = @id AND is_system_permission = 0',
-      { id }
-    );
-    if (result.length === 0) {
-      throw new NotFoundException('Permission not found or is a system permission');
-    }
-    return { message: 'Permission deleted successfully' };
-  }
-
-  // ==================== ROLE PERMISSIONS ====================
-
-  async assignPermissionsToRole(roleId: bigint, permissionIds: number[], userId: bigint) {
-    const insertedPermissions = [];
-
+    let assigned = 0;
     for (const permissionId of permissionIds) {
       try {
-        const result = await this.sqlService.query(
-          `INSERT INTO role_permissions (role_id, permission_id, created_by)
-           OUTPUT INSERTED.*
-           VALUES (@roleId, @permissionId, @userId)`,
+        await this.sqlService.query(
+          `INSERT INTO role_permissions (role_id, permission_id, created_by) VALUES (@roleId, @permissionId, @userId)`,
           { roleId, permissionId: BigInt(permissionId), userId }
         );
-        //@ts-ignore
-        insertedPermissions.push(result[0]);
-      } catch (error) {
-        // Skip if already exists
-        console.log(`Permission ${permissionId} already assigned to role ${roleId}`);
-      }
+        assigned++;
+      } catch (error) { }
     }
 
-    // Update role permission count
     await this.sqlService.query(
-      `UPDATE roles 
-       SET permissions_count = (SELECT COUNT(*) FROM role_permissions WHERE role_id = @roleId)
-       WHERE id = @roleId`,
+      `UPDATE roles SET permissions_count = (SELECT COUNT(*) FROM role_permissions WHERE role_id = @roleId) WHERE id = @roleId`,
       { roleId }
     );
 
-    return {
-      message: 'Permissions assigned successfully',
-      assigned: insertedPermissions.length,
-      total: permissionIds.length,
-    };
+    return { message: 'Permissions assigned', assigned, total: permissionIds.length };
   }
 
-  async getRolePermissions(roleId: bigint) {
+  async getRolePermissions(roleId: bigint, userType: string, organizationId: bigint) {
+    await this.getRoleById(roleId, userType, organizationId);
+
     return this.sqlService.query(
-      `SELECT p.*, rp.created_at as assigned_at
+      `SELECT p.*, rp.created_at as assignedat
        FROM role_permissions rp
        JOIN permissions p ON rp.permission_id = p.id
        WHERE rp.role_id = @roleId
@@ -185,49 +153,68 @@ export class RbacService {
     );
   }
 
-  async removePermissionFromRole(roleId: bigint, permissionId: bigint) {
-    const result = await this.sqlService.query(
-      'DELETE FROM role_permissions WHERE role_id = @roleId AND permission_id = @permissionId',
+  async removePermissionFromRole(roleId: bigint, permissionId: bigint, userType: string, organizationId: bigint) {
+    await this.getRoleById(roleId, userType, organizationId);
+
+    await this.sqlService.query(
+      `DELETE FROM role_permissions WHERE role_id = @roleId AND permission_id = @permissionId`,
       { roleId, permissionId }
     );
 
-    // Update role permission count
     await this.sqlService.query(
-      `UPDATE roles 
-       SET permissions_count = (SELECT COUNT(*) FROM role_permissions WHERE role_id = @roleId)
-       WHERE id = @roleId`,
+      `UPDATE roles SET permissions_count = (SELECT COUNT(*) FROM role_permissions WHERE role_id = @roleId) WHERE id = @roleId`,
       { roleId }
     );
 
     return { message: 'Permission removed from role' };
   }
 
-  // ==================== USER ROLES ====================
+  // ============================================
+  // USER ROLES
+  // ============================================
+  async assignRoleToUser(userId: bigint, roleId: bigint, assignedBy: bigint, assignerType: string, assignerOrgId: bigint) {
+    const targetUser: any = await this.sqlService.query(
+      `SELECT organization_id, user_type FROM users WHERE id = @userId`,
+      { userId }
+    );
+    if (targetUser.length === 0) throw new NotFoundException('User not found');
 
-  async assignRoleToUser(userId: bigint, roleId: bigint, assignedBy: bigint) {
+    await this.getRoleById(roleId, assignerType, assignerOrgId);
+
+    if (assignerType !== 'owner' && assignerType !== 'superadmin') {
+      if (targetUser[0].organization_id !== assignerOrgId) {
+        throw new ForbiddenException('Cannot assign roles outside your organization');
+      }
+    }
+
     try {
-      const result = await this.sqlService.query(
-        `INSERT INTO user_roles (user_id, role_id, is_active, created_by)
-         OUTPUT INSERTED.*
-         VALUES (@userId, @roleId, 1, @assignedBy)`,
+      const result: any = await this.sqlService.query(
+        `INSERT INTO user_roles (user_id, role_id, is_active, created_by) OUTPUT INSERTED.* VALUES (@userId, @roleId, 1, @assignedBy)`,
         { userId, roleId, assignedBy }
       );
 
-      // Update role user count
       await this.sqlService.query(
-        `UPDATE roles 
-         SET users_count = (SELECT COUNT(*) FROM user_roles WHERE role_id = @roleId AND is_active = 1)
-         WHERE id = @roleId`,
+        `UPDATE roles SET users_count = (SELECT COUNT(*) FROM user_roles WHERE role_id = @roleId AND is_active = 1) WHERE id = @roleId`,
         { roleId }
       );
 
       return result[0];
     } catch (error) {
-      throw new ConflictException('User already has this role');
+      throw new Error('User already has this role');
     }
   }
 
-  async getUserRoles(userId: bigint) {
+  async getUserRoles(userId: bigint, requestorType: string, requestorOrgId: bigint) {
+    if (requestorType !== 'owner' && requestorType !== 'superadmin') {
+      const targetUser: any = await this.sqlService.query(
+        `SELECT organization_id FROM users WHERE id = @userId`,
+        { userId }
+      );
+      if (targetUser.length === 0 || targetUser[0].organization_id !== requestorOrgId) {
+        throw new ForbiddenException('Access denied');
+      }
+    }
+
     return this.sqlService.query(
       `SELECT r.*, ur.assigned_at, ur.is_active
        FROM user_roles ur
@@ -238,239 +225,78 @@ export class RbacService {
     );
   }
 
-  async removeRoleFromUser(userId: bigint, roleId: bigint) {
+  async removeRoleFromUser(userId: bigint, roleId: bigint, requestorType: string, requestorOrgId: bigint) {
+    if (requestorType !== 'owner' && requestorType !== 'superadmin') {
+      const targetUser: any = await this.sqlService.query(
+        `SELECT organization_id FROM users WHERE id = @userId`,
+        { userId }
+      );
+      if (targetUser.length === 0 || targetUser[0].organization_id !== requestorOrgId) {
+        throw new ForbiddenException('Access denied');
+      }
+    }
+
     await this.sqlService.query(
-      'DELETE FROM user_roles WHERE user_id = @userId AND role_id = @roleId',
+      `DELETE FROM user_roles WHERE user_id = @userId AND role_id = @roleId`,
       { userId, roleId }
     );
 
-    // Update role user count
     await this.sqlService.query(
-      `UPDATE roles 
-       SET users_count = (SELECT COUNT(*) FROM user_roles WHERE role_id = @roleId AND is_active = 1)
-       WHERE id = @roleId`,
+      `UPDATE roles SET users_count = (SELECT COUNT(*) FROM user_roles WHERE role_id = @roleId AND is_active = 1) WHERE id = @roleId`,
       { roleId }
     );
 
     return { message: 'Role removed from user' };
   }
 
-  // ==================== SEED SYSTEM DATA ====================
-
+  // ============================================
+  // SYSTEM SEED
+  // ============================================
   async seedSystemRolesAndPermissions() {
-    // Define system permissions
     const permissions = [
-      // ABAC
-      { name: 'abac:manage', resource: 'abac', action: 'manage', category: 'ABAC', description: 'Manage ABAC attributes and policies' },
-      { name: 'abac:read', resource: 'abac', action: 'read', category: 'ABAC', description: 'Read ABAC attributes and policies' },
-      { name: 'abac:evaluate', resource: 'abac', action: 'evaluate', category: 'ABAC', description: 'Evaluate ABAC policies' },
-
-      // System Config
-      { name: 'system_config:read', resource: 'system_config', action: 'read', category: 'System', description: 'Read system configuration' },
-      { name: 'system_config:create', resource: 'system_config', action: 'create', category: 'System', description: 'Create system configuration' },
-      { name: 'system_config:update', resource: 'system_config', action: 'update', category: 'System', description: 'Update system configuration' },
-      { name: 'system_config:delete', resource: 'system_config', action: 'delete', category: 'System', description: 'Delete system configuration' },
-
-      // Audit Logs
-      { name: 'audit_logs:read', resource: 'audit_logs', action: 'read', category: 'Audit', description: 'Read audit logs' },
-      { name: 'audit_logs:create', resource: 'audit_logs', action: 'create', category: 'Audit', description: 'Create audit logs' },
-
-      // System Events
-      { name: 'system_events:read', resource: 'system_events', action: 'read', category: 'System', description: 'Read system events' },
-      { name: 'system_events:create', resource: 'system_events', action: 'create', category: 'System', description: 'Create system events' },
-
-      // RBAC
-      { name: 'rbac:manage', resource: 'rbac', action: 'manage', category: 'RBAC', description: 'Manage roles and permissions' },
-      { name: 'rbac:read', resource: 'rbac', action: 'read', category: 'RBAC', description: 'Read roles and permissions' },
-
-      // Users
-      { name: 'users:read', resource: 'users', action: 'read', category: 'Users', description: 'Read users' },
-      { name: 'users:create', resource: 'users', action: 'create', category: 'Users', description: 'Create users' },
-      { name: 'users:update', resource: 'users', action: 'update', category: 'Users', description: 'Update users' },
-      { name: 'users:delete', resource: 'users', action: 'delete', category: 'Users', description: 'Delete users' },
+      { name: 'superadmin:manage', resource: 'superadmin', action: 'manage', category: 'System', description: 'Full system access' },
+      { name: 'agency:manage', resource: 'agency', action: 'manage', category: 'Agency', description: 'Manage agency' },
+      { name: 'brand:manage', resource: 'brand', action: 'manage', category: 'Brand', description: 'Manage brand' },
+      { name: 'creator:manage', resource: 'creator', action: 'manage', category: 'Creator', description: 'Manage creator' },
+      { name: 'rbac:manage', resource: 'rbac', action: 'manage', category: 'RBAC', description: 'Manage RBAC' },
+      { name: 'rbac:read', resource: 'rbac', action: 'read', category: 'RBAC', description: 'Read RBAC' },
     ];
 
-    const createdPermissions = [];
+    const createdPermissions: any[] = [];
     for (const perm of permissions) {
       try {
         const result: any = await this.sqlService.query(
           `INSERT INTO permissions (name, resource, action, description, category, is_system_permission)
-           OUTPUT INSERTED.*
-           VALUES (@name, @resource, @action, @description, @category, 1)`,
+           OUTPUT INSERTED.* VALUES (@name, @resource, @action, @description, @category, 1)`,
           perm
         );
-        //@ts-ignore
         createdPermissions.push(result[0]);
-      } catch (error) {
-        console.log(`Permission ${perm.name} already exists`);
-      }
+      } catch (error) { }
     }
 
-    // Define system roles
     const roles = [
       { name: 'super_admin', displayName: 'Super Admin', hierarchyLevel: 100, color: '#DC2626' },
-      { name: 'admin', displayName: 'Admin', hierarchyLevel: 90, color: '#EA580C' },
       { name: 'agency_admin', displayName: 'Agency Admin', hierarchyLevel: 80, color: '#7C3AED' },
       { name: 'brand_admin', displayName: 'Brand Admin', hierarchyLevel: 70, color: '#2563EB' },
-      { name: 'creator', displayName: 'Creator', hierarchyLevel: 60, color: '#16A34A' },
-      { name: 'manager', displayName: 'Manager', hierarchyLevel: 50, color: '#0891B2' },
-      { name: 'staff', displayName: 'Staff', hierarchyLevel: 40, color: '#6B7280' },
+      { name: 'creator_admin', displayName: 'Creator Admin', hierarchyLevel: 60, color: '#16A34A' },
     ];
 
-    const createdRoles = [];
+    const createdRoles: any[] = [];
     for (const role of roles) {
       try {
         const result: any = await this.sqlService.query(
           `INSERT INTO roles (name, display_name, hierarchy_level, color, is_system_role)
-           OUTPUT INSERTED.*
-           VALUES (@name, @displayName, @hierarchyLevel, @color, 1)`,
+           OUTPUT INSERTED.* VALUES (@name, @displayName, @hierarchyLevel, @color, 1)`,
           role
         );
-        //@ts-ignore
         createdRoles.push(result[0]);
-      } catch (error) {
-        console.log(`Role ${role.name} already exists`);
-      }
-    }
-
-    // Assign all permissions to super_admin
-    const superAdminRole = await this.sqlService.query(
-      `SELECT id FROM roles WHERE name = 'super_admin'`
-    );
-
-    if (superAdminRole.length > 0) {
-      const allPermissions = await this.getAllPermissions();
-      for (const perm of allPermissions) {
-        try {
-          await this.sqlService.query(
-            `INSERT INTO role_permissions (role_id, permission_id)
-             VALUES (@roleId, @permissionId)`,
-            { roleId: superAdminRole[0].id, permissionId: perm.id }
-          );
-        } catch (error) {
-          // Skip if already exists
-        }
-      }
-    }
-
-    // Assign common permissions to admin
-    const adminRole = await this.sqlService.query(
-      `SELECT id FROM roles WHERE name = 'admin'`
-    );
-
-    if (adminRole.length > 0) {
-      const adminPermissions = ['abac:manage', 'abac:read', 'system_config:read',
-        'audit_logs:read', 'rbac:manage', 'users:read',
-        'users:create', 'users:update'];
-
-      for (const permName of adminPermissions) {
-        const perm = await this.sqlService.query(
-          `SELECT id FROM permissions WHERE name = @name`,
-          { name: permName }
-        );
-        if (perm.length > 0) {
-          try {
-            await this.sqlService.query(
-              `INSERT INTO role_permissions (role_id, permission_id)
-               VALUES (@roleId, @permissionId)`,
-              { roleId: adminRole[0].id, permissionId: perm[0].id }
-            );
-          } catch (error) {
-            // Skip if already exists
-          }
-        }
-      }
+      } catch (error) { }
     }
 
     return {
-      message: 'System roles and permissions seeded successfully',
+      message: 'System roles and permissions seeded',
       permissions: createdPermissions.length,
-      roles: createdRoles.length,
+      roles: createdRoles.length
     };
-  }
-
-  async createRoleLimit(dto: CreateRoleLimitDto, userId: bigint) {
-    const result = await this.sqlService.query(
-      `INSERT INTO role_limits (role_id, limit_type, limit_value, reset_period, current_usage, created_by)
-     OUTPUT INSERTED.*
-     VALUES (@roleId, @limitType, @limitValue, @resetPeriod, 0, @userId)`,
-      {
-        roleId: BigInt(dto.roleId),
-        limitType: dto.limitType,
-        limitValue: dto.limitValue,
-        resetPeriod: dto.resetPeriod || 'never',
-        userId,
-      }
-    );
-    return result[0];
-  }
-
-  async getRoleLimits(roleId: bigint) {
-    return this.sqlService.query(
-      `SELECT * FROM role_limits WHERE role_id = @roleId ORDER BY limit_type`,
-      { roleId }
-    );
-  }
-
-  async updateRoleLimit(roleId: bigint, limitType: string, dto: UpdateRoleLimitDto, userId: bigint) {
-    const result = await this.sqlService.query(
-      `UPDATE role_limits
-     SET limit_value = COALESCE(@limitValue, limit_value),
-         reset_period = COALESCE(@resetPeriod, reset_period),
-         updated_by = @userId,
-         updated_at = GETUTCDATE()
-     OUTPUT INSERTED.*
-     WHERE role_id = @roleId AND limit_type = @limitType`,
-      {
-        roleId,
-        limitType,
-        limitValue: dto.limitValue,
-        resetPeriod: dto.resetPeriod,
-        userId,
-      }
-    );
-    return result[0];
-  }
-
-  async checkRoleLimit(roleId: bigint, limitType: string): Promise<{ allowed: boolean; remaining: number }> {
-    const limits = await this.sqlService.query(
-      `SELECT limit_value, current_usage FROM role_limits 
-     WHERE role_id = @roleId AND limit_type = @limitType`,
-      { roleId, limitType }
-    );
-
-    if (limits.length === 0) {
-      return { allowed: true, remaining: Infinity };
-    }
-
-    const limit = limits[0];
-    const remaining = limit.limit_value - limit.current_usage;
-
-    return {
-      allowed: limit.current_usage < limit.limit_value,
-      remaining: Math.max(0, remaining),
-    };
-  }
-
-  async incrementRoleUsage(roleId: bigint, limitType: string) {
-    await this.sqlService.query(
-      `UPDATE role_limits 
-     SET current_usage = current_usage + 1 
-     WHERE role_id = @roleId AND limit_type = @limitType`,
-      { roleId, limitType }
-    );
-  }
-
-  async resetRoleLimits() {
-    // Called by cron job
-    await this.sqlService.query(
-      `UPDATE role_limits 
-     SET current_usage = 0, last_reset_at = GETUTCDATE()
-     WHERE (
-       (reset_period = 'daily' AND last_reset_at < DATEADD(day, -1, GETUTCDATE())) OR
-       (reset_period = 'monthly' AND last_reset_at < DATEADD(month, -1, GETUTCDATE())) OR
-       (reset_period = 'yearly' AND last_reset_at < DATEADD(year, -1, GETUTCDATE()))
-     )`
-    );
   }
 }

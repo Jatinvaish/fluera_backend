@@ -1,17 +1,19 @@
 // ============================================
-// modules/auth/strategies/jwt.strategy.ts
+// modules/auth/strategies/jwt.strategy.ts - ENHANCED
 // ============================================
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { SqlServerService } from '../../../core/database/sql-server.service';
+import { AuthService } from '../auth.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private readonly configService: ConfigService,
     private readonly sqlService: SqlServerService,
+    private readonly authService: AuthService,
   ) {
     const secret = configService.get<string>('jwt.secret');
     if (!secret) {
@@ -28,34 +30,41 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    const result = await this.sqlService.execute('sp_GetUserAuthData', { 
-      userId: payload.sub 
+    console.log("🚀 ~ JwtStrategy ~ validate ~ payload:", payload);
+
+    const result = await this.sqlService.execute('sp_GetUserAuthData', {
+      userId: payload.sub
     });
 
-    const user = result.recordsets[0];
-    const roles = result.recordsets[1];
-    const perms = result.recordsets[2];
 
-    console.log("🚀 ~ JwtStrategy ~ validate ~ user:", user);
+    let user, roles, perms;
+
+    if (Array.isArray(result) && Array.isArray(result[0])) {
+      user = result[0];
+      roles = result[1] || [];
+      perms = result[2] || [];
+    } else {
+      user = result;
+      roles = [];
+      perms = [];
+    }
 
     if (!user || user.length === 0) {
       throw new UnauthorizedException('User not found or inactive');
     }
 
     const userData = user[0];
-    console.log("🚀 ~ JwtStrategy ~ validate ~ userData:", userData);
-    console.log("🚀 ~ JwtStrategy ~ validateroles:", roles);
-    console.log("🚀 ~ JwtStrategy ~ perms:", perms);
 
     return {
       id: userData.id,
       email: userData.email,
-      organizationId: userData.organization_id,
       userType: userData.user_type,
       firstName: userData.first_name,
       lastName: userData.last_name,
+      organizationId: payload.organizationId,
       roles: roles[0]?.roles ? roles[0].roles.split(',') : [],
       permissions: perms[0]?.permissions ? perms[0].permissions.split(',') : [],
+      onboardingRequired: payload.onboardingRequired || false,
     };
   }
 }

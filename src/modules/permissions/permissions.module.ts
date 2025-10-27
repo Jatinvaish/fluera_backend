@@ -1,12 +1,12 @@
 // modules/permissions/permissions.module.ts
 import { Module, Global } from '@nestjs/common';
-import { ResourcePermissionService } from './resource-permission.service';
 import { PermissionsController } from './permissions.controller';
+import { PermissionsService } from './resource-permission.service';
 
 @Global()
 @Module({
   controllers: [PermissionsController],
-  providers: [ResourcePermissionService],
-  exports: [ResourcePermissionService],
+  providers: [PermissionsService],
+  exports: [PermissionsService],
 })
 export class PermissionsModule {}
