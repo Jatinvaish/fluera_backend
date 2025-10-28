@@ -46,7 +46,7 @@ export class ChatController {
     @CurrentUser('organizationId') organizationId: bigint,
     @Body() dto: GetChannelsDto,
   ) {
-    return this.chatService.getUserChannels(userId, organizationId, dto);
+    return this.chatService.getUserChannels(userId, organizationId ?? 30008, dto);
   }
 
   @Post('channels/get-by-id')
@@ -63,7 +63,10 @@ export class ChatController {
     @CurrentUser('id') userId: bigint,
     @CurrentUser('organizationId') organizationId: bigint,
   ) {
-    return this.chatService.createChannel(dto, userId, organizationId);
+    console.log('CreateChannelDto:', dto);
+    console.log(userId,organizationId);
+    
+    return this.chatService.createChannel(dto, userId, organizationId ?? 30008);
   }
 
   @Post('channels/update')
@@ -167,7 +170,7 @@ export class ChatController {
     @CurrentUser('id') userId: bigint,
     @CurrentUser('organizationId') organizationId: bigint,
   ) {
-    return this.chatService.sendMessage(dto, userId, organizationId);
+    return this.chatService.sendMessage(dto, userId, organizationId ?? 30008);
   }
 
   @Post('messages/edit')
@@ -199,7 +202,7 @@ export class ChatController {
       BigInt(dto.messageId),
       dto.emoji,
       userId,
-      organizationId,
+      organizationId ?? 30008,
     );
   }
 
@@ -252,7 +255,7 @@ export class ChatController {
     @CurrentUser('id') userId: bigint,
     @CurrentUser('organizationId') organizationId: bigint,
   ) {
-    return this.chatService.searchMessages(userId, organizationId, dto);
+    return this.chatService.searchMessages(userId, organizationId ?? 30008, dto);
   }
 
   // ==================== DIRECT MESSAGES ====================
@@ -263,7 +266,7 @@ export class ChatController {
     @CurrentUser('id') userId: bigint,
     @CurrentUser('organizationId') organizationId: bigint,
   ) {
-    return this.chatService.createDirectMessage(dto, userId, organizationId);
+    return this.chatService.createDirectMessage(dto, userId, organizationId ?? 30008);
   }
 
   // ==================== READ RECEIPTS ====================
@@ -281,7 +284,7 @@ export class ChatController {
     @CurrentUser('id') userId: bigint,
     @CurrentUser('organizationId') organizationId: bigint,
   ) {
-    return this.chatService.getUnreadCount(userId, organizationId);
+    return this.chatService.getUnreadCount(userId, organizationId ?? 30008);
   }
 
   // ==================== FILES ====================

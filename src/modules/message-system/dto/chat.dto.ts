@@ -23,7 +23,8 @@ export enum ChannelType {
   GROUP = 'group',
   CAMPAIGN = 'campaign',
   PROJECT = 'project',
-  PUBLIC = 'public'
+  PUBLIC = 'public',
+  PRIVATE = 'private'
 }
 
 export class CreateChannelDto {
