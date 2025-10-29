@@ -6419,3 +6419,568 @@ PRINT 'All 10 stored procedures created successfully with correct table names!'
 GO
 
 
+
+
+
+-- =====================================================
+-- STORED PROCEDURE: List Permissions
+-- =====================================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_ListPermissions]
+    @category NVARCHAR(100) = NULL,
+    @scope NVARCHAR(20) = 'all',
+    @page INT = 1,
+    @limit INT = 50
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @offset INT = (@page - 1) * @limit;
+    
+    -- Get permissions
+    SELECT 
+        p.id,
+        p.name,
+        p.resource,
+        p.action,
+        p.description,
+        p.category,
+        p.is_system_permission,
+        p.created_at,
+        p.created_by
+    FROM permissions p
+    WHERE (@category IS NULL OR p.category = @category)
+      AND (@scope = 'all' OR 
+           (@scope = 'system' AND p.is_system_permission = 1) OR
+           (@scope = 'custom' AND p.is_system_permission = 0))
+    ORDER BY p.category, p.resource, p.action
+    OFFSET @offset ROWS
+    FETCH NEXT @limit ROWS ONLY;
+    
+    -- Get metadata
+    SELECT 
+        @page as currentPage,
+        @limit as itemsPerPage,
+        COUNT(*) as totalItems,
+        CEILING(CAST(COUNT(*) AS FLOAT) / @limit) as totalPages,
+        CASE WHEN @page < CEILING(CAST(COUNT(*) AS FLOAT) / @limit) THEN 1 ELSE 0 END as hasNextPage,
+        CASE WHEN @page > 1 THEN 1 ELSE 0 END as hasPreviousPage
+    FROM permissions p
+    WHERE (@category IS NULL OR p.category = @category)
+      AND (@scope = 'all' OR 
+           (@scope = 'system' AND p.is_system_permission = 1) OR
+           (@scope = 'custom' AND p.is_system_permission = 0));
+END;
+GO
+
+-- =====================================================
+-- STORED PROCEDURE: List Menu Permissions
+-- =====================================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_ListMenuPermissions]
+    @page INT = 1,
+    @limit INT = 50,
+    @search NVARCHAR(255) = NULL,
+    @menuKey NVARCHAR(100) = NULL,
+    @category NVARCHAR(100) = NULL,
+    @sortBy NVARCHAR(50) = 'created_at',
+    @sortOrder NVARCHAR(4) = 'DESC'
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @offset INT = (@page - 1) * @limit;
+    
+    -- Get menu permissions
+    SELECT 
+        mp.id,
+        mp.menu_key,
+        mp.permission_id,
+        mp.is_required,
+        mp.created_at,
+        p.name as permission_name,
+        p.resource,
+        p.action,
+        p.category,
+        p.description
+    FROM menu_permissions mp
+    INNER JOIN permissions p ON mp.permission_id = p.id
+    WHERE (@menuKey IS NULL OR mp.menu_key = @menuKey)
+      AND (@category IS NULL OR p.category = @category)
+      AND (@search IS NULL OR 
+           mp.menu_key LIKE '%' + @search + '%' OR
+           p.name LIKE '%' + @search + '%')
+    ORDER BY 
+        CASE WHEN @sortBy = 'menu_key' AND @sortOrder = 'ASC' THEN mp.menu_key END ASC,
+        CASE WHEN @sortBy = 'menu_key' AND @sortOrder = 'DESC' THEN mp.menu_key END DESC,
+        CASE WHEN @sortBy = 'created_at' AND @sortOrder = 'ASC' THEN mp.created_at END ASC,
+        CASE WHEN @sortBy = 'created_at' AND @sortOrder = 'DESC' THEN mp.created_at END DESC
+    OFFSET @offset ROWS
+    FETCH NEXT @limit ROWS ONLY;
+    
+    -- Get metadata
+    SELECT 
+        @page as currentPage,
+        @limit as itemsPerPage,
+        COUNT(*) as totalItems,
+        CEILING(CAST(COUNT(*) AS FLOAT) / @limit) as totalPages,
+        CASE WHEN @page < CEILING(CAST(COUNT(*) AS FLOAT) / @limit) THEN 1 ELSE 0 END as hasNextPage,
+        CASE WHEN @page > 1 THEN 1 ELSE 0 END as hasPreviousPage
+    FROM menu_permissions mp
+    INNER JOIN permissions p ON mp.permission_id = p.id
+    WHERE (@menuKey IS NULL OR mp.menu_key = @menuKey)
+      AND (@category IS NULL OR p.category = @category)
+      AND (@search IS NULL OR 
+           mp.menu_key LIKE '%' + @search + '%' OR
+           p.name LIKE '%' + @search + '%');
+END;
+GO
+
+
+-- =====================================================
+-- COMPLETE BACKEND FIX - STORED PROCEDURES
+-- =====================================================
+
+-- =====================================================
+-- 1. FIX: sp_GetUserAccessibleMenus
+-- Returns proper flat arrays for frontend consumption
+-- =====================================================
+
+CREATE OR ALTER PROCEDURE sp_GetUserAccessibleMenus
+  @userId BIGINT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  -- Get user type first
+  DECLARE @userType NVARCHAR(50);
+  SELECT @userType = user_type FROM users WHERE id = @userId;
+
+  -- Owner/SuperAdmin get EVERYTHING automatically
+  IF @userType IN ('owner', 'superadmin')
+  BEGIN
+    -- Result Set 1: ALL permissions
+    SELECT DISTINCT
+      p.id,
+      p.name,
+      p.resource,
+      p.action,
+      p.category,
+      p.description,
+      p.is_system_permission
+    FROM permissions p
+    ORDER BY p.category, p.name;
+
+    -- Result Set 2: ALL menus accessible
+    SELECT DISTINCT
+      mp.menu_key,
+      mp.permission_id,
+      p.name as permission_name,
+      p.action,
+      mp.is_required
+    FROM menu_permissions mp
+    INNER JOIN permissions p ON mp.permission_id = p.id
+    ORDER BY mp.menu_key;
+
+    -- Result Set 3: NO blocked menus
+    SELECT 
+      CAST(NULL AS NVARCHAR(100)) as menu_key,
+      CAST(NULL AS NVARCHAR(MAX)) as missing_permissions,
+      CAST(NULL AS NVARCHAR(MAX)) as required_permissions
+    WHERE 1=0; -- Empty result
+
+    RETURN;
+  END
+
+  -- For regular users, check their role-based permissions
+  -- Result Set 1: User's permissions via roles (FLAT LIST)
+  SELECT DISTINCT
+    p.id,
+    p.name,
+    p.resource,
+    p.action,
+    p.category,
+    p.description,
+    p.is_system_permission
+  FROM user_roles ur
+  INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+  INNER JOIN permissions p ON rp.permission_id = p.id
+  WHERE ur.user_id = @userId
+    AND ur.is_active = 1
+    AND (ur.expires_at IS NULL OR ur.expires_at > GETUTCDATE())
+  ORDER BY p.category, p.name;
+
+  -- Result Set 2: Accessible menus (FLAT LIST)
+  WITH UserPermissions AS (
+    SELECT DISTINCT rp.permission_id
+    FROM user_roles ur
+    INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+    WHERE ur.user_id = @userId
+      AND ur.is_active = 1
+      AND (ur.expires_at IS NULL OR ur.expires_at > GETUTCDATE())
+  ),
+  MenuAccessCheck AS (
+    SELECT 
+      mp.menu_key,
+      COUNT(DISTINCT CASE WHEN mp.is_required = 1 THEN mp.permission_id END) as total_required,
+      COUNT(DISTINCT CASE WHEN mp.is_required = 1 AND up.permission_id IS NOT NULL THEN mp.permission_id END) as granted_required
+    FROM menu_permissions mp
+    LEFT JOIN UserPermissions up ON mp.permission_id = up.permission_id
+    GROUP BY mp.menu_key
+    HAVING COUNT(DISTINCT CASE WHEN mp.is_required = 1 THEN mp.permission_id END) = 
+           COUNT(DISTINCT CASE WHEN mp.is_required = 1 AND up.permission_id IS NOT NULL THEN mp.permission_id END)
+  )
+  SELECT DISTINCT
+    mp.menu_key,
+    mp.permission_id,
+    p.name as permission_name,
+    p.action,
+    mp.is_required
+  FROM menu_permissions mp
+  INNER JOIN permissions p ON mp.permission_id = p.id
+  INNER JOIN MenuAccessCheck mac ON mp.menu_key = mac.menu_key
+  ORDER BY mp.menu_key;
+
+  -- Result Set 3: Blocked menus (FLAT LIST)
+  WITH UserPermissions AS (
+    SELECT DISTINCT rp.permission_id
+    FROM user_roles ur
+    INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+    WHERE ur.user_id = @userId
+      AND ur.is_active = 1
+      AND (ur.expires_at IS NULL OR ur.expires_at > GETUTCDATE())
+  ),
+  MenuAccessCheck AS (
+    SELECT 
+      mp.menu_key,
+      COUNT(DISTINCT CASE WHEN mp.is_required = 1 THEN mp.permission_id END) as total_required,
+      COUNT(DISTINCT CASE WHEN mp.is_required = 1 AND up.permission_id IS NOT NULL THEN mp.permission_id END) as granted_required
+    FROM menu_permissions mp
+    LEFT JOIN UserPermissions up ON mp.permission_id = up.permission_id
+    GROUP BY mp.menu_key
+    HAVING COUNT(DISTINCT CASE WHEN mp.is_required = 1 THEN mp.permission_id END) > 
+           COUNT(DISTINCT CASE WHEN mp.is_required = 1 AND up.permission_id IS NOT NULL THEN mp.permission_id END)
+  )
+  SELECT 
+    mac.menu_key,
+    STRING_AGG(p.name, ', ') WITHIN GROUP (ORDER BY p.name) as missing_permissions,
+    STRING_AGG(CAST(mp.permission_id AS NVARCHAR(20)), ',') WITHIN GROUP (ORDER BY mp.permission_id) as required_permissions
+  FROM MenuAccessCheck mac
+  INNER JOIN menu_permissions mp ON mac.menu_key = mp.menu_key AND mp.is_required = 1
+  INNER JOIN permissions p ON mp.permission_id = p.id
+  LEFT JOIN UserPermissions up ON mp.permission_id = up.permission_id
+  WHERE up.permission_id IS NULL
+  GROUP BY mac.menu_key
+  ORDER BY mac.menu_key;
+END;
+GO
+
+-- =====================================================
+-- 2. NEW: sp_GetRolePermissionsHierarchical
+-- Returns role permissions grouped by category with hierarchy
+-- =====================================================
+
+CREATE OR ALTER PROCEDURE sp_GetRolePermissionsHierarchical
+  @roleId BIGINT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  -- Get ALL permissions with their assignment status
+  SELECT 
+    p.id,
+    p.name,
+    p.resource,
+    p.action,
+    p.description,
+    p.category,
+    p.is_system_permission,
+    CASE WHEN rp.permission_id IS NOT NULL THEN 1 ELSE 0 END as is_assigned,
+    rp.created_at as assigned_at
+  FROM permissions p
+  LEFT JOIN role_permissions rp ON p.id = rp.permission_id AND rp.role_id = @roleId
+  ORDER BY p.category, p.resource, p.action;
+END;
+GO
+
+-- =====================================================
+-- 3. NEW: sp_BulkAssignRolePermissions
+-- Handles bulk permission assignment with INSERT/DELETE operations
+-- =====================================================
+
+CREATE OR ALTER PROCEDURE sp_BulkAssignRolePermissions
+  @roleId BIGINT,
+  @changes NVARCHAR(MAX), -- JSON: [{"mode":"I","permissionId":1},{"mode":"D","permissionId":2}]
+  @userId BIGINT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+
+  BEGIN TRY
+    DECLARE @assignedCount INT = 0;
+    DECLARE @deletedCount INT = 0;
+
+    -- Parse JSON changes
+    DECLARE @changeTable TABLE (
+      mode CHAR(1),
+      permission_id BIGINT
+    );
+
+    INSERT INTO @changeTable (mode, permission_id)
+    SELECT 
+      JSON_VALUE(value, '$.mode'),
+      CAST(JSON_VALUE(value, '$.permissionId') AS BIGINT)
+    FROM OPENJSON(@changes);
+
+    -- Process INSERTs
+    INSERT INTO role_permissions (role_id, permission_id, created_by)
+    SELECT @roleId, permission_id, @userId
+    FROM @changeTable
+    WHERE mode = 'I'
+      AND permission_id NOT IN (
+        SELECT permission_id 
+        FROM role_permissions 
+        WHERE role_id = @roleId
+      );
+
+    SET @assignedCount = @@ROWCOUNT;
+
+    -- Process DELETEs
+    DELETE rp
+    FROM role_permissions rp
+    INNER JOIN @changeTable ct ON rp.permission_id = ct.permission_id
+    WHERE rp.role_id = @roleId AND ct.mode = 'D';
+
+    SET @deletedCount = @@ROWCOUNT;
+
+    -- Update permissions count
+    UPDATE roles
+    SET permissions_count = (
+      SELECT COUNT(*) 
+      FROM role_permissions 
+      WHERE role_id = @roleId
+    ),
+    updated_at = GETUTCDATE(),
+    updated_by = @userId
+    WHERE id = @roleId;
+
+    COMMIT TRANSACTION;
+
+    -- Return summary
+    SELECT 
+      @assignedCount as assigned_count,
+      @deletedCount as deleted_count,
+      @assignedCount + @deletedCount as total_changes;
+  END TRY
+  BEGIN CATCH
+    ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+-- =====================================================
+-- 4. NEW: sp_GetRolePermissionsSummary
+-- Returns summary of role permissions grouped by category
+-- =====================================================
+
+CREATE OR ALTER PROCEDURE sp_GetRolePermissionsSummary
+  @roleId BIGINT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  -- Summary by category
+  SELECT 
+    ISNULL(p.category, 'Uncategorized') as category,
+    COUNT(*) as total_in_category,
+    SUM(CASE WHEN rp.permission_id IS NOT NULL THEN 1 ELSE 0 END) as assigned_in_category
+  FROM permissions p
+  LEFT JOIN role_permissions rp ON p.id = rp.permission_id AND rp.role_id = @roleId
+  GROUP BY p.category
+  ORDER BY p.category;
+
+  -- Total summary
+  SELECT 
+    (SELECT COUNT(*) FROM permissions) as total_permissions,
+    (SELECT COUNT(*) FROM role_permissions WHERE role_id = @roleId) as assigned_permissions,
+    (SELECT name FROM roles WHERE id = @roleId) as role_name,
+    (SELECT display_name FROM roles WHERE id = @roleId) as role_display_name;
+END;
+GO
+
+-- =====================================================
+-- 5. NEW: sp_ValidateRolePermissionAccess
+-- Validates if user can manage permissions for a role
+-- =====================================================
+
+CREATE OR ALTER PROCEDURE sp_ValidateRolePermissionAccess
+  @userId BIGINT,
+  @roleId BIGINT,
+  @userType NVARCHAR(50),
+  @organizationId BIGINT = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  -- Owner/SuperAdmin always have access
+  IF @userType IN ('owner', 'superadmin')
+  BEGIN
+    SELECT 1 as has_access, 'Full access granted' as reason;
+    RETURN;
+  END
+
+  -- Get target role details
+  DECLARE @targetRoleOrgId BIGINT;
+  DECLARE @targetRoleIsSystem BIT;
+
+  SELECT 
+    @targetRoleOrgId = organization_id,
+    @targetRoleIsSystem = is_system_role
+  FROM roles
+  WHERE id = @roleId;
+
+  -- Cannot modify system roles
+  IF @targetRoleIsSystem = 1
+  BEGIN
+    SELECT 0 as has_access, 'Cannot modify system roles' as reason;
+    RETURN;
+  END
+
+  -- Check organization scope
+  IF @organizationId IS NOT NULL AND @targetRoleOrgId IS NOT NULL
+  BEGIN
+    IF @organizationId = @targetRoleOrgId
+    BEGIN
+      SELECT 1 as has_access, 'Same organization access' as reason;
+      RETURN;
+    END
+    ELSE
+    BEGIN
+      SELECT 0 as has_access, 'Role belongs to different organization' as reason;
+      RETURN;
+    END
+  END
+
+  SELECT 0 as has_access, 'Access denied' as reason;
+END;
+GO
+
+-- =====================================================
+-- 6. IMPROVED: sp_ListRoles
+-- Enhanced role listing with better filtering
+-- =====================================================
+
+CREATE OR ALTER PROCEDURE sp_ListRoles
+  @userType NVARCHAR(50),
+  @organizationId BIGINT = NULL,
+  @scope NVARCHAR(20) = 'all',
+  @page INT = 1,
+  @limit INT = 10
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  DECLARE @offset INT = (@page - 1) * @limit;
+
+  -- Main query
+  SELECT 
+    r.id,
+    r.organization_id,
+    r.name,
+    r.display_name,
+    r.description,
+    r.color,
+    r.is_system_role,
+    r.is_default,
+    r.hierarchy_level,
+    r.permissions_count,
+    r.users_count,
+    r.created_at,
+    r.updated_at
+  FROM roles r
+  WHERE 
+    -- Owner/SuperAdmin see everything
+    (@userType IN ('owner', 'superadmin'))
+    OR
+    -- Organization users see their org roles + global roles
+    (@organizationId IS NOT NULL AND (r.organization_id = @organizationId OR r.organization_id IS NULL))
+  AND
+    -- Scope filter
+    (@scope = 'all' OR
+     (@scope = 'system' AND r.is_system_role = 1) OR
+     (@scope = 'organization' AND r.organization_id IS NOT NULL) OR
+     (@scope = 'custom' AND r.is_system_role = 0))
+  ORDER BY r.hierarchy_level DESC, r.id
+  OFFSET @offset ROWS
+  FETCH NEXT @limit ROWS ONLY;
+
+  -- Pagination metadata
+  SELECT 
+    @page as currentPage,
+    @limit as itemsPerPage,
+    COUNT(*) as totalItems,
+    CEILING(CAST(COUNT(*) AS FLOAT) / @limit) as totalPages,
+    CASE WHEN @page < CEILING(CAST(COUNT(*) AS FLOAT) / @limit) THEN 1 ELSE 0 END as hasNextPage,
+    CASE WHEN @page > 1 THEN 1 ELSE 0 END as hasPreviousPage
+  FROM roles r
+  WHERE 
+    (@userType IN ('owner', 'superadmin'))
+    OR
+    (@organizationId IS NOT NULL AND (r.organization_id = @organizationId OR r.organization_id IS NULL))
+  AND
+    (@scope = 'all' OR
+     (@scope = 'system' AND r.is_system_role = 1) OR
+     (@scope = 'organization' AND r.organization_id IS NOT NULL) OR
+     (@scope = 'custom' AND r.is_system_role = 0));
+END;
+GO
+
+-- =====================================================
+-- 7. NEW: sp_GetPermissionsByCategory
+-- Returns all permissions grouped by category
+-- =====================================================
+
+CREATE OR ALTER PROCEDURE sp_GetPermissionsByCategory
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  SELECT 
+    ISNULL(category, 'Uncategorized') as category,
+    id,
+    name,
+    resource,
+    action,
+    description,
+    is_system_permission
+  FROM permissions
+  ORDER BY category, resource, action;
+END;
+GO
+
+-- =====================================================
+-- 8. TEST QUERIES
+-- Run these to verify stored procedures work correctly
+-- =====================================================
+
+-- Test 1: Get user accessible menus
+-- EXEC sp_GetUserAccessibleMenus @userId = 1;
+
+-- Test 2: Get role permissions hierarchical
+-- EXEC sp_GetRolePermissionsHierarchical @roleId = 1;
+
+-- Test 3: Bulk assign permissions
+-- DECLARE @changes NVARCHAR(MAX) = '[{"mode":"I","permissionId":1},{"mode":"D","permissionId":2}]';
+-- EXEC sp_BulkAssignRolePermissions @roleId = 3, @changes = @changes, @userId = 1;
+
+-- Test 4: Get permission summary
+-- EXEC sp_GetRolePermissionsSummary @roleId = 1;
+
+-- Test 5: Validate access
+-- EXEC sp_ValidateRolePermissionAccess @userId = 1, @roleId = 2, @userType = 'agency_admin', @organizationId = 1;
+
+-- Test 6: List roles
+-- EXEC sp_ListRoles @userType = 'owner', @organizationId = NULL, @scope = 'all', @page = 1, @limit = 10;
+
+-- Test 7: Get permissions by category
+-- EXEC sp_GetPermissionsByCategory;
