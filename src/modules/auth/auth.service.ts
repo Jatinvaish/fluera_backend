@@ -17,6 +17,8 @@ import {
   CreateBrandDto,
   CreateCreatorDto,
 } from './dto/auth.dto';
+import { RedisService } from 'src/core/redis/redis.service';
+import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.service';
 
 interface DeviceInfo {
   deviceFingerprint?: string;
@@ -27,6 +29,7 @@ interface DeviceInfo {
   osName?: string;
   osVersion?: string;
   ipAddress?: string;
+  userAgent?: string;
 }
 
 @Injectable()
@@ -40,6 +43,8 @@ export class AuthService {
     private encryptionService: EncryptionService,
     private verificationService: VerificationService,
     private configService: ConfigService,
+    private redisService: RedisService, // ✅ ADD
+    private auditLogger: AuditLoggerService, // ✅ ADD
   ) { }
 
   /**
@@ -179,98 +184,160 @@ export class AuthService {
    * Login user
    */
   async login(loginDto: LoginDto, deviceInfo?: DeviceInfo) {
-    const users = await this.sqlService.query(
-      `SELECT id, email, password_hash, first_name, last_name, 
-              status, email_verified_at, user_type, is_super_admin
-       FROM users WHERE email = @email`,
-      { email: loginDto.email }
-    );
+    const requestId = crypto.randomUUID();
 
-    if (users.length === 0) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const user = users[0];
-
-    if (!user.email_verified_at) {
-      await this.resendVerificationCode(loginDto.email);
-      throw new UnauthorizedException(
-        'Email not verified. A new verification code has been sent.'
+    try {
+      // 1. Check rate limit (brute force protection)
+      const { allowed } = await this.redisService.checkRateLimit(
+        `login:${loginDto.email}`,
+        5, // 5 attempts
+        300 // 5 minutes
       );
-    }
 
-    if (user.status !== 'active') {
-      throw new UnauthorizedException('Account is not active');
-    }
+      if (!allowed) {
+        await this.auditLogger.logSecurityEvent(
+          'BRUTE_FORCE',
+          null,
+          { email: loginDto.email, ip: deviceInfo?.ipAddress },
+          deviceInfo?.ipAddress
+        );
+        throw new UnauthorizedException('Too many login attempts. Please try again later.');
+      }
 
-    const isPasswordValid = await this.hashingService.comparePassword(
-      loginDto.password,
-      user.password_hash
-    );
+      // 2. Get user (with caching)
+      const cacheKey = `user:${loginDto.email}`;
+      let user = await this.redisService.getCachedQuery(cacheKey);
 
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+      if (!user) {
+        const users = await this.sqlService.query(
+          `SELECT id, email, password_hash, first_name, last_name, 
+                  status, email_verified_at, user_type, is_super_admin
+           FROM users WHERE email = @email`,
+          { email: loginDto.email }
+        );
 
-    // Update login stats
-    await this.sqlService.query(
-      `UPDATE users 
-       SET last_login_at = GETUTCDATE(), 
-           login_count = login_count + 1,
-           last_active_at = GETUTCDATE()
-       WHERE id = @userId`,
-      { userId: user.id }
-    );
+        if (users.length === 0) {
+          await this.auditLogger.logAuth(
+            0,
+            'FAILED_LOGIN',
+            { reason: 'user_not_found', email: loginDto.email },
+            deviceInfo?.ipAddress,
+            deviceInfo?.userAgent
+          );
+          throw new UnauthorizedException('Invalid credentials');
+        }
 
-    // Get user's tenant memberships
-    const tenants = await this.sqlService.query(
-      `SELECT tm.tenant_id, t.name, t.tenant_type, tm.role_id
-       FROM tenant_members tm
-       JOIN tenants t ON tm.tenant_id = t.id
-       WHERE tm.user_id = @userId AND tm.is_active = 1`,
-      { userId: user.id }
-    );
+        user = users[0];
+        // Cache for 5 minutes
+        await this.redisService.cacheQuery(cacheKey, user, 300);
+      }
 
-    const primaryTenant = tenants.length > 0 ? tenants[0].tenant_id : null;
+      // 3. Verify password
+      const isPasswordValid = await this.hashingService.comparePassword(
+        loginDto.password,
+        user.password_hash
+      );
 
-    const tokens = await this.generateTokens({
-      id: user.id,
-      email: user.email,
-      userType: user.user_type,
-      tenantId: primaryTenant,
-      onboardingRequired: user.user_type === 'pending',
-    });
+      if (!isPasswordValid) {
+        await this.auditLogger.logAuth(
+          user.id,
+          'FAILED_LOGIN',
+          { reason: 'invalid_password' },
+          deviceInfo?.ipAddress,
+          deviceInfo?.userAgent
+        );
+        throw new UnauthorizedException('Invalid credentials');
+      }
 
-    await this.createSession(user.id, tokens.refreshToken, deviceInfo, primaryTenant);
+      // 4. Check email verification
+      if (!user.email_verified_at) {
+        throw new UnauthorizedException('Please verify your email first');
+      }
 
-    // Log login event
-    await this.logSystemEvent(user.id, 'user.logged_in', {
-      email: user.email,
-      tenantId: primaryTenant,
-      deviceInfo,
-    }, primaryTenant);
+      // 5. Check account status
+      if (user.status !== 'active') {
+        throw new UnauthorizedException('Account is not active');
+      }
 
-    // Create audit log
-    await this.createAuditLog(user.id, 'users', user.id, 'LOGIN', null, null, primaryTenant);
+      // 6. Update login stats (async, non-blocking)
+      this.sqlService.query(
+        `UPDATE users 
+         SET last_login_at = GETUTCDATE(), 
+             login_count = login_count + 1,
+             last_active_at = GETUTCDATE()
+         WHERE id = @userId`,
+        { userId: user.id }
+      ).catch(err => this.logger.error('Failed to update login stats', err));
 
-    return {
-      user: {
+      // 7. Get tenants (with caching)
+      const tenantCacheKey = `user:${user.id}:tenants`;
+      let tenants = await this.redisService.getCachedQuery(tenantCacheKey);
+
+      if (!tenants) {
+        tenants = await this.sqlService.query(
+          `SELECT tm.tenant_id, t.name, t.tenant_type, tm.role_id
+           FROM tenant_members tm
+           JOIN tenants t ON tm.tenant_id = t.id
+           WHERE tm.user_id = @userId AND tm.is_active = 1`,
+          { userId: user.id }
+        );
+        await this.redisService.cacheQuery(tenantCacheKey, tenants, 600);
+      }
+
+      const primaryTenant = tenants.length > 0 ? tenants[0].tenant_id : null;
+
+      // 8. Generate tokens
+      const tokens = await this.generateTokens({
         id: user.id,
         email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
         userType: user.user_type,
         tenantId: primaryTenant,
-        tenants: tenants.map(t => ({
-          id: t.tenant_id,
-          name: t.name,
-          type: t.tenant_type,
-        })),
-        onboardingRequired: user.user_type === 'pending',
-        isSuperAdmin: user.is_super_admin || false,
-      },
-      ...tokens,
-    };
+      });
+
+      // 9. Create session
+      await this.createSession(user.id, tokens.refreshToken, deviceInfo, primaryTenant);
+
+      // 10. Cache session data
+      await this.redisService.cacheUserSession(
+        user.id,
+        {
+          ...user,
+          tenantId: primaryTenant,
+          loginAt: new Date(),
+        },
+        900 // 15 minutes
+      );
+
+      // 11. Audit log (async)
+      this.auditLogger.logAuth(
+        user.id,
+        'LOGIN',
+        { tenantId: primaryTenant, deviceInfo },
+        deviceInfo?.ipAddress,
+        deviceInfo?.userAgent
+      ).catch(err => this.logger.error('Failed to log auth event', err));
+
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          userType: user.user_type,
+          tenantId: primaryTenant,
+          tenants: tenants.map(t => ({
+            id: t.tenant_id,
+            name: t.name,
+            type: t.tenant_type,
+          })),
+          isSuperAdmin: user.is_super_admin || false,
+        },
+        ...tokens,
+      };
+    } catch (error) {
+      this.logger.error(`Login failed [${requestId}]`, error);
+      throw error;
+    }
   }
 
   /**

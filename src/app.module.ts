@@ -34,6 +34,7 @@ import { ChatModule } from './modules/message-system/chat.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { SessionActivityMiddleware } from './core/middlewares/session-activity.middleware';
 import { ResourcePermissionGuard } from './core/guards';
+import { RedisModule } from './core/redis/redis.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ResourcePermissionGuard } from './core/guards';
 
     // Core modules (now @Global)
     DatabaseModule, // ✅ SqlServerService available everywhere
+    RedisModule, // ✅ SqlServerService available everywhere
     CommonModule, // ✅ EncryptionService, AuditService available everywhere
 
     // Feature modules
