@@ -1,27 +1,119 @@
 
 // ============================================
-// 4. UPDATED AUTH DTOs (Add to existing)
+// src/modules/auth/dto/auth.dto.ts
 // ============================================
-// modules/auth/dto/auth.dto.ts
-import { IsEmail, IsString, IsOptional, IsEnum, MinLength, IsIn, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsString, IsNotEmpty, MinLength, IsOptional, IsEnum, IsIn } from 'class-validator';
 
-export class SendVerificationDto {
+export class RegisterDto {
   @IsEmail()
+  @IsNotEmpty()
   email: string;
 
-  @IsEnum(['email_verify', 'login_otp', 'phone_verify', '2fa'])
-  codeType: string;
+  @IsNotEmpty()
+  @MinLength(8)
+  password: string;
 }
 
-export class VerifyCodeDto {
+export class VerifyRegistrationDto {
   @IsEmail()
   email: string;
 
-  @IsString()
+  @IsNotEmpty()
+  @MinLength(6)
   code: string;
+}
 
-  @IsEnum(['email_verify', 'login_otp', 'phone_verify', '2fa'])
-  codeType: string;
+export class ResendVerificationDto {
+  @IsEmail()
+  email: string;
+}
+
+export class LoginDto {
+  @IsEmail()
+  email: string;
+
+  @IsNotEmpty()
+  @MinLength(8)
+  password: string;
+}
+
+export class RefreshTokenDto {
+  @IsNotEmpty()
+  refreshToken: string;
+}
+
+export class CreateAgencyDto {
+  @IsNotEmpty()
+  @IsString()
+  name: string;
+
+  @IsNotEmpty()
+  @IsString()
+  firstName: string;
+
+  @IsNotEmpty()
+  @IsString()
+  lastName: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  industry?: string;
+}
+
+export class CreateBrandDto {
+  @IsNotEmpty()
+  @IsString()
+  name: string;
+
+  @IsNotEmpty()
+  @IsString()
+  firstName: string;
+
+  @IsNotEmpty()
+  @IsString()
+  lastName: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  website?: string;
+
+  @IsOptional()
+  @IsString()
+  industry?: string;
+}
+
+export class CreateCreatorDto {
+  @IsNotEmpty()
+  @IsString()
+  firstName: string;
+
+  @IsNotEmpty()
+  @IsString()
+  lastName: string;
+
+  @IsOptional()
+  @IsString()
+  stageName?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  bio?: string;
 }
 
 export class ResetPasswordRequestDto {
@@ -34,6 +126,7 @@ export class ResetPasswordDto {
   token: string;
 
   @IsString()
+  @MinLength(8)
   newPassword: string;
 }
 
@@ -45,7 +138,7 @@ export class SendInvitationDto {
   @IsOptional()
   inviteeName?: string;
 
-  @IsEnum(['creator', 'brand', 'staff', 'manager', 'accountant'])
+  @IsEnum(['creator', 'brand', 'staff', 'manager'])
   inviteeType: string;
 
   @IsString()
@@ -72,155 +165,4 @@ export class AcceptInvitationDto {
   @IsString()
   @IsOptional()
   lastName?: string;
-}
-
-
-export class RegisterDto {
-  @IsEmail()
-  @IsNotEmpty()
-  email: string;
-
-  @IsNotEmpty()
-  @MinLength(8)
-  password: string;
-}
-
-// NEW DTOs for entity creation
-export class CreateAgencyDto {
-  @IsNotEmpty()
-  @IsString()
-  organizationName: string;
-
-  @IsNotEmpty()
-  @IsString()
-  firstName: string;
-
-  @IsNotEmpty()
-  @IsString()
-  lastName: string;
-
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @IsOptional()
-  @IsString()
-  timezone?: string;
-
-  @IsOptional()
-  @IsString()
-  industry?: string;
-
-  @IsOptional()
-  @IsString()
-  companySize?: string;
-}
-
-export class CreateBrandDto {
-  @IsNotEmpty()
-  @IsString()
-  brandName: string;
-
-  @IsNotEmpty()
-  @IsString()
-  firstName: string;
-
-  @IsNotEmpty()
-  @IsString()
-  lastName: string;
-
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @IsOptional()
-  @IsString()
-  website?: string;
-
-  @IsOptional()
-  @IsString()
-  industry?: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-}
-
-export class CreateCreatorDto {
-  @IsNotEmpty()
-  @IsString()
-  firstName: string;
-
-  @IsNotEmpty()
-  @IsString()
-  lastName: string;
-
-  @IsOptional()
-  @IsString()
-  stageName?: string;
-
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @IsOptional()
-  @IsString()
-  bio?: string;
-
-  @IsOptional()
-  @IsString()
-  primaryCategory?: string;
-}
-
-// Keep existing DTOs...
-export class VerifyRegistrationDto {
-  @IsEmail()
-  email: string;
-
-  @IsNotEmpty()
-  code: string;
-}
-
-export class ResendVerificationDto {
-  @IsEmail()
-  email: string;
-}
-
-export class LoginDto {
-  @IsEmail()
-  email: string;
-
-  @IsNotEmpty()
-  password: string;
-}
-
-export class RefreshTokenDto {
-  @IsNotEmpty()
-  refreshToken: string;
-}
-
-export class CompleteOnboardingDto {
-  @IsNotEmpty()
-  @IsString()
-  firstName: string;
-
-  @IsNotEmpty()
-  @IsString()
-  lastName: string;
-
-  @IsNotEmpty()
-  @IsIn(['agency_admin', 'creator', 'brand_admin'])
-  organizationType: 'agency_admin' | 'creator' | 'brand_admin';
-
-  @IsNotEmpty()
-  @IsString()
-  organizationName: string;
-
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @IsOptional()
-  @IsString()
-  timezone?: string;
 }

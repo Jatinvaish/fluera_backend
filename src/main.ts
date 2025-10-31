@@ -1,15 +1,15 @@
-// ============================================
-// main.ts - COMPLETE WITH AES-CBC DECRYPTION
-// ============================================
+// src/main.ts
 import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './core/filters/all-exception.filter';
+import { GlobalExceptionFilter } from './core/filters/all-exception.filter'; // ✅ FIX: Change to GlobalExceptionFilter
 import { LoggingInterceptor } from './core/interceptors/logging.interceptor';
 import { ResponseInterceptor } from './core/interceptors/response.interceptor';
 import { EncryptionService } from './common/encryption.service';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { FastifyRequest } from 'fastify';
+import { SqlServerService } from './core/database/sql-server.service';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -25,9 +25,10 @@ async function bootstrap() {
           'Authorization',
           'X-API-Key',
           'X-Request-ID',
-          'X-Organization-ID',
+          'X-Tenant-ID',
           'X-Encryption-Enabled',
           'X-Key-Version',
+          'X-Device-Fingerprint', // ← Add this
         ],
       },
     },
@@ -53,14 +54,15 @@ async function bootstrap() {
   );
 
   const config = new DocumentBuilder()
-    .setTitle('Fluera API')
+    .setTitle('Fluera API V3.0')
+    .setDescription('Multi-tenant SaaS with E2E Encryption')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
-
-  app.useGlobalFilters(new AllExceptionsFilter());
+  const databaseService = app.get(SqlServerService);
+  app.useGlobalFilters(new GlobalExceptionFilter(databaseService));
 
   const reflector = app.get(Reflector);
   const encryptionService = app.get(EncryptionService);
@@ -70,17 +72,23 @@ async function bootstrap() {
     new ResponseInterceptor(reflector, encryptionService),
   );
 
-  // Get Fastify instance to add decryption hook
   const fastifyInstance = app.getHttpAdapter().getInstance();
 
-  // Add preHandler hook to decrypt body BEFORE validation
-  fastifyInstance.addHook('preHandler', async (request, reply) => {
+  fastifyInstance.addHook('preHandler', async (request: FastifyRequest, reply) => {
     console.log(`[${request.headers['x-request-id']}] preHandler called`);
     console.log(`Encryption enabled:`, request.headers['x-encryption-enabled']);
     console.log(`Request body:`, request.body);
+    if (request.method === 'OPTIONS') {
+      return;
+    }
 
     const encryptionEnabled = request.headers['x-encryption-enabled'] === 'true';
     const requestId = request.headers['x-request-id'] || 'unknown';
+
+    if (!encryptionEnabled) {
+      return;
+    }
+
 
     if (!encryptionEnabled) {
       return;
@@ -90,12 +98,11 @@ async function bootstrap() {
       const body = request.body as any;
 
       if (body && typeof body === 'object' && body.__payload) {
-        console.log(`[${requestId}] Found encrypted payload, decrypting...`);
+        console.log(`[${requestId}] Decrypting E2E encrypted payload...`);
 
         const payload = body.__payload;
         const receivedChecksum = body.__checksum;
 
-        // Verify checksum if provided
         if (receivedChecksum) {
           const crypto = require('crypto');
           const calculatedChecksum = crypto
@@ -103,57 +110,37 @@ async function bootstrap() {
             .update(payload + process.env.ENCRYPTION_KEY)
             .digest('hex');
 
-          console.log(`[${requestId}] Checksum validation:`);
-          console.log(`  Received:   ${receivedChecksum}`);
-          console.log(`  Calculated: ${calculatedChecksum}`);
-
           if (calculatedChecksum !== receivedChecksum) {
             console.error(`[${requestId}] Checksum mismatch!`);
             throw new Error('Checksum verification failed');
           }
-          console.log(`[${requestId}] ✓ Checksum verified`);
         }
 
-        try {
-          // Decrypt the payload using EncryptionService
-          const decrypted = encryptionService.decrypt(payload);
-          const decryptedBody = JSON.parse(decrypted);
+        const decrypted = encryptionService.decrypt(payload);
+        const decryptedBody = JSON.parse(decrypted);
+        request.body = decryptedBody;
 
-          // Replace request body with decrypted data
-          request.body = decryptedBody;
-
-          console.log(
-            `[${requestId}] ✓ Decrypted successfully. Body keys:`,
-            Object.keys(decryptedBody),
-          );
-        } catch (decryptError) {
-          console.error(
-            `[${requestId}] ✗ Decryption failed:`,
-            decryptError.message,
-          );
-          throw new Error(`Decryption failed: ${decryptError.message}`);
-        }
-      } else {
-        console.log(`[${requestId}] No __payload in body, skipping decryption`);
+        console.log(`[${requestId}] ✓ Decrypted successfully`);
       }
     } catch (error) {
-      console.error(`[${requestId}] PreHandler error:`, error.message);
+      console.error(`[${requestId}] Decryption error:`, error.message);
       throw error;
     }
   });
 
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 3060;
   await app.listen(port, '0.0.0.0');
 
   console.log(`
     ╔═══════════════════════════════════════════════════╗
     ║                                                   ║
-    ║   🚀 Fluera SaaS Platform Backend Started         ║
+    ║   🚀 Fluera V3.0 - Multi-Tenant SaaS              ║
     ║                                                   ║
     ║   📡 Server: http://localhost:${port}             ║
     ║   📚 Docs: http://localhost:${port}/api/docs      ║
     ║   🔒 Mode: ${process.env.NODE_ENV}                ║
-    ║   🔐 Encryption: AES-256-CBC                      ║
+    ║   🔐 Encryption: AES-256-CBC (E2E)                ║
+    ║   🏢 Multi-Tenant: ENABLED                        ║
     ║                                                   ║
     ╚═══════════════════════════════════════════════════╝
   `);

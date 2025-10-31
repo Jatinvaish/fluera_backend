@@ -12,9 +12,10 @@
 //     SetMetadata(API_VERSION_KEY, version),
 //   );
 
-
-import {  Version } from '@nestjs/common';
+// ============================================
+// core/decorators/api-version.decorator.ts
+// ============================================
+import { Version } from '@nestjs/common';
 
 export const API_VERSION_KEY = 'apiVersion';
-export const ApiVersion = (version: string | string[]) => 
-  Version(version); // Just return Version directly, no applyDecorators
+export const ApiVersion = (version: string | string[]) => Version(version);

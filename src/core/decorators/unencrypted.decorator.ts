@@ -1,5 +1,6 @@
+
 // ============================================
-// core/decorators/unencrypted.decorator.ts
+// src/core/decorators/unencrypted.decorator.ts
 // ============================================
 import { SetMetadata } from '@nestjs/common';
 

@@ -1,6 +1,4 @@
-// ============================================
-// core/interceptors/response.interceptor.ts (FIXED)
-// ============================================
+// core/interceptors/response.interceptor.ts - FASTIFY VERSION
 import {
   Injectable,
   NestInterceptor,
@@ -10,6 +8,7 @@ import {
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Reflector } from '@nestjs/core';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { EncryptionService } from 'src/common/encryption.service';
 
 export interface ApiResponse<T> {
@@ -27,11 +26,11 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, any> {
   constructor(
     private reflector: Reflector,
     private encryptionService: EncryptionService,
-  ) { }
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
-    const reply = context.switchToHttp().getResponse();  // Changed from response
+    const request = context.switchToHttp().getRequest<FastifyRequest>();
+    const reply = context.switchToHttp().getResponse<FastifyReply>();
 
     const isUnencrypted = this.reflector.getAllAndOverride<boolean>('unencrypted', [
       context.getHandler(),
@@ -50,7 +49,7 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, any> {
           message: data?.message || 'Operation successful',
           data: data?.data || data,
           timestamp: new Date().toISOString(),
-          correlationId: request.correlationId || 'unknown',
+          correlationId: request['correlationId'] || 'unknown',
           path: request.url,
         };
 

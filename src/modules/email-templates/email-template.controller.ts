@@ -183,31 +183,7 @@ export class EmailTemplateController {
       data: preview,
     };
   }
-
-  /**
-   * Send test email
-   * POST /email-templates/test
-   */
-  @Post('test')
-  @Roles('admin', 'agency_admin', 'brand_admin')
-  async sendTestEmail(
-    @Request() req,
-    @Body() testDto: SendTestEmailDto,
-  ) {
-    const organizationId = testDto.organizationId || req.user.organizationId;
-    
-    await this.emailService.sendCustomEmail(
-      testDto.category,
-      testDto.testEmail,
-      testDto.variables,
-      organizationId,
-    );
-
-    return {
-      success: true,
-      message: `Test email sent to ${testDto.testEmail}`,
-    };
-  }
+ 
 
   /**
    * Get template statistics

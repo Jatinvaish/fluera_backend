@@ -1,6 +1,5 @@
-
 // ============================================
-// modules/auth/auth.module.ts
+// src/modules/auth/auth.module.ts
 // ============================================
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
@@ -9,8 +8,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { VerificationService } from 'src/common/verification.service';
 import { InvitationService } from './invitation.service';
+import { VerificationService } from 'src/common/verification.service';
 
 @Module({
   imports: [
@@ -27,7 +26,7 @@ import { InvitationService } from './invitation.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService,VerificationService,InvitationService, JwtStrategy],
+  providers: [AuthService, VerificationService, InvitationService, JwtStrategy],
   exports: [AuthService, JwtStrategy],
 })
 export class AuthModule {}

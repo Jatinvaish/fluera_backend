@@ -1,41 +1,23 @@
 
 // ============================================
-// 5. INVITATION SERVICE (New)
+// src/modules/auth/invitation.service.ts
 // ============================================
-// modules/auth/services/invitation.service.ts
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
-import { HashingService } from 'src/common/hashing.service';
-import { SqlServerService } from 'src/core/database';
-import { EmailService } from '../email-templates/email.service';
+import { SqlServerService } from '../../core/database/sql-server.service';
+import { HashingService } from '../../common/hashing.service';
 
 @Injectable()
 export class InvitationService {
   constructor(
     private sqlService: SqlServerService,
     private hashingService: HashingService,
-    private emailService: EmailService,
   ) {}
 
-  async sendInvitation(
-    organizationId: bigint,
-    invitedBy: bigint,
-    dto: any,
-  ) {
-    // Check invitation limits
-    const inviter = await this.sqlService.query(
-      'SELECT invitations_sent, invitations_limit FROM users WHERE id = @userId',
-      { userId: invitedBy }
-    );
-
-    if (inviter[0].invitations_sent >= inviter[0].invitations_limit) {
-      throw new ForbiddenException('Invitation limit reached');
-    }
-
-    // Check if already invited
+  async sendInvitation(tenantId: bigint, invitedBy: bigint, dto: any) {
     const existing = await this.sqlService.query(
       `SELECT * FROM invitations 
-       WHERE organization_id = @orgId AND invitee_email = @email AND status = 'pending'`,
-      { orgId: organizationId, email: dto.inviteeEmail }
+       WHERE tenant_id = @tenantId AND invitee_email = @email AND status = 'pending'`,
+      { tenantId, email: dto.inviteeEmail }
     );
 
     if (existing.length > 0) {
@@ -43,16 +25,16 @@ export class InvitationService {
     }
 
     const token = this.hashingService.generateRandomToken(64);
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const result = await this.sqlService.query(
       `INSERT INTO invitations (
-        organization_id, invited_by, invitee_email, invitee_name, invitee_type,
+        tenant_id, invited_by, invitee_email, invitee_name, invitee_type,
         role_id, invitation_token, invitation_message, expires_at
       ) OUTPUT INSERTED.*
-      VALUES (@orgId, @invitedBy, @email, @name, @type, @roleId, @token, @message, @expiresAt)`,
+      VALUES (@tenantId, @invitedBy, @email, @name, @type, @roleId, @token, @message, @expiresAt)`,
       {
-        orgId: organizationId,
+        tenantId,
         invitedBy,
         email: dto.inviteeEmail,
         name: dto.inviteeName || null,
@@ -64,36 +46,14 @@ export class InvitationService {
       }
     );
 
-    // Update invitation counter
-    await this.sqlService.query(
-      'UPDATE users SET invitations_sent = invitations_sent + 1 WHERE id = @userId',
-      { userId: invitedBy }
-    );
-
-    // Send email
-    const inviterData = await this.sqlService.query(
-      `SELECT u.first_name, u.last_name, o.name as org_name 
-       FROM users u 
-       JOIN organizations o ON u.organization_id = o.id 
-       WHERE u.id = @userId`,
-      { userId: invitedBy }
-    );
-
-    await this.emailService.sendInvitation(
-      dto.inviteeEmail,
-      token,
-      `${inviterData[0].first_name} ${inviterData[0].last_name}`,
-      inviterData[0].org_name
-    );
-
     return result[0];
   }
 
   async acceptInvitation(token: string, password: string, userData: any) {
     const invitation = await this.sqlService.query(
-      `SELECT i.*, o.name as org_name 
+      `SELECT i.*, t.name as tenant_name 
        FROM invitations i 
-       JOIN organizations o ON i.organization_id = o.id
+       JOIN tenants t ON i.tenant_id = t.id
        WHERE invitation_token = @token AND status = 'pending' AND expires_at > GETUTCDATE()`,
       { token }
     );
@@ -103,65 +63,44 @@ export class InvitationService {
     }
 
     const invite = invitation[0];
+    const passwordHash = await this.hashingService.hashPassword(password);
 
     return this.sqlService.transaction(async (transaction) => {
-      // Create user
-      const passwordHash = await this.hashingService.hashPassword(password);
-      
       const userResult = await transaction.request()
-        .input('organizationId', invite.organization_id)
         .input('email', invite.invitee_email)
         .input('passwordHash', passwordHash)
-        .input('firstName', userData.firstName || invite.invitee_name?.split(' ')[0] || 'User')
-        .input('lastName', userData.lastName || invite.invitee_name?.split(' ')[1] || '')
-        .input('userType', invite.invitee_type)
+        .input('firstName', userData.firstName || 'User')
+        .input('lastName', userData.lastName || '')
         .query(`
           INSERT INTO users (
-            organization_id, email, password_hash, first_name, last_name,
+            email, password_hash, first_name, last_name,
             user_type, status, email_verified_at
-          ) OUTPUT INSERTED.id, INSERTED.email, INSERTED.first_name, INSERTED.last_name
-          VALUES (@organizationId, @email, @passwordHash, @firstName, @lastName,
-                  @userType, 'active', GETUTCDATE())
+          ) OUTPUT INSERTED.*
+          VALUES (@email, @passwordHash, @firstName, @lastName,
+                  'staff', 'active', GETUTCDATE())
         `);
 
       const user = userResult.recordset[0];
 
-      // Assign role if provided
       if (invite.role_id) {
         await transaction.request()
           .input('userId', user.id)
           .input('roleId', invite.role_id)
-          .query(`
-            INSERT INTO user_roles (user_id, role_id, is_active)
-            VALUES (@userId, @roleId, 1)
-          `);
+          .query(`INSERT INTO user_roles (user_id, role_id, is_active) VALUES (@userId, @roleId, 1)`);
       }
 
-      // Update invitation status
       await transaction.request()
-        .input('invitationId', invite.id)
+        .input('tenantId', invite.tenant_id)
+        .input('userId', user.id)
+        .input('roleId', invite.role_id)
         .query(`
-          UPDATE invitations 
-          SET status = 'accepted', accepted_at = GETUTCDATE()
-          WHERE id = @invitationId
+          INSERT INTO tenant_members (tenant_id, user_id, role_id, member_type, is_active)
+          VALUES (@tenantId, @userId, @roleId, 'staff', 1)
         `);
 
-      // Create creator/brand record if needed
-      if (invite.invitee_type === 'creator') {
-        await transaction.request()
-          .input('organizationId', invite.organization_id)
-          .input('userId', user.id)
-          .input('email', invite.invitee_email)
-          .input('firstName', user.first_name)
-          .input('lastName', user.last_name)
-          .query(`
-            INSERT INTO creators (
-              organization_id, user_id, email, first_name, last_name,
-              status, onboarding_status
-            ) VALUES (@organizationId, @userId, @email, @firstName, @lastName,
-                     'active', 'pending')
-          `);
-      }
+      await transaction.request()
+        .input('invitationId', invite.id)
+        .query(`UPDATE invitations SET status = 'accepted', accepted_at = GETUTCDATE() WHERE id = @invitationId`);
 
       return { user, invitation: invite };
     });

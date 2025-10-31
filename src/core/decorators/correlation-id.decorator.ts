@@ -1,7 +1,6 @@
 
-
 // ============================================
-// core/decorators/correlation-id.decorator.ts
+// src/core/decorators/correlation-id.decorator.ts
 // ============================================
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 

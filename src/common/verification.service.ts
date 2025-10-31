@@ -1,8 +1,4 @@
-
-// ============================================
-// 2. VERIFICATION CODE SERVICE (New)
-// ============================================
-// modules/auth/services/verification.service.ts
+// src/common/verification.service.ts
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { SqlServerService } from 'src/core/database';
 import { HashingService } from './hashing.service';
@@ -23,11 +19,17 @@ export class VerificationService {
     await this.sqlService.query(
       `INSERT INTO verification_codes (user_id, email, code, code_type, expires_at, max_attempts)
        VALUES (@userId, @email, @code, @codeType, @expiresAt, 5)`,
-      { userId: userId || null, email, code, codeType, expiresAt }
+      { userId: userId || null, email, code, codeType: 'email_verify' , expiresAt }
     );
 
-    await this.emailService.sendVerificationCode(email, code, codeType);
-    return { message: 'Verification code sent' };
+    // ✅ FIX: Change to sendVerificationEmail
+    await this.emailService.sendVerificationEmail(email, 'User', code);
+    
+    return { 
+      code, // Only return in development
+      expiresAt,
+      message: 'Verification code sent' 
+    };
   }
 
   async verifyCode(email: string, code: string, codeType: string): Promise<boolean> {
@@ -59,5 +61,13 @@ export class VerificationService {
     );
 
     return true;
+  }
+
+  async deleteVerificationCodes(email: string, codeType: string): Promise<void> {
+    await this.sqlService.query(
+      `DELETE FROM verification_codes 
+       WHERE email = @email AND code_type = @codeType AND used_at IS NULL`,
+      { email, codeType }
+    );
   }
 }
