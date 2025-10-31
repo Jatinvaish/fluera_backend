@@ -1,155 +1,145 @@
-// ============================================
-// src/common/encryption.service.ts - COMPLETE V3.0 E2E
-// ============================================
-import { Injectable } from '@nestjs/common';
+// common/encryption.service.ts
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as CryptoJS from 'crypto-js';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class EncryptionService {
-  private masterKey: string;
+  private readonly logger = new Logger(EncryptionService.name);
+  private masterKey: Buffer;
+  private readonly ALGORITHM = 'aes-256-gcm';
+  private readonly KEY_LENGTH = 32; // 256 bits
+  private readonly IV_LENGTH = 16;
+  private readonly AUTH_TAG_LENGTH = 16;
+  private readonly SALT_LENGTH = 32;
 
   constructor(private configService: ConfigService) {
     const key = this.configService.get('encryption.key');
-    if (!key) {
-      throw new Error('ENCRYPTION_KEY not found in environment');
+
+    if (!key || key.length < 32) {
+      throw new Error('ENCRYPTION_KEY must be at least 32 characters');
     }
-    this.masterKey = key;
+
+    // 🔒 Derive key using PBKDF2 for better security
+    this.masterKey = crypto.pbkdf2Sync(
+      key,
+      'fluera-platform-salt', // In production, use env variable
+      100000,
+      this.KEY_LENGTH,
+      'sha256'
+    );
   }
 
   /**
-   * Encrypt text using AES-256-CBC with CryptoJS
+   * 🔒 Secure encrypt with AES-256-GCM
    */
   encrypt(text: string): string {
-    return CryptoJS.AES.encrypt(text, this.masterKey).toString();
+    try {
+      const iv = crypto.randomBytes(this.IV_LENGTH);
+      const cipher = crypto.createCipheriv(this.ALGORITHM, this.masterKey, iv);
+
+      let encrypted = cipher.update(text, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+
+      const authTag = cipher.getAuthTag();
+
+      // Format: iv:authTag:encrypted
+      return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+    } catch (error) {
+      this.logger.error('Encryption failed', error);
+      throw new Error('Encryption failed');
+    }
   }
 
   /**
-   * Decrypt encrypted text
+   * 🔒 Secure decrypt with AES-256-GCM
    */
   decrypt(encryptedData: string): string {
-    const decrypted = CryptoJS.AES.decrypt(encryptedData, this.masterKey).toString(CryptoJS.enc.Utf8);
-    return decrypted;
-  }
-
-  /**
-   * Generate RSA key pair for tenant
-   * Returns public key and encrypted private key
-   */
-  generateTenantKey(): { publicKey: string; encryptedPrivateKey: string } {
-    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    });
-
-    // Encrypt private key with master key
-    const encryptedPrivateKey = this.encrypt(privateKey);
-    
-    return { publicKey, encryptedPrivateKey };
-  }
-
-  /**
-   * Generate RSA key pair for user
-   * Encrypts private key with password-derived key
-   */
-  generateUserKey(password: string): { publicKey: string; encryptedPrivateKey: string } {
-    // Generate RSA key pair
-    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    });
-
-    // Derive key from password
-    const salt = crypto.randomBytes(32);
-    const derivedKey = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
-
-    // Encrypt private key with derived key
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv('aes-256-cbc', derivedKey, iv);
-    let encrypted = cipher.update(privateKey, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-
-    // Format: salt:iv:encrypted
-    const encryptedPrivateKey = `${salt.toString('hex')}:${iv.toString('hex')}:${encrypted}`;
-
-    return { publicKey, encryptedPrivateKey };
-  }
-
-  /**
-   * Decrypt user's private key using password
-   */
-  decryptUserPrivateKey(encryptedPrivateKey: string, password: string): string {
     try {
-      const [saltHex, ivHex, encryptedHex] = encryptedPrivateKey.split(':');
-      
-      const salt = Buffer.from(saltHex, 'hex');
+      const [ivHex, authTagHex, encryptedHex] = encryptedData.split(':');
+
+      if (!ivHex || !authTagHex || !encryptedHex) {
+        throw new Error('Invalid encrypted data format');
+      }
+
       const iv = Buffer.from(ivHex, 'hex');
+      const authTag = Buffer.from(authTagHex, 'hex');
       const encrypted = Buffer.from(encryptedHex, 'hex');
 
-      // Derive key from password
-      const derivedKey = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+      const decipher = crypto.createDecipheriv(this.ALGORITHM, this.masterKey, iv);
+      decipher.setAuthTag(authTag);
 
-      // Decrypt private key
-      const decipher = crypto.createDecipheriv('aes-256-cbc', derivedKey, iv);
       let decrypted = decipher.update(encrypted);
       decrypted = Buffer.concat([decrypted, decipher.final()]);
 
       return decrypted.toString('utf8');
     } catch (error) {
-      throw new Error('Failed to decrypt user private key');
+      this.logger.error('Decryption failed', error);
+      throw new Error('Decryption failed');
     }
   }
 
   /**
-   * Generate encryption key for channel/chat
+   * 🔒 Generate RSA key pair (E2EE)
    */
-  generateChannelKey(): string {
-    return crypto.randomBytes(32).toString('hex');
+  generateUserKey(password: string): { publicKey: string; encryptedPrivateKey: string } {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 4096, // 🔒 Increased from 2048
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+
+    // 🔒 Encrypt private key with password-derived key
+    const salt = crypto.randomBytes(this.SALT_LENGTH);
+    const derivedKey = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+
+    const iv = crypto.randomBytes(this.IV_LENGTH);
+    const cipher = crypto.createCipheriv(this.ALGORITHM, derivedKey, iv);
+
+    let encrypted = cipher.update(privateKey, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+
+    const authTag = cipher.getAuthTag();
+
+    // Format: salt:iv:authTag:encrypted
+    const encryptedPrivateKey = `${salt.toString('hex')}:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+
+    return { publicKey, encryptedPrivateKey };
   }
 
   /**
-   * Encrypt channel key with user's public key (RSA)
+   * 🔒 Decrypt user's private key
    */
-  encryptChannelKeyForUser(channelKey: string, userPublicKey: string): string {
+  decryptUserPrivateKey(encryptedPrivateKey: string, password: string): string {
     try {
-      const encrypted = crypto.publicEncrypt(
-        {
-          key: userPublicKey,
-          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-          oaepHash: 'sha256',
-        },
-        Buffer.from(channelKey, 'utf8')
-      );
-      return encrypted.toString('base64');
-    } catch (error) {
-      throw new Error('Failed to encrypt channel key');
-    }
-  }
+      const [saltHex, ivHex, authTagHex, encryptedHex] = encryptedPrivateKey.split(':');
 
-  /**
-   * Decrypt channel key with user's private key (RSA)
-   */
-  decryptChannelKeyForUser(encryptedChannelKey: string, userPrivateKey: string): string {
-    try {
-      const decrypted = crypto.privateDecrypt(
-        {
-          key: userPrivateKey,
-          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-          oaepHash: 'sha256',
-        },
-        Buffer.from(encryptedChannelKey, 'base64')
-      );
+      if (!saltHex || !ivHex || !authTagHex || !encryptedHex) {
+        throw new Error('Invalid encrypted private key format');
+      }
+
+      const salt = Buffer.from(saltHex, 'hex');
+      const iv = Buffer.from(ivHex, 'hex');
+      const authTag = Buffer.from(authTagHex, 'hex');
+      const encrypted = Buffer.from(encryptedHex, 'hex');
+
+      const derivedKey = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+
+      const decipher = crypto.createDecipheriv(this.ALGORITHM, derivedKey, iv);
+      decipher.setAuthTag(authTag);
+
+      let decrypted = decipher.update(encrypted);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+
       return decrypted.toString('utf8');
     } catch (error) {
-      throw new Error('Failed to decrypt channel key');
+      this.logger.error('Private key decryption failed', error);
+      throw new Error('Invalid password or corrupted key');
     }
   }
 
   /**
-   * Encrypt message content with AES-256-GCM
+   * 🔒 Encrypt message with AES-256-GCM
    */
   encryptMessage(content: string, channelKey: string): {
     encryptedContent: string;
@@ -158,26 +148,31 @@ export class EncryptionService {
   } {
     try {
       const keyBuffer = Buffer.from(channelKey, 'hex');
-      const iv = crypto.randomBytes(16);
-      
-      const cipher = crypto.createCipheriv('aes-256-gcm', keyBuffer, iv);
+      if (keyBuffer.length !== 32) {
+        throw new Error('Invalid channel key length');
+      }
+
+      const iv = crypto.randomBytes(this.IV_LENGTH);
+      const cipher = crypto.createCipheriv(this.ALGORITHM, keyBuffer, iv);
+
       let encrypted = cipher.update(content, 'utf8', 'hex');
       encrypted += cipher.final('hex');
-      
-      const authTag = cipher.getAuthTag().toString('hex');
+
+      const authTag = cipher.getAuthTag();
 
       return {
         encryptedContent: encrypted,
         iv: iv.toString('hex'),
-        authTag,
+        authTag: authTag.toString('hex'),
       };
     } catch (error) {
-      throw new Error('Failed to encrypt message');
+      this.logger.error('Message encryption failed', error);
+      throw new Error('Message encryption failed');
     }
   }
 
   /**
-   * Decrypt message content with AES-256-GCM
+   * 🔒 Decrypt message with AES-256-GCM
    */
   decryptMessage(
     encryptedContent: string,
@@ -190,7 +185,7 @@ export class EncryptionService {
       const ivBuffer = Buffer.from(iv, 'hex');
       const authTagBuffer = Buffer.from(authTag, 'hex');
 
-      const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, ivBuffer);
+      const decipher = crypto.createDecipheriv(this.ALGORITHM, keyBuffer, ivBuffer);
       decipher.setAuthTag(authTagBuffer);
 
       let decrypted = decipher.update(encryptedContent, 'hex', 'utf8');
@@ -198,79 +193,36 @@ export class EncryptionService {
 
       return decrypted;
     } catch (error) {
-      throw new Error('Failed to decrypt message');
+      this.logger.error('Message decryption failed', error);
+      throw new Error('Message decryption failed');
     }
   }
 
   /**
-   * Encrypt file with AES-256-CBC
+   * 🔒 Generate secure random channel key
    */
-  encryptFile(fileBuffer: Buffer): {
-    encryptedData: Buffer;
-    fileKey: string;
-    iv: string;
-  } {
-    try {
-      const fileKey = crypto.randomBytes(32);
-      const iv = crypto.randomBytes(16);
-
-      const cipher = crypto.createCipheriv('aes-256-cbc', fileKey, iv);
-      const encrypted = Buffer.concat([cipher.update(fileBuffer), cipher.final()]);
-
-      return {
-        encryptedData: encrypted,
-        fileKey: fileKey.toString('hex'),
-        iv: iv.toString('hex'),
-      };
-    } catch (error) {
-      throw new Error('Failed to encrypt file');
-    }
+  generateChannelKey(): string {
+    return crypto.randomBytes(32).toString('hex');
   }
 
   /**
-   * Decrypt file with AES-256-CBC
+   * 🔒 Hash password with bcrypt (for database storage)
    */
-  decryptFile(encryptedData: Buffer, fileKey: string, iv: string): Buffer {
-    try {
-      const keyBuffer = Buffer.from(fileKey, 'hex');
-      const ivBuffer = Buffer.from(iv, 'hex');
-
-      const decipher = crypto.createDecipheriv('aes-256-cbc', keyBuffer, ivBuffer);
-      const decrypted = Buffer.concat([decipher.update(encryptedData), decipher.final()]);
-
-      return decrypted;
-    } catch (error) {
-      throw new Error('Failed to decrypt file');
-    }
+  async hashPassword(password: string): Promise<string> {
+    const bcrypt = require('bcrypt');
+    return bcrypt.hash(password, 12); // 12 rounds
   }
 
   /**
-   * Hash data with SHA-256
+   * 🔒 Verify password
    */
-  hash(data: string): string {
-    return crypto.createHash('sha256').update(data).digest('hex');
+  async verifyPassword(password: string, hash: string): Promise<boolean> {
+    const bcrypt = require('bcrypt');
+    return bcrypt.compare(password, hash);
   }
 
   /**
-   * Generate checksum for integrity verification
-   */
-  generateChecksum(data: string): string {
-    return crypto
-      .createHash('sha256')
-      .update(data + this.masterKey)
-      .digest('hex');
-  }
-
-  /**
-   * Verify checksum
-   */
-  verifyChecksum(data: string, checksum: string): boolean {
-    const calculated = this.generateChecksum(data);
-    return calculated === checksum;
-  }
-
-  /**
-   * Generate HMAC signature
+   * 🔒 Generate HMAC for data integrity
    */
   generateHMAC(data: string, secret?: string): string {
     const key = secret || this.masterKey;
@@ -278,7 +230,7 @@ export class EncryptionService {
   }
 
   /**
-   * Verify HMAC signature
+   * 🔒 Verify HMAC
    */
   verifyHMAC(data: string, signature: string, secret?: string): boolean {
     const calculated = this.generateHMAC(data, secret);
@@ -288,42 +240,57 @@ export class EncryptionService {
     );
   }
 
+  generateTenantKey(): { publicKey: string; encryptedPrivateKey: string } {
+    const keyPair = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: {
+        type: 'spki',
+        format: 'pem',
+      },
+      privateKeyEncoding: {
+        type: 'pkcs8',
+        format: 'pem',
+      },
+    });
+
+    // Encrypt the private key with a master key or leave as-is
+    const encryptedPrivateKey = this.encrypt(keyPair.privateKey);
+
+    return {
+      publicKey: keyPair.publicKey,
+      encryptedPrivateKey: encryptedPrivateKey,
+    };
+  }
+
   /**
-   * Generate random token
+   * 🔒 Generate secure random token
    */
-  generateRandomToken(length: number = 32): string {
+  generateSecureToken(length: number = 32): string {
     return crypto.randomBytes(length).toString('hex');
   }
 
   /**
-   * Encrypt sensitive data for database storage
+   * 🔒 Key rotation helper
    */
-  encryptForStorage(data: string): string {
-    return this.encrypt(data);
-  }
+  async rotateEncryptionKey(
+    oldEncrypted: string,
+    oldKey: string,
+    newKey: string
+  ): Promise<string> {
+    try {
+      // Decrypt with old key
+      const plaintext = this.decrypt(oldEncrypted);
 
-  /**
-   * Decrypt sensitive data from database
-   */
-  decryptFromStorage(encryptedData: string): string {
-    return this.decrypt(encryptedData);
-  }
+      // Re-encrypt with new key
+      const tempMasterKey = this.masterKey;
+      this.masterKey = Buffer.from(newKey);
+      const newEncrypted = this.encrypt(plaintext);
+      this.masterKey = tempMasterKey;
 
-  /**
-   * Generate key fingerprint
-   */
-  generateKeyFingerprint(key: string): string {
-    return crypto.createHash('sha256').update(key).digest('hex').substring(0, 64);
-  }
-
-  /**
-   * Rotate encryption key
-   */
-  rotateKey(oldEncryptedData: string, oldKey: string, newKey: string): string {
-    // Decrypt with old key
-    const decrypted = CryptoJS.AES.decrypt(oldEncryptedData, oldKey).toString(CryptoJS.enc.Utf8);
-    
-    // Re-encrypt with new key
-    return CryptoJS.AES.encrypt(decrypted, newKey).toString();
+      return newEncrypted;
+    } catch (error) {
+      this.logger.error('Key rotation failed', error);
+      throw new Error('Key rotation failed');
+    }
   }
 }
