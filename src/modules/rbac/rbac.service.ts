@@ -1,8 +1,4 @@
-// =====================================================
-// UPDATED: modules/rbac/rbac.service.ts
-// Cleaned up and optimized for role-permission management
-// =====================================================
-
+// modules/rbac/rbac.service.ts - UPDATED
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
 
@@ -13,42 +9,81 @@ export class RbacService {
   // ============================================
   // ROLES MANAGEMENT
   // ============================================
-  async listRoles(filters: any, userType: string, organizationId: bigint) {
+  async listRoles(filters: any, userType: string, tenantId: bigint) {
     try {
-      const result = await this.sqlService.execute('sp_ListRoles', {
-        userType,
-        organizationId,
-        scope: filters.scope || 'all',
-        page: filters.page || 1,
-        limit: filters.limit || 10
-      });
+      // ✅ Build query based on user type
+      let query = `
+        SELECT 
+          r.id,
+          r.tenant_id,
+          r.name,
+          r.display_name,
+          r.description,
+          r.is_system_role,
+          r.is_default,
+          r.hierarchy_level,
+          r.created_at,
+          r.updated_at,
+          (SELECT COUNT(*) FROM user_roles WHERE role_id = r.id AND is_active = 1) as users_count,
+          (SELECT COUNT(*) FROM role_permissions WHERE role_id = r.id) as permissions_count
+        FROM roles r
+        WHERE 1=1
+      `;
 
-      if (!result || !Array.isArray(result) || result.length === 0) {
-        return {
-          data: {
-            rolesList: [],
-            meta: {
-              currentPage: filters.page || 1,
-              itemsPerPage: filters.limit || 10,
-              totalItems: 0,
-              totalPages: 0,
-              hasNextPage: false,
-              hasPreviousPage: false
-            }
-          }
-        };
+      const params: any = {};
+
+      // Filter by scope
+      if (filters.scope === 'system') {
+        query += ' AND r.is_system_role = 1';
+      } else if (filters.scope === 'tenant') {
+        query += ' AND r.tenant_id = @tenantId';
+        params.tenantId = tenantId;
+      } else if (filters.scope === 'all') {
+        // Super admin sees all, others see system + their tenant roles
+        if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
+          query += ' AND (r.is_system_role = 1 OR r.tenant_id = @tenantId)';
+          params.tenantId = tenantId;
+        }
       }
+
+      query += ' ORDER BY r.hierarchy_level DESC, r.name';
+
+      // Add pagination
+      const page = filters.page || 1;
+      const limit = filters.limit || 50;
+      const offset = (page - 1) * limit;
+
+      params.offset = offset;
+      params.limit = limit;
+
+      query += ' OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY';
+
+      const roles = await this.sqlService.query(query, params);
+
+      // Get total count
+      let countQuery = 'SELECT COUNT(*) as total FROM roles r WHERE 1=1';
+      if (filters.scope === 'system') {
+        countQuery += ' AND r.is_system_role = 1';
+      } else if (filters.scope === 'tenant') {
+        countQuery += ' AND r.tenant_id = @tenantId';
+      } else if (filters.scope === 'all' && userType !== 'owner' && userType !== 'superadmin') {
+        countQuery += ' AND (r.is_system_role = 1 OR r.tenant_id = @tenantId)';
+      }
+
+      const countResult: any = await this.sqlService.query(countQuery, { tenantId });
+      const total = countResult[0]?.total || 0;
+      const totalPages = Math.ceil(total / limit);
 
       return {
         data: {
-          rolesList: result[0] || [],
-          meta: result[1]?.[0] || {
-            currentPage: filters.page || 1,
-            itemsPerPage: filters.limit || 10,
-            totalItems: 0,
-            totalPages: 0,
-            hasNextPage: false,
-            hasPreviousPage: false
+          rolesList: roles,
+          meta: {
+            currentPage: page,
+            itemsPerPage: limit,
+            totalItems: total,
+            totalPages: totalPages,
+            hasNextPage: page < totalPages,
+            hasPreviousPage: page > 1
           }
         }
       };
@@ -57,9 +92,12 @@ export class RbacService {
     }
   }
 
-  async getRoleById(roleId: bigint, userType: string, organizationId: bigint) {
+  async getRoleById(roleId: bigint, userType: string, tenantId: bigint) {
     const result: any = await this.sqlService.query(
-      `SELECT * FROM roles WHERE id = @roleId`,
+      `SELECT r.*,
+        (SELECT COUNT(*) FROM user_roles WHERE role_id = r.id AND is_active = 1) as users_count,
+        (SELECT COUNT(*) FROM role_permissions WHERE role_id = r.id) as permissions_count
+       FROM roles r WHERE r.id = @roleId`,
       { roleId }
     );
     
@@ -68,8 +106,8 @@ export class RbacService {
     }
 
     // Check access permissions
-    if (userType !== 'owner' && userType !== 'superadmin') {
-      if (result[0].organization_id && result[0].organization_id !== organizationId) {
+    if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
+      if (result[0].tenant_id && BigInt(result[0].tenant_id) !== BigInt(tenantId)) {
         throw new ForbiddenException('Access denied to this role');
       }
     }
@@ -77,33 +115,43 @@ export class RbacService {
     return { data: result[0] };
   }
 
-  async createRole(dto: any, userId: bigint, organizationId: bigint, userType: string) {
+  async createRole(dto: any, userId: bigint, tenantId: bigint, userType: string) {
+    // System roles can only be created by super admins
+    if (dto.isSystemRole && userType !== 'owner' && userType !== 'superadmin') {
+      throw new ForbiddenException('Only super admins can create system roles');
+    }
+
     const result: any = await this.sqlService.query(
-      `INSERT INTO roles (organization_id, name, display_name, description, color, hierarchy_level, created_by)
+      `INSERT INTO roles (tenant_id, name, display_name, description, is_system_role, is_default, hierarchy_level, created_by)
        OUTPUT INSERTED.*
-       VALUES (@organizationId, @name, @displayName, @description, @color, @hierarchyLevel, @userId)`,
+       VALUES (@tenantId, @name, @displayName, @description, @isSystemRole, @isDefault, @hierarchyLevel, @userId)`,
       {
-        organizationId: dto.organizationId ? BigInt(dto.organizationId) : organizationId,
+        tenantId: dto.isSystemRole ? null : tenantId,
         name: dto.name,
         displayName: dto.displayName || dto.name,
         description: dto.description || null,
-        color: dto.color || '#6366F1',
+        isSystemRole: dto.isSystemRole || false,
+        isDefault: dto.isDefault || false,
         hierarchyLevel: dto.hierarchyLevel || 0,
         userId
       }
     );
-    return { data: result[0] };
+    return { data: result[0], message: 'Role created successfully' };
   }
 
-  async updateRole(roleId: bigint, dto: any, userId: bigint, userType: string, organizationId: bigint) {
+  async updateRole(roleId: bigint, dto: any, userId: bigint, userType: string, tenantId: bigint) {
     // Verify access
-    await this.getRoleById(roleId, userType, organizationId);
+    const role = await this.getRoleById(roleId, userType, tenantId);
+
+    // Cannot modify system roles unless super admin
+    if (role.data.is_system_role && userType !== 'owner' && userType !== 'superadmin') {
+      throw new ForbiddenException('Cannot modify system roles');
+    }
 
     const result: any = await this.sqlService.query(
       `UPDATE roles SET
          display_name = COALESCE(@displayName, display_name),
          description = COALESCE(@description, description),
-         color = COALESCE(@color, color),
          hierarchy_level = COALESCE(@hierarchyLevel, hierarchy_level),
          updated_by = @userId,
          updated_at = GETUTCDATE()
@@ -113,7 +161,6 @@ export class RbacService {
         roleId, 
         displayName: dto.displayName, 
         description: dto.description, 
-        color: dto.color, 
         hierarchyLevel: dto.hierarchyLevel, 
         userId 
       }
@@ -123,12 +170,17 @@ export class RbacService {
       throw new NotFoundException('Role not found');
     }
 
-    return { data: result[0] };
+    return { data: result[0], message: 'Role updated successfully' };
   }
 
-  async deleteRole(roleId: bigint, userId: bigint, userType: string, organizationId: bigint) {
+  async deleteRole(roleId: bigint, userId: bigint, userType: string, tenantId: bigint) {
     // Verify access
-    await this.getRoleById(roleId, userType, organizationId);
+    const role = await this.getRoleById(roleId, userType, tenantId);
+
+    // Cannot delete system roles
+    if (role.data.is_system_role) {
+      throw new ForbiddenException('Cannot delete system roles');
+    }
 
     // Check if role has users
     const usersCount: any = await this.sqlService.query(
@@ -140,13 +192,19 @@ export class RbacService {
       throw new BadRequestException(`Cannot delete role: ${usersCount[0].count} users are currently assigned to this role`);
     }
 
+    // Delete role permissions first
+    await this.sqlService.query(
+      `DELETE FROM role_permissions WHERE role_id = @roleId`,
+      { roleId }
+    );
+
     const result: any = await this.sqlService.query(
-      `DELETE FROM roles OUTPUT DELETED.* WHERE id = @roleId AND is_system_role = 0`,
+      `DELETE FROM roles OUTPUT DELETED.* WHERE id = @roleId`,
       { roleId }
     );
 
     if (result.length === 0) {
-      throw new NotFoundException('Role not found or is a system role');
+      throw new NotFoundException('Role not found');
     }
 
     return { message: 'Role deleted successfully' };
@@ -155,53 +213,47 @@ export class RbacService {
   // ============================================
   // ROLE PERMISSIONS - HIERARCHICAL TREE
   // ============================================
-  async getRolePermissionsTree(roleId: bigint, userType: string, organizationId: bigint) {
+  async getRolePermissionsTree(roleId: bigint, userType: string, tenantId: bigint) {
     // Verify access
-    await this.getRoleById(roleId, userType, organizationId);
+    await this.getRoleById(roleId, userType, tenantId);
 
-    try {
-      const result = await this.sqlService.execute('sp_GetRolePermissionsTree', { roleId });
+    // Get all permissions with checked status for this role
+    const permissions = await this.sqlService.query(
+      `SELECT 
+        p.id as permission_id,
+        p.permission_key,
+        p.resource,
+        p.action,
+        p.description,
+        p.category,
+        p.is_system_permission,
+        CASE WHEN rp.permission_id IS NOT NULL THEN 1 ELSE 0 END as is_checked
+       FROM permissions p
+       LEFT JOIN role_permissions rp ON p.id = rp.permission_id AND rp.role_id = @roleId
+       ORDER BY p.category, p.resource, p.action`,
+      { roleId }
+    );
 
-      if (!result || result.length === 0) {
-        return {
-          success: true,
-          data: {
-            role: null,
-            permissions_tree: [],
-            summary: {
-              total_permissions: 0,
-              assigned_permissions: 0,
-              total_categories: 0
-            }
-          }
-        };
+    // Group permissions by category
+    const grouped = this.groupPermissionsHierarchically(permissions);
+
+    // Get summary
+    const summary = {
+      total_permissions: permissions.length,
+      assigned_permissions: permissions.filter((p: any) => p.is_checked === 1).length,
+      total_categories: grouped.length
+    };
+
+    return {
+      success: true,
+      data: {
+        roleId,
+        permissions_tree: grouped,
+        summary
       }
-
-      const role = result[0]?.[0] || null;
-      const permissions = result[1] || [];
-      const summary = result[2]?.[0] || {
-        total_permissions: 0,
-        assigned_permissions: 0,
-        total_categories: 0
-      };
-
-      // Group permissions by category and module for hierarchical display
-      const grouped = this.groupPermissionsHierarchically(permissions);
-
-      return {
-        success: true,
-        data: {
-          role,
-          permissions_tree: grouped,
-          summary
-        }
-      };
-    } catch (error) {
-      throw error;
-    }
+    };
   }
 
-  // Helper method to group permissions hierarchically
   private groupPermissionsHierarchically(permissions: any[]) {
     const categories = new Map();
 
@@ -209,51 +261,26 @@ export class RbacService {
       const category = perm.category || 'Uncategorized';
       
       if (!categories.has(category)) {
-        categories.set(category, new Map());
+        categories.set(category, []);
       }
 
-      const modules = categories.get(category);
-      const module = perm.module;
-
-      if (!modules.has(module)) {
-        modules.set(module, {
-          module_name: module,
-          parent_permissions: [],
-          child_permissions: []
-        });
-      }
-
-      const moduleData = modules.get(module);
-
-      const permissionData = {
+      categories.get(category).push({
         id: perm.permission_id,
-        name: perm.permission_name,
+        permission_key: perm.permission_key,
+        resource: perm.resource,
         action: perm.action,
         description: perm.description,
         is_checked: Boolean(perm.is_checked),
         is_system_permission: Boolean(perm.is_system_permission)
-      };
-
-      if (perm.is_child) {
-        moduleData.child_permissions.push({
-          ...permissionData,
-          parent_id: perm.parent_permission_id
-        });
-      } else {
-        moduleData.parent_permissions.push(permissionData);
-      }
+      });
     });
 
-    // Convert maps to arrays
+    // Convert to array
     const result: any[] = [];
-    categories.forEach((modules, categoryName) => {
-      const modulesList: any[] = [];
-      modules.forEach(moduleData => {
-        modulesList.push(moduleData);
-      });
+    categories.forEach((perms, categoryName) => {
       result.push({
         category: categoryName,
-        modules: modulesList
+        permissions: perms
       });
     });
 
@@ -268,17 +295,24 @@ export class RbacService {
     changes: Array<{ mode: 'I' | 'D'; permissionId: number }>,
     userId: bigint,
     userType: string,
-    organizationId: bigint
+    tenantId: bigint
   ) {
     // Verify access
-    await this.getRoleById(roleId, userType, organizationId);
+    const role = await this.getRoleById(roleId, userType, tenantId);
 
-    // Validate changes array
+    // Cannot modify system roles unless super admin
+    if (role.data.is_system_role && userType !== 'owner' && userType !== 'superadmin') {
+      throw new ForbiddenException('Cannot modify permissions for system roles');
+    }
+
+    // Validate changes
     if (!Array.isArray(changes) || changes.length === 0) {
       throw new BadRequestException('Changes array is required and cannot be empty');
     }
 
-    // Validate each change
+    let assignedCount = 0;
+    let deletedCount = 0;
+
     for (const change of changes) {
       if (!change.mode || !['I', 'D'].includes(change.mode)) {
         throw new BadRequestException('Each change must have a valid mode (I or D)');
@@ -286,43 +320,50 @@ export class RbacService {
       if (!change.permissionId) {
         throw new BadRequestException('Each change must have a permissionId');
       }
+
+      const permissionId = BigInt(change.permissionId);
+
+      if (change.mode === 'I') {
+        // Insert (assign permission)
+        try {
+          await this.sqlService.query(
+            `INSERT INTO role_permissions (role_id, permission_id, created_by)
+             VALUES (@roleId, @permissionId, @userId)`,
+            { roleId, permissionId, userId }
+          );
+          assignedCount++;
+        } catch (error: any) {
+          // Ignore if already exists
+          if (!error.message?.includes('UNIQUE') && !error.message?.includes('duplicate')) {
+            throw error;
+          }
+        }
+      } else if (change.mode === 'D') {
+        // Delete (remove permission)
+        await this.sqlService.query(
+          `DELETE FROM role_permissions WHERE role_id = @roleId AND permission_id = @permissionId`,
+          { roleId, permissionId }
+        );
+        deletedCount++;
+      }
     }
 
-    const changesJson = JSON.stringify(changes);
+    // Get current total
+    const totalResult: any = await this.sqlService.query(
+      `SELECT COUNT(*) as total FROM role_permissions WHERE role_id = @roleId`,
+      { roleId }
+    );
 
-    try {
-      const result = await this.sqlService.execute('sp_BulkAssignRolePermissions', {
-        roleId,
-        changes: changesJson,
-        userId
-      });
-
-      const summary = result[0]?.[0] || {
-        assigned_count: 0,
-        deleted_count: 0,
-        total_changes: 0,
-        current_total_permissions: 0
-      };
-
-      return {
-        success: true,
-        data: {
-          assigned_permissions: summary.assigned_count,
-          deleted_permissions: summary.deleted_count,
-          total_changes: summary.total_changes,
-          current_total_permissions: summary.current_total_permissions
-        },
-        message: 'Permissions updated successfully'
-      };
-    } catch (error: any) {
-      if (error.message?.includes('Cannot modify system role')) {
-        throw new ForbiddenException('Cannot modify permissions for system roles');
-      }
-      if (error.message?.includes('invalid')) {
-        throw new BadRequestException('One or more permission IDs are invalid');
-      }
-      throw error;
-    }
+    return {
+      success: true,
+      data: {
+        assigned_permissions: assignedCount,
+        deleted_permissions: deletedCount,
+        total_changes: changes.length,
+        current_total_permissions: totalResult[0]?.total || 0
+      },
+      message: 'Permissions updated successfully'
+    };
   }
 
   // ============================================
@@ -333,11 +374,14 @@ export class RbacService {
     roleId: bigint, 
     assignedBy: bigint, 
     assignerType: string, 
-    assignerOrgId: bigint
+    assignerTenantId: bigint
   ) {
-    // Validate user exists
+    // Validate user exists and get tenant membership
     const targetUser: any = await this.sqlService.query(
-      `SELECT organization_id, user_type FROM users WHERE id = @userId`,
+      `SELECT tm.tenant_id, u.user_type 
+       FROM users u
+       LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
+       WHERE u.id = @userId`,
       { userId }
     );
 
@@ -346,12 +390,13 @@ export class RbacService {
     }
 
     // Validate role exists and access
-    await this.getRoleById(roleId, assignerType, assignerOrgId);
+    await this.getRoleById(roleId, assignerType, assignerTenantId);
 
-    // Check organization scope
-    if (assignerType !== 'owner' && assignerType !== 'superadmin') {
-      if (targetUser[0].organization_id !== assignerOrgId) {
-        throw new ForbiddenException('Cannot assign roles to users outside your organization');
+    // Check tenant scope (non-super admins can only assign within their tenant)
+    if (assignerType !== 'owner' && assignerType !== 'superadmin' && assignerType !== 'super_admin') {
+      const userTenantId = targetUser[0].tenant_id;
+      if (userTenantId && BigInt(userTenantId) !== BigInt(assignerTenantId)) {
+        throw new ForbiddenException('Cannot assign roles to users outside your tenant');
       }
     }
 
@@ -361,15 +406,6 @@ export class RbacService {
          OUTPUT INSERTED.* 
          VALUES (@userId, @roleId, 1, @assignedBy)`,
         { userId, roleId, assignedBy }
-      );
-
-      // Update users count on role
-      await this.sqlService.query(
-        `UPDATE roles 
-         SET users_count = (SELECT COUNT(*) FROM user_roles WHERE role_id = @roleId AND is_active = 1),
-             updated_at = GETUTCDATE()
-         WHERE id = @roleId`,
-        { roleId }
       );
 
       return {
@@ -385,11 +421,13 @@ export class RbacService {
     }
   }
 
-  async getUserRoles(userId: bigint, requestorType: string, requestorOrgId: bigint) {
+  async getUserRoles(userId: bigint, requestorType: string, requestorTenantId: bigint) {
     // Check access
-    if (requestorType !== 'owner' && requestorType !== 'superadmin') {
+    if (requestorType !== 'owner' && requestorType !== 'superadmin' && requestorType !== 'super_admin') {
       const targetUser: any = await this.sqlService.query(
-        `SELECT organization_id FROM users WHERE id = @userId`,
+        `SELECT tm.tenant_id FROM users u
+         LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
+         WHERE u.id = @userId`,
         { userId }
       );
 
@@ -397,7 +435,8 @@ export class RbacService {
         throw new NotFoundException('User not found');
       }
 
-      if (targetUser[0].organization_id !== requestorOrgId) {
+      const userTenantId = targetUser[0].tenant_id;
+      if (userTenantId && BigInt(userTenantId) !== BigInt(requestorTenantId)) {
         throw new ForbiddenException('Access denied');
       }
     }
@@ -413,8 +452,8 @@ export class RbacService {
          r.name as role_name,
          r.display_name as role_display_name,
          r.hierarchy_level,
-         r.color,
-         r.permissions_count
+         r.is_system_role,
+         (SELECT COUNT(*) FROM role_permissions WHERE role_id = r.id) as permissions_count
        FROM user_roles ur
        JOIN roles r ON ur.role_id = r.id
        WHERE ur.user_id = @userId
@@ -432,12 +471,14 @@ export class RbacService {
     userId: bigint, 
     roleId: bigint, 
     requestorType: string, 
-    requestorOrgId: bigint
+    requestorTenantId: bigint
   ) {
-    // Check access
-    if (requestorType !== 'owner' && requestorType !== 'superadmin') {
+    // Check access (same as getUserRoles)
+    if (requestorType !== 'owner' && requestorType !== 'superadmin' && requestorType !== 'super_admin') {
       const targetUser: any = await this.sqlService.query(
-        `SELECT organization_id FROM users WHERE id = @userId`,
+        `SELECT tm.tenant_id FROM users u
+         LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
+         WHERE u.id = @userId`,
         { userId }
       );
 
@@ -445,7 +486,8 @@ export class RbacService {
         throw new NotFoundException('User not found');
       }
 
-      if (targetUser[0].organization_id !== requestorOrgId) {
+      const userTenantId = targetUser[0].tenant_id;
+      if (userTenantId && BigInt(userTenantId) !== BigInt(requestorTenantId)) {
         throw new ForbiddenException('Access denied');
       }
     }
@@ -460,15 +502,6 @@ export class RbacService {
     if (result.length === 0) {
       throw new NotFoundException('User role assignment not found');
     }
-
-    // Update users count on role
-    await this.sqlService.query(
-      `UPDATE roles 
-       SET users_count = (SELECT COUNT(*) FROM user_roles WHERE role_id = @roleId AND is_active = 1),
-           updated_at = GETUTCDATE()
-       WHERE id = @roleId`,
-      { roleId }
-    );
 
     return { 
       success: true,

@@ -1,17 +1,11 @@
-// ============================================
-// email.module.ts
-// ============================================
+// src/modules/email/email.module.ts
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { EmailService } from './email.service';
-import { EmailTemplateService } from './email-template.service';
-import { EmailTemplateController } from './email-template.controller';
+import { SqlServerService } from 'src/core/database';
 
 @Module({
-  imports: [ConfigModule],
-  controllers: [EmailTemplateController],
-  providers: [EmailService, EmailTemplateService],
-  exports: [EmailService, EmailTemplateService],
+  providers: [EmailService, SqlServerService],
+  exports: [EmailService],
 })
 export class EmailModule {}
 

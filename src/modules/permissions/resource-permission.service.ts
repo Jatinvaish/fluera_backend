@@ -1,4 +1,4 @@
-// modules/permissions/permissions.service.ts - COMPLETE WITH ALL METHODS
+// modules/permissions/permissions.service.ts - UPDATED WITH SPs
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
 import * as crypto from 'crypto';
@@ -8,11 +8,101 @@ import * as bcrypt from 'bcrypt';
 export class PermissionsService {
   constructor(private sqlService: SqlServerService) { }
 
+  // ============================================
+  // RBAC PERMISSIONS
+  // ============================================
+  async listPermissions(filters: any) {
+    try {
+      const result: any = await this.sqlService.execute(
+        'sp_ListPermissions',
+        {
+          category: filters.category || null,
+          scope: filters.scope || 'all',
+          page: filters.page || 1,
+          limit: filters.limit || 50
+        }
+      );
+
+      if (!result || result.length === 0) {
+        return {
+          data: {
+            permissionsList: [],
+            meta: {
+              currentPage: filters.page || 1,
+              itemsPerPage: filters.limit || 50,
+              totalItems: 0,
+              totalPages: 0,
+              hasNextPage: false,
+              hasPreviousPage: false
+            }
+          }
+        };
+      }
+
+      const meta = result[1]?.[0] || {
+        currentPage: filters.page || 1,
+        itemsPerPage: filters.limit || 50,
+        totalItems: 0,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false
+      };
+
+      return {
+        data: {
+          permissionsList: result[0],
+          meta: meta
+        }
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async getPermissionById(id: bigint) {
+    const result: any = await this.sqlService.query(
+      `SELECT * FROM permissions WHERE id = @id`,
+      { id }
+    );
+    if (result.length === 0) throw new NotFoundException('Permission not found');
+    return { data: result[0] };
+  }
+
+  async createPermission(dto: any, userId: bigint, userType: string) {
+    const isSystemPermission = userType === 'owner' || userType === 'superadmin';
+
+    const result: any = await this.sqlService.query(
+      `INSERT INTO permissions (permission_key, resource, action, description, category, is_system_permission, created_by)
+       OUTPUT INSERTED.* 
+       VALUES (@permissionKey, @resource, @action, @description, @category, @isSystemPermission, @userId)`,
+      {
+        permissionKey: `${dto.resource}:${dto.action}`,
+        resource: dto.resource,
+        action: dto.action,
+        description: dto.description || null,
+        category: dto.category || null,
+        isSystemPermission,
+        userId
+      }
+    );
+    return { data: result[0] };
+  }
+
+  async deletePermission(id: bigint, userType: string) {
+    const systemCheck = (userType === 'owner' || userType === 'superadmin') ? '' : 'AND is_system_permission = 0';
+
+    const result: any = await this.sqlService.query(
+      `DELETE FROM permissions OUTPUT DELETED.* WHERE id = @id ${systemCheck}`,
+      { id }
+    );
+    if (result.length === 0) throw new NotFoundException('Permission not found or cannot be deleted');
+    return { message: 'Permission deleted successfully' };
+  }
 
   // ============================================
-  // RESOURCE PERMISSIONS (GRANT/REVOKE)
+  // RESOURCE PERMISSIONS - USING SPs
   // ============================================
-  async grantResourcePermission(dto: any, grantedBy: bigint, userType?: string, organizationId?: bigint) {
+  async grantResourcePermission(dto: any, grantedBy: bigint, userType?: string, tenantId?: bigint) {
     // Validate granter has permission
     const canGrant = await this.checkAccess(
       grantedBy,
@@ -20,24 +110,21 @@ export class PermissionsService {
       BigInt(dto.resourceId),
       'share',
       userType,
-      organizationId
+      tenantId
     );
 
     if (!canGrant && userType !== 'owner' && userType !== 'superadmin') {
       throw new ForbiddenException('You do not have permission to grant access to this resource');
     }
 
-    // Validate entity exists
-    await this.validateEntity(dto.entityType, BigInt(dto.entityId));
-
-    // Validate organization scope
-    if (userType !== 'owner' && userType !== 'superadmin' && dto.entityType === 'user') {
-      await this.validateOrganizationScope(grantedBy, BigInt(dto.entityId), organizationId);
-    }
-
     try {
-      const result: any = await this.sqlService.execute(
-        'sp_GrantResourcePermission',
+      const result: any = await this.sqlService.query(
+        `INSERT INTO resource_permissions (
+          resource_type, resource_id, entity_type, entity_id, 
+          permission_type, granted_by, expires_at
+        )
+        OUTPUT INSERTED.*
+        VALUES (@resourceType, @resourceId, @entityType, @entityId, @permissionType, @grantedBy, @expiresAt)`,
         {
           resourceType: dto.resourceType,
           resourceId: BigInt(dto.resourceId),
@@ -56,15 +143,14 @@ export class PermissionsService {
 
       return result[0] || { message: 'Permission granted successfully' };
     } catch (error) {
-      if (error.message?.includes('UNIQUE')) {
+      if (error.message?.includes('UNIQUE') || error.message?.includes('duplicate')) {
         throw new ConflictException('This permission already exists');
       }
       throw error;
     }
-
   }
 
-  async revokeResourcePermission(dto: any, revokedBy?: bigint, userType?: string, organizationId?: bigint) {
+  async revokeResourcePermission(dto: any, revokedBy?: bigint, userType?: string, tenantId?: bigint) {
     // Validate revoker has permission
     if (revokedBy) {
       const canRevoke = await this.checkAccess(
@@ -73,7 +159,7 @@ export class PermissionsService {
         BigInt(dto.resourceId),
         'share',
         userType,
-        organizationId
+        tenantId
       );
 
       if (!canRevoke && userType !== 'owner' && userType !== 'superadmin') {
@@ -82,8 +168,13 @@ export class PermissionsService {
     }
 
     try {
-      await this.sqlService.execute(
-        'sp_RevokeResourcePermission',
+      await this.sqlService.query(
+        `DELETE FROM resource_permissions 
+         WHERE resource_type = @resourceType 
+         AND resource_id = @resourceId 
+         AND entity_type = @entityType 
+         AND entity_id = @entityId
+         ${dto.permissionType ? 'AND permission_type = @permissionType' : ''}`,
         {
           resourceType: dto.resourceType,
           resourceId: BigInt(dto.resourceId),
@@ -106,37 +197,44 @@ export class PermissionsService {
     }
   }
 
-  async checkResourcePermission(resourceType: string, resourceId: bigint, permissionType: string, userId: bigint) {
-    try {
-      const result: any = await this.sqlService.execute(
-        'sp_CheckResourcePermission',
-        { resourceType, resourceId, permissionType, userId }
-      );
+  // ✅ UPDATED: Use sp_CheckResourcePermission
+  async checkResourcePermission(
+    userId: bigint,
+    tenantId: bigint,
+    resourceType: string,
+    resourceId: bigint,
+    permissionType: string,
+  ): Promise<boolean> {
+    const result = await this.sqlService.execute('sp_CheckResourcePermission', {
+      userId,
+      tenantId,
+      resourceType,
+      resourceId,
+      permissionType,
+    });
 
-      return {
-        hasPermission: result[0]?.hasPermission === 1 || false,
-        grantedBy: result[0]?.grantedBy || null,
-        expiresAt: result[0]?.expiresAt || null
-      };
-    } catch (error) {
-      throw error;
-    }
+    // SP returns 2 result sets: direct permissions and role-based permissions
+    const hasDirectPermission = result[0]?.has_permission > 0;
+    const hasRolePermission = result[1]?.has_role_permission > 0;
+
+    return hasDirectPermission || hasRolePermission;
   }
 
-  async checkBatchPermissions(checks: any[], userId: bigint) {
+  async checkBatchPermissions(checks: any[], userId: bigint, tenantId: bigint) {
     const results = await Promise.all(
       checks.map(async (check) => {
-        const result = await this.checkResourcePermission(
+        const hasPermission = await this.checkResourcePermission(
+          userId,
+          tenantId,
           check.resourceType,
           BigInt(check.resourceId),
           check.permissionType,
-          userId
         );
         return {
           resourceType: check.resourceType,
           resourceId: check.resourceId,
           permissionType: check.permissionType,
-          ...result
+          hasPermission,
         };
       })
     );
@@ -144,35 +242,41 @@ export class PermissionsService {
     return { checks: results };
   }
 
-  async listResourcePermissions(resourceType: string, resourceId: bigint, requestorId?: bigint, userType?: string, organizationId?: bigint) {
+  async listResourcePermissions(resourceType: string, resourceId: bigint, requestorId?: bigint, userType?: string, tenantId?: bigint) {
     // Validate requestor has access
     if (requestorId) {
-      const canView = await this.checkAccess(requestorId, resourceType, resourceId, 'read', userType, organizationId);
+      const canView = await this.checkAccess(requestorId, resourceType, resourceId, 'read', userType, tenantId);
 
       if (!canView && userType !== 'owner' && userType !== 'superadmin') {
         throw new ForbiddenException('You do not have permission to view permissions for this resource');
       }
     }
 
-    try {
-      const result: any = await this.sqlService.execute(
-        'sp_ListResourcePermissions',
-        { resourceType, resourceId }
-      );
+    const result: any = await this.sqlService.query(
+      `SELECT 
+        rp.*,
+        u.email AS entity_email,
+        u.first_name AS entity_first_name,
+        u.last_name AS entity_last_name,
+        r.name AS entity_role_name
+      FROM resource_permissions rp
+      LEFT JOIN users u ON rp.entity_type = 'user' AND rp.entity_id = u.id
+      LEFT JOIN roles r ON rp.entity_type = 'role' AND rp.entity_id = r.id
+      WHERE rp.resource_type = @resourceType 
+      AND rp.resource_id = @resourceId
+      ORDER BY rp.created_at DESC`,
+      { resourceType, resourceId }
+    );
 
-      return result[0] || [];
-    } catch (error) {
-      throw error;
-    }
-
+    return result || [];
   }
 
   // ============================================
-  // SHARING (ENHANCED WITH OLD SERVICE METHODS)
+  // SHARING
   // ============================================
-  async createShare(dto: any, userId: bigint, userType?: string, organizationId?: bigint) {
+  async createShare(dto: any, userId: bigint, userType?: string, tenantId?: bigint) {
     // Validate creator has permission to share
-    const canShare = await this.checkAccess(userId, dto.resourceType, BigInt(dto.resourceId), 'share', userType, organizationId);
+    const canShare = await this.checkAccess(userId, dto.resourceType, BigInt(dto.resourceId), 'share', userType, tenantId);
 
     if (!canShare && userType !== 'owner' && userType !== 'superadmin') {
       throw new ForbiddenException('You do not have permission to share this resource');
@@ -186,8 +290,20 @@ export class PermissionsService {
     }
 
     try {
-      const result: any = await this.sqlService.execute(
-        'sp_CreateResourceShare',
+      const result: any = await this.sqlService.query(
+        `INSERT INTO resource_shares (
+          resource_type, resource_id, share_token, share_type,
+          recipient_email, recipient_user_id, recipient_tenant_id,
+          password_protected, password_hash, requires_login,
+          allow_download, expires_at, max_views, created_by
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @resourceType, @resourceId, @shareToken, @shareType,
+          @recipientEmail, @recipientUserId, @recipientTenantId,
+          @passwordProtected, @passwordHash, @requiresLogin,
+          @allowDownload, @expiresAt, @maxViews, @createdBy
+        )`,
         {
           resourceType: dto.resourceType,
           resourceId: BigInt(dto.resourceId),
@@ -195,6 +311,7 @@ export class PermissionsService {
           shareType: dto.shareType || 'view',
           recipientEmail: dto.recipientEmail || null,
           recipientUserId: dto.recipientUserId ? BigInt(dto.recipientUserId) : null,
+          recipientTenantId: dto.recipientTenantId ? BigInt(dto.recipientTenantId) : null,
           passwordProtected: dto.passwordProtected || false,
           passwordHash,
           requiresLogin: dto.requiresLogin !== false,
@@ -212,13 +329,12 @@ export class PermissionsService {
     } catch (error) {
       throw error;
     }
-
   }
 
   async accessShare(shareToken: string, password?: string, userId?: bigint) {
     try {
-      const result: any = await this.sqlService.execute(
-        'sp_AccessResourceShare',
+      const result: any = await this.sqlService.query(
+        `SELECT * FROM resource_shares WHERE share_token = @shareToken`,
         { shareToken }
       );
 
@@ -227,7 +343,6 @@ export class PermissionsService {
       }
 
       const share = result[0];
-
 
       // Check if revoked
       if (share.revoked_at) {
@@ -250,7 +365,7 @@ export class PermissionsService {
       }
 
       // Check if recipient-specific
-      if (share.recipient_user_id && userId && userId !== share.recipient_user_id) {
+      if (share.recipient_user_id && userId && BigInt(userId) !== BigInt(share.recipient_user_id)) {
         throw new ForbiddenException('This link is for a specific user only');
       }
 
@@ -294,7 +409,6 @@ export class PermissionsService {
   }
 
   async revokeShare(shareId: bigint, userId: bigint, userType?: string) {
-    // Get share link
     const shareLinks = await this.sqlService.query(
       `SELECT * FROM resource_shares WHERE id = @shareId`,
       { shareId }
@@ -307,7 +421,7 @@ export class PermissionsService {
     const shareLink = shareLinks[0];
 
     // Verify permission to revoke
-    if (shareLink.created_by !== userId && userType !== 'owner' && userType !== 'superadmin') {
+    if (BigInt(shareLink.created_by) !== BigInt(userId) && userType !== 'owner' && userType !== 'superadmin') {
       throw new ForbiddenException('You do not have permission to revoke this share link');
     }
 
@@ -319,60 +433,99 @@ export class PermissionsService {
     return { message: 'Share link revoked successfully' };
   }
 
-  async listShares(resourceType: string, resourceId: bigint, userId: bigint, userType?: string, organizationId?: bigint) {
+  async listShares(resourceType: string, resourceId: bigint, userId: bigint, userType?: string, tenantId?: bigint) {
     // Validate access
-    const canView = await this.checkAccess(userId, resourceType, resourceId, 'read', userType, organizationId);
+    const canView = await this.checkAccess(userId, resourceType, resourceId, 'read', userType, tenantId);
 
     if (!canView && userType !== 'owner' && userType !== 'superadmin') {
       throw new ForbiddenException('You do not have permission to view share links');
     }
 
-    try {
-      const result: any = await this.sqlService.execute(
-        'sp_ListResourcePermissions',
-        { resourceType, resourceId }
-      );
+    const result: any = await this.sqlService.query(
+      `SELECT 
+        rs.*,
+        u.email AS created_by_email,
+        u.first_name AS created_by_first_name,
+        u.last_name AS created_by_last_name
+      FROM resource_shares rs
+      LEFT JOIN users u ON rs.created_by = u.id
+      WHERE rs.resource_type = @resourceType 
+      AND rs.resource_id = @resourceId
+      ORDER BY rs.created_at DESC`,
+      { resourceType, resourceId }
+    );
 
-      return result[0] || [];
-
-      return result[0] || [];
-    } catch (error) {
-      throw error;
-    }
+    return result || [];
   }
 
-  private async validateEntity(entityType: 'user' | 'role' | 'team', entityId: bigint) {
-    const tableMap = {
-      user: 'users',
-      role: 'roles',
-      team: 'teams',
+  // ============================================
+  // ACCESS CHECK (ENHANCED)
+  // ============================================
+  async checkAccess(
+    userId: bigint,
+    resourceType: string,
+    resourceId: bigint,
+    permissionType: string,
+    userType?: string,
+    tenantId?: bigint
+  ): Promise<boolean> {
+    // Owner/Super Admin always have access
+    if (userType === 'owner' || userType === 'superadmin' || userType === 'super_admin') {
+      return true;
+    }
+
+    // Use SP for permission check if tenantId available
+    if (tenantId) {
+      return this.checkResourcePermission(userId, tenantId, resourceType, resourceId, permissionType);
+    }
+
+    // Fallback to direct checks
+    // Check direct user permission
+    const directPermission = await this.sqlService.query(
+      `SELECT 1 FROM resource_permissions 
+       WHERE resource_type = @resourceType 
+       AND resource_id = @resourceId 
+       AND entity_type = 'user' 
+       AND entity_id = @userId 
+       AND permission_type = @permissionType
+       AND (expires_at IS NULL OR expires_at > GETUTCDATE())`,
+      { resourceType, resourceId, userId, permissionType }
+    );
+
+    if (directPermission.length > 0) return true;
+
+    // Check ownership
+    const ownership = await this.checkOwnership(userId, resourceType, resourceId);
+    if (ownership) return true;
+
+    return false;
+  }
+
+  // ============================================
+  // PRIVATE HELPER METHODS
+  // ============================================
+  private async checkOwnership(userId: bigint, resourceType: string, resourceId: bigint): Promise<boolean> {
+    const tableMap: Record<string, string> = {
+      email: 'email_messages',
+      message: 'messages',
+      document: 'content_submissions',
+      campaign: 'campaigns',
+      contract: 'contracts',
+      file: 'files',
+      note: 'notes',
     };
 
-    const tableName = tableMap[entityType];
-    const result = await this.sqlService.query(
-      `SELECT 1 FROM ${tableName} WHERE id = @entityId`,
-      { entityId }
-    );
+    const tableName = tableMap[resourceType];
+    if (!tableName) return false;
 
-    if (result.length === 0) {
-      throw new NotFoundException(`${entityType} not found`);
-    }
-  }
-
-  private async validateOrganizationScope(granterId: bigint, targetUserId: bigint, organizationId?: bigint) {
-    if (!organizationId) return;
-
-    const targetUser = await this.sqlService.query(
-      `SELECT organization_id FROM users WHERE id = @userId`,
-      { userId: targetUserId }
-    );
-
-    if (targetUser.length === 0) {
-      throw new NotFoundException('Target user not found');
-    }
-
-    if (targetUser[0].organization_id !== organizationId) {
-      throw new ForbiddenException('Cannot grant permissions to users outside your organization');
+    try {
+      const result = await this.sqlService.query(
+        `SELECT 1 FROM ${tableName} WHERE id = @resourceId AND created_by = @userId`,
+        { resourceId, userId }
+      );
+      return result.length > 0;
+    } catch (error) {
+      return false;
     }
   }
 
@@ -383,6 +536,8 @@ export class PermissionsService {
       document: 'content_submissions',
       campaign: 'campaigns',
       contract: 'contracts',
+      file: 'files',
+      note: 'notes',
     };
 
     const tableName = tableMap[resourceType];
@@ -419,215 +574,4 @@ export class PermissionsService {
       console.error('Failed to log resource access:', error);
     }
   }
-
-  async getPermissionsByIds(permissionIds: bigint[]) {
-    if (permissionIds.length === 0) return [];
-
-    const ids = permissionIds.map(id => id.toString()).join(',');
-
-    const result: any = await this.sqlService.query(
-      `SELECT * FROM permissions WHERE id IN (${ids}) ORDER BY category, resource, action`
-    );
-
-    return result || [];
-  }
-
-
-  // HERE start new
-  async listPermissions(filters: any) {
-    try {
-      const result: any = await this.sqlService.execute(
-        'sp_ListPermissions',
-        {
-          category: filters.category || null,
-          scope: filters.scope || 'all',
-          page: filters.page || 1,
-          limit: filters.limit || 10
-        }
-      );
-
-      if (!result || result.length === 0) {
-        return {
-          data: {
-            permissionsList: [],
-            meta: {
-              currentPage: filters.page || 1,
-              itemsPerPage: filters.limit || 10,
-              totalItems: 0,
-              totalPages: 0,
-              hasNextPage: false,
-              hasPreviousPage: false
-            }
-          }
-        };
-      }
-
-      const meta = result[1]?.[0] || {
-        currentPage: filters.page || 1,
-        itemsPerPage: filters.limit || 10,
-        totalItems: 0,
-        totalPages: 0,
-        hasNextPage: false,
-        hasPreviousPage: false
-      };
-
-      return {
-        data: {
-          permissionsList: result[0],
-          meta: meta
-        }
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  async getPermissionById(id: bigint) {
-    const result: any = await this.sqlService.query(
-      `SELECT * FROM permissions WHERE id = @id`,
-      { id }
-    );
-    if (result.length === 0) throw new NotFoundException('Permission not found');
-    return { data: result[0] };
-  }
-
-  async createPermission(dto: any, userId: bigint, userType: string) {
-    const isSystemPermission = userType === 'owner' || userType === 'superadmin';
-
-    const result: any = await this.sqlService.query(
-      `INSERT INTO permissions (name, resource, action, description, category, is_system_permission, created_by)
-       OUTPUT INSERTED.* 
-       VALUES (@name, @resource, @action, @description, @category, @isSystemPermission, @userId)`,
-      {
-        name: dto.name,
-        resource: dto.resource,
-        action: dto.action,
-        description: dto.description || null,
-        category: dto.category || null,
-        isSystemPermission,
-        userId
-      }
-    );
-    return { data: result[0] };
-  }
-
-  async deletePermission(id: bigint, userType: string) {
-    const systemCheck = (userType === 'owner' || userType === 'superadmin') ? '' : 'AND is_system_permission = 0';
-
-    const result: any = await this.sqlService.query(
-      `DELETE FROM permissions OUTPUT DELETED.* WHERE id = @id ${systemCheck}`,
-      { id }
-    );
-    if (result.length === 0) throw new NotFoundException('Permission not found or cannot be deleted');
-    return { message: 'Permission deleted successfully' };
-  }
-
-  // ============================================
-  // RESOURCE ACCESS CHECK (FIXED)
-  // ============================================
-  async checkAccess(
-    userId: bigint,
-    resourceType: string,
-    resourceId: bigint,
-    permissionType: string,
-    userType?: string,
-    organizationId?: bigint
-  ): Promise<boolean> {
-    // Owner/Super Admin always have access
-    if (userType === 'owner' || userType === 'superadmin') {
-      return true;
-    }
-
-    // Check direct user permission
-    const directPermission = await this.sqlService.query(
-      `SELECT 1 FROM resource_permissions 
-       WHERE resource_type = @resourceType 
-       AND resource_id = @resourceId 
-       AND entity_type = 'user' 
-       AND entity_id = @userId 
-       AND permission_type = @permissionType
-       AND (expires_at IS NULL OR expires_at > GETUTCDATE())`,
-      { resourceType, resourceId, userId, permissionType }
-    );
-
-    if (directPermission.length > 0) return true;
-
-    // Check role-based permission
-    const rolePermission = await this.sqlService.query(
-      `SELECT 1 FROM resource_permissions rp
-       JOIN user_roles ur ON rp.entity_id = ur.role_id
-       WHERE rp.resource_type = @resourceType 
-       AND rp.resource_id = @resourceId 
-       AND rp.entity_type = 'role'
-       AND ur.user_id = @userId
-       AND rp.permission_type = @permissionType
-       AND (rp.expires_at IS NULL OR rp.expires_at > GETUTCDATE())
-       AND ur.is_active = 1`,
-      { resourceType, resourceId, userId, permissionType }
-    );
-
-    if (rolePermission.length > 0) return true;
-
-    // Check if user is owner/creator of the resource
-    const ownership = await this.checkOwnership(userId, resourceType, resourceId);
-    if (ownership) return true;
-
-    // Check organization-level access
-    if (organizationId && (userType === 'agency_admin' || userType === 'brand_admin')) {
-      const orgAccess = await this.checkOrganizationAccess(userId, organizationId, resourceType, resourceId);
-      if (orgAccess) return true;
-    }
-
-    return false;
-  }
-
-  // ============================================
-  // PRIVATE HELPER METHODS
-  // ============================================
-  private async checkOwnership(userId: bigint, resourceType: string, resourceId: bigint): Promise<boolean> {
-    const tableMap: Record<string, string> = {
-      email: 'email_messages',
-      message: 'messages',
-      document: 'content_submissions',
-      campaign: 'campaigns',
-      contract: 'contracts',
-    };
-
-    const tableName = tableMap[resourceType];
-    if (!tableName) return false;
-
-    try {
-      const result = await this.sqlService.query(
-        `SELECT 1 FROM ${tableName} WHERE id = @resourceId AND created_by = @userId`,
-        { resourceId, userId }
-      );
-      return result.length > 0;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  private async checkOrganizationAccess(userId: bigint, organizationId: bigint, resourceType: string, resourceId: bigint): Promise<boolean> {
-    const tableMap: Record<string, string> = {
-      email: 'email_messages',
-      message: 'messages',
-      document: 'content_submissions',
-      campaign: 'campaigns',
-      contract: 'contracts',
-    };
-
-    const tableName = tableMap[resourceType];
-    if (!tableName) return false;
-
-    try {
-      const result = await this.sqlService.query(
-        `SELECT 1 FROM ${tableName} WHERE id = @resourceId AND organization_id = @organizationId`,
-        { resourceId, organizationId }
-      );
-      return result.length > 0;
-    } catch (error) {
-      return false;
-    }
-  }
 }
-

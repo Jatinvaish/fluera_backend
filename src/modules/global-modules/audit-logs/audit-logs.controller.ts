@@ -1,12 +1,9 @@
 
-// ============================================
-// modules/global-modules/audit-logs/audit-logs.controller.ts
-// ============================================
-import { Controller, Post, Get, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
+// src/modules/audit-logs/audit-logs.controller.ts
+import { Controller, Post, Get, Body, Query } from '@nestjs/common';
 import { AuditLogsService } from './audit-logs.service';
-import { CreateAuditLogDto, QueryAuditLogsDto } from './dto/audit-logs.dto';
 import { Permissions } from '../../../core/decorators/permissions.decorator';
-import { ApiVersion } from '../../../core/decorators/api-version.decorator';
+import { TenantId } from 'src/core/decorators';
 
 @Controller('audit-logs')
 export class AuditLogsController {
@@ -14,19 +11,13 @@ export class AuditLogsController {
 
   @Post()
   @Permissions('audit_logs:create')
-  async create(@Body() dto: CreateAuditLogDto) {
-    return this.auditLogsService.createAuditLog(dto);
+  async create(@Body() dto: any, @TenantId() tenantId: bigint) {
+    return this.auditLogsService.create({ ...dto, tenantId });
   }
 
-  @Post('query')
+  @Get()
   @Permissions('audit_logs:read')
-  async findAll(@Body() query: QueryAuditLogsDto) {
-    return this.auditLogsService.findAll(query);
-  }
-
-  @Get(':id')
-  @Permissions('audit_logs:read')
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.auditLogsService.findOne(BigInt(id));
+  async findAll(@Query() query: any, @TenantId() tenantId: bigint) {
+    return this.auditLogsService.findAll({ ...query, tenantId });
   }
 }

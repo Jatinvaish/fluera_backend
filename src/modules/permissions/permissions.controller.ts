@@ -1,7 +1,7 @@
 // modules/permissions/permissions.controller.ts - UPDATED
 import { Controller, Post, Body } from '@nestjs/common';
 import { Permissions } from '../../core/decorators/permissions.decorator';
-import { CurrentUser } from '../../core/decorators';
+import { CurrentUser, TenantId } from '../../core/decorators';
 import { PermissionsService } from './resource-permission.service';
 
 @Controller('permissions')
@@ -10,19 +10,19 @@ export class PermissionsController {
 
   // ==================== RBAC PERMISSIONS ====================
   @Post('list')
-  @Permissions('permissions.read')
+  @Permissions('permissions:read')
   async listPermissions(@Body() filters: any) {
     return this.permissionsService.listPermissions(filters);
   }
 
   @Post('get')
-  @Permissions('permissions.read')
+  @Permissions('permissions:read')
   async getPermission(@Body() body: { permissionId: number }) {
     return this.permissionsService.getPermissionById(BigInt(body.permissionId));
   }
 
   @Post('create')
-  @Permissions('permissions.create')
+  @Permissions('permissions:create')
   async createPermission(
     @Body() dto: any,
     @CurrentUser('id') userId: bigint,
@@ -32,7 +32,7 @@ export class PermissionsController {
   }
 
   @Post('delete')
-  @Permissions('permissions.delete')
+  @Permissions('permissions:delete')
   async deletePermission(
     @Body() body: { permissionId: number },
     @CurrentUser('userType') userType: string
@@ -49,13 +49,13 @@ export class PermissionsController {
     @Body() dto: any,
     @CurrentUser('id') grantedBy: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return this.permissionsService.grantResourcePermission(
       dto,
       grantedBy,
       userType,
-      organizationId
+      tenantId
     );
   }
 
@@ -64,35 +64,39 @@ export class PermissionsController {
     @Body() dto: any,
     @CurrentUser('id') revokedBy: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return this.permissionsService.revokeResourcePermission(
       dto,
       revokedBy,
       userType,
-      organizationId
+      tenantId
     );
   }
 
   @Post('check')
   async checkResourcePermission(
     @Body() dto: { resourceType: string; resourceId: number; permissionType: string },
-    @CurrentUser('id') userId: bigint
+    @CurrentUser('id') userId: bigint,
+    @TenantId() tenantId: bigint
   ) {
-    return this.permissionsService.checkResourcePermission(
+    const hasPermission = await this.permissionsService.checkResourcePermission(
+      userId,
+      tenantId,
       dto.resourceType,
       BigInt(dto.resourceId),
-      dto.permissionType,
-      userId
+      dto.permissionType
     );
+    return { hasPermission };
   }
 
   @Post('check/batch')
   async checkBatchPermissions(
     @Body() dto: { checks: any[] },
-    @CurrentUser('id') userId: bigint
+    @CurrentUser('id') userId: bigint,
+    @TenantId() tenantId: bigint
   ) {
-    return this.permissionsService.checkBatchPermissions(dto.checks, userId);
+    return this.permissionsService.checkBatchPermissions(dto.checks, userId, tenantId);
   }
 
   @Post('resource/list')
@@ -100,14 +104,14 @@ export class PermissionsController {
     @Body() dto: { resourceType: string; resourceId: number },
     @CurrentUser('id') requestorId: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return this.permissionsService.listResourcePermissions(
       dto.resourceType,
       BigInt(dto.resourceId),
       requestorId,
       userType,
-      organizationId
+      tenantId
     );
   }
 
@@ -117,7 +121,7 @@ export class PermissionsController {
     @Body() dto: { resourceType: string; resourceId: number; permissionType: string },
     @CurrentUser('id') userId: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     const hasAccess = await this.permissionsService.checkAccess(
       userId,
@@ -125,7 +129,7 @@ export class PermissionsController {
       BigInt(dto.resourceId),
       dto.permissionType,
       userType,
-      organizationId
+      tenantId
     );
     return { hasAccess };
   }
@@ -136,13 +140,13 @@ export class PermissionsController {
     @Body() dto: any,
     @CurrentUser('id') userId: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return this.permissionsService.createShare(
       dto,
       userId,
       userType,
-      organizationId
+      tenantId
     );
   }
 
@@ -176,14 +180,14 @@ export class PermissionsController {
     @Body() dto: { resourceType: string; resourceId: number },
     @CurrentUser('id') userId: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return this.permissionsService.listShares(
       dto.resourceType,
       BigInt(dto.resourceId),
       userId,
       userType,
-      organizationId
+      tenantId
     );
   }
 }

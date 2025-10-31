@@ -1,29 +1,28 @@
 // ============================================
-// modules/auth/auth.controller.ts - UPDATED WITH SOCIAL AUTH
+// src/modules/auth/auth.controller.ts - V3.0 COMPLETE
 // ============================================
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Req, Query, Res } from '@nestjs/common';
+import {
+  Controller, Post, Body, HttpCode, HttpStatus, Get,
+  UseGuards, Req, Query, Res
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { InvitationService } from './invitation.service';
 import {
   LoginDto,
   RefreshTokenDto,
   RegisterDto,
   ResendVerificationDto,
   VerifyRegistrationDto,
-} from './dto/register.dto';
-import { Public, CurrentUser } from 'src/core/decorators';
-import { VerificationService } from 'src/common/verification.service';
-import { InvitationService } from './invitation.service';
-import {
-  SendVerificationDto,
-  VerifyCodeDto,
+  CreateAgencyDto,
+  CreateBrandDto,
+  CreateCreatorDto,
   ResetPasswordRequestDto,
   ResetPasswordDto,
   SendInvitationDto,
   AcceptInvitationDto,
-  CreateAgencyDto,
-  CreateBrandDto,
-  CreateCreatorDto
 } from './dto/auth.dto';
+import { Public, CurrentUser, TenantId } from '../../core/decorators';
+import { VerificationService } from '../../common/verification.service';
 import axios from 'axios';
 import type { FastifyReply } from 'fastify';
 
@@ -34,6 +33,10 @@ export class AuthController {
     private verificationService: VerificationService,
     private invitationService: InvitationService,
   ) { }
+
+  // ============================================
+  // MANUAL REGISTRATION & VERIFICATION
+  // ============================================
 
   @Post('register')
   @Public()
@@ -53,11 +56,16 @@ export class AuthController {
     return this.authService.resendVerificationCode(dto.email);
   }
 
+  // ============================================
+  // LOGIN & LOGOUT
+  // ============================================
+
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(@Body() loginDto: LoginDto, @Req() req: any) {
+    const deviceInfo = this.extractDeviceInfo(req);
+    return this.authService.login(loginDto, deviceInfo);
   }
 
   @Get('me')
@@ -78,18 +86,9 @@ export class AuthController {
     return this.authService.logout(userId);
   }
 
-  @Post('send-verification')
-  @Public()
-  async sendVerification(@Body() dto: SendVerificationDto) {
-    return this.verificationService.sendVerificationCode(dto.email, dto.codeType);
-  }
-
-  @Post('verify-code')
-  @Public()
-  async verifyCode(@Body() dto: VerifyCodeDto) {
-    await this.verificationService.verifyCode(dto.email, dto.code, dto.codeType);
-    return { message: 'Verification successful' };
-  }
+  // ============================================
+  // PASSWORD RESET
+  // ============================================
 
   @Post('password-reset/request')
   @Public()
@@ -103,13 +102,45 @@ export class AuthController {
     return this.authService.resetPassword(dto.token, dto.newPassword);
   }
 
+  // ============================================
+  // ENTITY CREATION (ONBOARDING)
+  // ============================================
+
+  @Post('create-agency')
+  async createAgency(
+    @Body() dto: CreateAgencyDto,
+    @CurrentUser('id') userId: bigint
+  ) {
+    return this.authService.createAgency(dto, userId);
+  }
+
+  @Post('create-brand')
+  async createBrand(
+    @Body() dto: CreateBrandDto,
+    @CurrentUser('id') userId: bigint
+  ) {
+    return this.authService.createBrand(dto, userId);
+  }
+
+  @Post('create-creator')
+  async createCreator(
+    @Body() dto: CreateCreatorDto,
+    @CurrentUser('id') userId: bigint
+  ) {
+    return this.authService.createCreator(dto, userId);
+  }
+
+  // ============================================
+  // INVITATION SYSTEM
+  // ============================================
+
   @Post('invitation/send')
   async sendInvitation(
     @Body() dto: SendInvitationDto,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @TenantId() tenantId: bigint,
     @CurrentUser('id') userId: bigint,
   ) {
-    return this.invitationService.sendInvitation(organizationId, userId, dto);
+    return this.invitationService.sendInvitation(tenantId, userId, dto);
   }
 
   @Post('invitation/accept')
@@ -125,6 +156,7 @@ export class AuthController {
   // ============================================
   // GOOGLE OAUTH FLOW
   // ============================================
+
   @Get('google')
   @Public()
   async googleLogin(@Res() res: FastifyReply) {
@@ -149,11 +181,15 @@ export class AuthController {
     @Req() req: any
   ) {
     if (error || !code) {
-      return res.redirect(`${process.env.FRONTEND_URL}/sign-in?error=google_auth_cancelled`, 302);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/sign-in?error=google_auth_cancelled`,
+        302
+      );
     }
 
     try {
       const redirectUri = `${process.env.APP_URL}/api/v1/auth/google/callback`;
+
       // Exchange code for tokens
       const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
         code,
@@ -172,8 +208,6 @@ export class AuthController {
       );
 
       const profile = userInfoResponse.data;
-
-      // Extract device info from request
       const deviceInfo = this.extractDeviceInfo(req);
 
       // Handle social login
@@ -186,7 +220,6 @@ export class AuthController {
         accessToken: access_token,
         refreshToken: refresh_token,
       }, deviceInfo);
-      console.log("🚀 ~ AuthController ~ googleCallback ~ result:", result)
 
       // Redirect to frontend with tokens
       const redirectUrl = `${process.env.FRONTEND_URL}/auth/google/callback?` +
@@ -197,13 +230,17 @@ export class AuthController {
       return res.redirect(redirectUrl, 302);
     } catch (err: any) {
       console.error('Google auth failed:', err.response?.data || err.message);
-      return res.redirect(`${process.env.FRONTEND_URL}/sign-in?error=google_auth_failed`, 302);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/sign-in?error=google_auth_failed`,
+        302
+      );
     }
   }
 
   // ============================================
   // MICROSOFT OAUTH FLOW
   // ============================================
+
   @Get('microsoft')
   @Public()
   async microsoftLogin(@Res() res: FastifyReply) {
@@ -227,7 +264,10 @@ export class AuthController {
     @Req() req: any
   ) {
     if (error || !code) {
-      return res.redirect(`${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_cancelled`, 302);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_cancelled`,
+        302
+      );
     }
 
     try {
@@ -255,7 +295,6 @@ export class AuthController {
       );
 
       const profile = userInfoResponse.data;
-
       const deviceInfo = this.extractDeviceInfo(req);
 
       // Handle social login
@@ -277,31 +316,22 @@ export class AuthController {
       return res.redirect(redirectUrl, 302);
     } catch (err: any) {
       console.error('Microsoft auth failed:', err.response?.data || err.message);
-      return res.redirect(`${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_failed`, 302);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_failed`,
+        302
+      );
     }
   }
-
-  @Post('create-agency')
-  async createAgency(@Body() dto: CreateAgencyDto, @CurrentUser('id') userId: bigint) {
-    return this.authService.createAgency(dto, userId);
+  @Get('sessions')
+  async getUserSessions(@CurrentUser('id') userId: bigint) {
+    return this.authService.getUserSessions(userId);
   }
-
-  @Post('create-brand')
-  async createBrand(@Body() dto: CreateBrandDto, @CurrentUser('id') userId: bigint) {
-    return this.authService.createBrand(dto, userId);
-  }
-
-  @Post('create-creator')
-  async createCreator(@Body() dto: CreateCreatorDto, @CurrentUser('id') userId: bigint) {
-    return this.authService.createCreator(dto, userId);
-  }
-
   // ============================================
-  // HELPER: Extract Device Info from Request
+  // HELPER: Extract Device Info
   // ============================================
   private extractDeviceInfo(req: any) {
     const userAgent = req.headers['user-agent'] || '';
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress;
 
     return {
       deviceFingerprint: req.headers['x-device-fingerprint'] || null,

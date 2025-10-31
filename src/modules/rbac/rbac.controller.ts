@@ -1,12 +1,8 @@
-// =====================================================
-// UPDATED: modules/rbac/rbac.controller.ts
-// Cleaned and optimized endpoints
-// =====================================================
-
+// modules/rbac/rbac.controller.ts - UPDATED
 import { Controller, Post, Body } from '@nestjs/common';
 import { RbacService } from './rbac.service';
 import { Permissions } from '../../core/decorators/permissions.decorator';
-import { CurrentUser } from '../../core/decorators';
+import { CurrentUser, TenantId } from '../../core/decorators';
 
 @Controller('rbac')
 export class RbacController {
@@ -14,104 +10,96 @@ export class RbacController {
 
   // ==================== ROLES MANAGEMENT ====================
   @Post('roles/list')
-  @Permissions('roles.read')
+  @Permissions('roles:read')
   async listRoles(
     @Body() body: any,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
-    return await this.rbacService.listRoles(body, userType, organizationId);
+    return await this.rbacService.listRoles(body, userType, tenantId);
   }
 
   @Post('roles/get')
-  @Permissions('roles.read')
+  @Permissions('roles:read')
   async getRole(
     @Body() body: { roleId: number },
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return await this.rbacService.getRoleById(
       BigInt(body.roleId),
       userType,
-      organizationId
+      tenantId
     );
   }
 
   @Post('roles/create')
-  @Permissions('roles.create')
+  @Permissions('roles:create')
   async createRole(
     @Body() body: any,
     @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @TenantId() tenantId: bigint,
     @CurrentUser('userType') userType: string
   ) {
     return await this.rbacService.createRole(
       body,
       userId,
-      organizationId,
+      tenantId,
       userType
     );
   }
 
   @Post('roles/update')
-  @Permissions('roles.write')
+  @Permissions('roles:write')
   async updateRole(
     @Body() body: any,
     @CurrentUser('id') userId: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return await this.rbacService.updateRole(
       BigInt(body.roleId),
       body,
       userId,
       userType,
-      organizationId
+      tenantId
     );
   }
 
   @Post('roles/delete')
-  @Permissions('roles.delete')
+  @Permissions('roles:delete')
   async deleteRole(
     @Body() body: { roleId: number },
     @CurrentUser('id') userId: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return await this.rbacService.deleteRole(
       BigInt(body.roleId),
       userId,
       userType,
-      organizationId
+      tenantId
     );
   }
 
   // ==================== ROLE PERMISSIONS - HIERARCHICAL ====================
   
-  /**
-   * Get permissions tree for a role (for Manage Permissions page)
-   * Returns hierarchical structure grouped by category/module with checked state
-   */
   @Post('roles/permissions/tree')
-  @Permissions('role-permissions.read')
+  @Permissions('role-permissions:read')
   async getRolePermissionsTree(
     @Body() body: { roleId: number },
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return this.rbacService.getRolePermissionsTree(
       BigInt(body.roleId),
       userType,
-      organizationId
+      tenantId
     );
   }
 
-  /**
-   * Bulk update role permissions (for Manage Permissions page)
-   * Accepts array of changes: [{ mode: 'I', permissionId: 1 }, { mode: 'D', permissionId: 2 }]
-   */
   @Post('roles/permissions/bulk-assign')
-  @Permissions('role-permissions.write')
+  @Permissions('role-permissions:write')
   async bulkAssignPermissions(
     @Body() body: { 
       roleId: number; 
@@ -119,62 +107,62 @@ export class RbacController {
     },
     @CurrentUser('id') userId: bigint,
     @CurrentUser('userType') userType: string,
-    @CurrentUser('organizationId') organizationId: bigint
+    @TenantId() tenantId: bigint
   ) {
     return await this.rbacService.bulkAssignPermissions(
       BigInt(body.roleId),
       body.changes,
       userId,
       userType,
-      organizationId
+      tenantId
     );
   }
 
   // ==================== USER ROLES MANAGEMENT ====================
   
   @Post('users/roles/assign')
-  @Permissions('user-roles.write')
+  @Permissions('user-roles:write')
   async assignRole(
     @Body() body: { userId: number; roleId: number },
     @CurrentUser('id') assignerId: bigint,
     @CurrentUser('userType') assignerType: string,
-    @CurrentUser('organizationId') assignerOrgId: bigint
+    @TenantId() assignerTenantId: bigint
   ) {
     return await this.rbacService.assignRoleToUser(
       BigInt(body.userId),
       BigInt(body.roleId),
       assignerId,
       assignerType,
-      assignerOrgId
+      assignerTenantId
     );
   }
 
   @Post('users/roles/list')
-  @Permissions('user-roles.read')
+  @Permissions('user-roles:read')
   async getUserRoles(
     @Body() body: { userId: number },
     @CurrentUser('userType') requestorType: string,
-    @CurrentUser('organizationId') requestorOrgId: bigint
+    @TenantId() requestorTenantId: bigint
   ) {
     return await this.rbacService.getUserRoles(
       BigInt(body.userId),
       requestorType,
-      requestorOrgId
+      requestorTenantId
     );
   }
 
   @Post('users/roles/remove')
-  @Permissions('user-roles.write')
+  @Permissions('user-roles:write')
   async removeRole(
     @Body() body: { userId: number; roleId: number },
     @CurrentUser('userType') requestorType: string,
-    @CurrentUser('organizationId') requestorOrgId: bigint
+    @TenantId() requestorTenantId: bigint
   ) {
     return await this.rbacService.removeRoleFromUser(
       BigInt(body.userId),
       BigInt(body.roleId),
       requestorType,
-      requestorOrgId
+      requestorTenantId
     );
   }
 }

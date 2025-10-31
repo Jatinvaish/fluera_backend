@@ -1,4 +1,4 @@
-// modules/menu-permissions/menu-permissions.controller.ts
+// modules/rbac/menu-permissions.controller.ts - VERIFIED
 import { Controller, Post, Body } from '@nestjs/common';
 import { Permissions } from '../../core/decorators/permissions.decorator';
 import { CurrentUser } from '../../core/decorators';
@@ -9,7 +9,7 @@ export class MenuPermissionsController {
   constructor(private menuPermissionsService: MenuPermissionsService) {}
 
   @Post('link')
-  @Permissions('menu-permissions.write')
+  @Permissions('menu-permissions:write')
   async linkMenuPermission(
     @Body() dto: { menuKey: string; permissionId: number; isRequired?: boolean },
     @CurrentUser('id') userId: bigint,
@@ -25,7 +25,7 @@ export class MenuPermissionsController {
   }
 
   @Post('bulk-link')
-  @Permissions('menu-permissions.write')
+  @Permissions('menu-permissions:write')
   async bulkLinkMenuPermissions(
     @Body() dto: { mappings: Array<{ menuKey: string; permissionId: number; isRequired?: boolean }> },
     @CurrentUser('id') userId: bigint,
@@ -39,7 +39,7 @@ export class MenuPermissionsController {
   }
 
   @Post('unlink')
-  @Permissions('menu-permissions.write')
+  @Permissions('menu-permissions:write')
   async unlinkMenuPermission(
     @Body() dto: { menuKey: string; permissionId: number },
     @CurrentUser('userType') userType: string
@@ -52,19 +52,19 @@ export class MenuPermissionsController {
   }
 
   @Post('menu/get')
-  @Permissions('menu-permissions.read')
+  @Permissions('menu-permissions:read')
   async getMenuPermissions(@Body() dto: { menuKey: string }) {
     return this.menuPermissionsService.getMenuPermissions(dto.menuKey);
   }
 
   @Post('list')
-  @Permissions('menu-permissions.read')
+  @Permissions('menu-permissions:read')
   async listMenuPermissions(@Body() dto: any) {
     return this.menuPermissionsService.listMenuPermissions(dto);
   }
 
   @Post('user-access')
-  @Permissions('menu-permissions.read')
+  @Permissions('menu-permissions:read')
   async getUserAccessibleMenus(
     @Body() dto: { userId?: number },
     @CurrentUser('id') currentUserId: bigint
@@ -73,7 +73,7 @@ export class MenuPermissionsController {
     return this.menuPermissionsService.getUserAccessibleMenus(targetUserId);
   }
 
-  // NO PERMISSION CHECK - This is crucial for loading menu access
+  // NO PERMISSION CHECK - Crucial for loading menu access
   @Post('my-access')
   async getMyAccessibleMenus(@CurrentUser('id') userId: bigint) {
     return this.menuPermissionsService.getUserAccessibleMenus(userId);

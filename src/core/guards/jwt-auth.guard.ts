@@ -1,10 +1,12 @@
-// ============================================
-// core/guards/jwt-auth.guard.ts
-// ============================================
-import { Injectable, ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+// src/core/guards/jwt-auth.guard.ts
+import {
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Observable } from 'rxjs';
+import { AuthGuard } from '@nestjs/passport';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator'; // ✅ ADD THIS IMPORT
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -12,9 +14,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     super();
   }
 
-  canActivate(context: ExecutionContext): boolean | Promise<boolean> | Observable<boolean> {
-    // Check if route is public
-    const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
+  canActivate(context: ExecutionContext) {
+    // Check if route is marked as public
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);

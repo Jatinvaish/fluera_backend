@@ -49,7 +49,7 @@ export class EmailTemplateService {
       const result = await this.sqlService.execute(
         'sp_GetEmailTemplate',
         {
-          organizationId: organizationId || null,
+          tenant_id: organizationId || null,
           category
         }
       );
@@ -104,9 +104,13 @@ export class EmailTemplateService {
     includeGlobal: boolean = true
   ): Promise<EmailTemplate[]> {
     try {
+      // ✅ USE SP INSTEAD OF INLINE SQL
       const result = await this.sqlService.execute(
         'sp_GetOrganizationTemplates',
-        { organizationId, includeGlobal: includeGlobal ? 1 : 0 }
+        {
+          organizationId,
+          includeGlobal: includeGlobal ? 1 : 0
+        }
       );
 
       return result || [];
@@ -117,24 +121,23 @@ export class EmailTemplateService {
   }
 
 
-
   /**
    * Delete a template
    */
   async deleteTemplate(id: bigint, organizationId: bigint): Promise<boolean> {
     try {
+      // ✅ USE SP INSTEAD OF INLINE SQL
       const result = await this.sqlService.execute(
         'sp_DeleteEmailTemplate',
         { id, organizationId }
       );
 
-      return result[0].affected_rows > 0;
+      return result[0]?.affected_rows > 0;
     } catch (error) {
       this.logger.error('Failed to delete template', error.stack);
       throw new BadRequestException('Failed to delete email template');
     }
   }
-
   /**
    * Validate template variables
    */

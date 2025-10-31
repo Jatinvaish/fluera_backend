@@ -1,6 +1,6 @@
 
 // ============================================
-// core/decorators/roles.decorator.ts
+// src/core/decorators/roles.decorator.ts
 // ============================================
 import { SetMetadata } from '@nestjs/common';
 

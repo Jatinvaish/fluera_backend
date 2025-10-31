@@ -1,20 +1,12 @@
-
-
-// ============================================
-// core/database/database.module.ts
-// ============================================
-import { Module, Global } from '@nestjs/common';
+// 1. src/core/database/database.module.ts - Make it GLOBAL
+import { Global, Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { SqlServerService } from './sql-server.service';
-// TODOO: Re-add MongoDB support if needed
-// import { MongoDBService } from './mongodb.service';
-import { TransactionManager } from './transaction.manager';
 
-@Global()
+@Global() // ✅ This makes SqlServerService available everywhere
 @Module({
-  // TODOO: Re-add MongoDB support if needed
-  // providers: [SqlServerService, MongoDBService, TransactionManager],
-  // exports: [SqlServerService, MongoDBService, TransactionManager],
-  providers: [SqlServerService, TransactionManager],
-  exports: [SqlServerService, TransactionManager],
+  imports: [ConfigModule], // If it needs ConfigService
+  providers: [SqlServerService],
+  exports: [SqlServerService],
 })
-export class DatabaseModule { }
+export class DatabaseModule {}
