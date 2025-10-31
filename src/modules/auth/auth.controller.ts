@@ -25,6 +25,8 @@ import { Public, CurrentUser, TenantId } from '../../core/decorators';
 import { VerificationService } from '../../common/verification.service';
 import axios from 'axios';
 import type { FastifyReply } from 'fastify';
+import { RateLimit } from '../../core/guards/rate-limit.guard';
+
 
 @Controller('auth')
 export class AuthController {
@@ -62,6 +64,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @RateLimit(5, 300) // 🔒 5 attempts per 5 minutes
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto, @Req() req: any) {
     const deviceInfo = this.extractDeviceInfo(req);

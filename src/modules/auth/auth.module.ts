@@ -10,6 +10,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { InvitationService } from './invitation.service';
 import { VerificationService } from 'src/common/verification.service';
+import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.service';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { VerificationService } from 'src/common/verification.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, VerificationService, InvitationService, JwtStrategy],
+  providers: [AuthService, VerificationService, AuditLoggerService, InvitationService, JwtStrategy],
   exports: [AuthService, JwtStrategy],
 })
 export class AuthModule {}
