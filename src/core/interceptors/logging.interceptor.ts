@@ -1,7 +1,4 @@
-
-// ============================================
-// FIX 4: core/interceptors/logging.interceptor.ts
-// ============================================
+// src/core/interceptors/logging.interceptor.ts - FASTIFY VERSION
 import {
   Injectable,
   NestInterceptor,
@@ -9,43 +6,45 @@ import {
   CallHandler,
   Logger,
 } from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { Observable, throwError } from 'rxjs';
+import { tap, catchError } from 'rxjs/operators';
+import { FastifyRequest, FastifyReply } from 'fastify';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
-  private readonly logger = new Logger(LoggingInterceptor.name);
+  private readonly logger = new Logger('HTTP');
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
-    const { method, url } = request;
+    const ctx = context.switchToHttp();
+    const request = ctx.getRequest<FastifyRequest>();
+    const reply = ctx.getResponse<FastifyReply>();
+    
+    const { method, url, ip } = request;
     const userAgent = request.headers['user-agent'] || '';
-    const correlationId = request.correlationId;
-
-    const now = Date.now();
+    const startTime = Date.now();
 
     this.logger.log(
-      `📥 [${correlationId}] ${method} ${url} - User Agent: ${userAgent}`,
+      `➡️  [${context.getClass().name}] ${method} ${url} - ${ip} - ${userAgent}`,
     );
 
     return next.handle().pipe(
-      tap({
-        next: () => {
-          const response = context.switchToHttp().getResponse();
-          const statusCode = response.statusCode || response.raw?.statusCode;
-          const executionTime = Date.now() - now;
-
-          this.logger.log(
-            `📤 [${correlationId}] ${method} ${url} - Status: ${statusCode} - ${executionTime}ms`,
-          );
-        },
-        error: (error) => {
-          const executionTime = Date.now() - now;
-          this.logger.error(
-            `❌ [${correlationId}] ${method} ${url} - Error: ${error.message} - ${executionTime}ms`,
-            error.stack,
-          );
-        },
+      tap(() => {
+        const responseTime = Date.now() - startTime;
+        const statusCode = reply.statusCode;
+        
+        this.logger.log(
+          `✅ [${context.getClass().name}] ${method} ${url} - ${statusCode} - ${responseTime}ms`,
+        );
+      }),
+      catchError((error) => {
+        const responseTime = Date.now() - startTime;
+        
+        this.logger.error(
+          `❌ [${context.getClass().name}] ${method} ${url} - Error: ${error.message} - ${responseTime}ms`,
+        );
+        
+        // Re-throw the error so it can be handled by exception filters
+        return throwError(() => error);
       }),
     );
   }

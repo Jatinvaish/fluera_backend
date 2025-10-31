@@ -1,5 +1,6 @@
+
 // ============================================
-// modules/auth/strategies/jwt.strategy.ts
+// src/modules/auth/strategies/jwt.strategy.ts - V3.0
 // ============================================
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -22,40 +23,47 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: secret,
-      issuer: configService.get<string>('jwt.issuer') || undefined,
-      audience: configService.get<string>('jwt.audience') || undefined,
+      issuer: configService.get<string>('jwt.issuer'),
+      audience: configService.get<string>('jwt.audience'),
     });
   }
 
   async validate(payload: any) {
-    const result = await this.sqlService.execute('sp_GetUserAuthData', { 
-      userId: payload.sub 
+    // Execute stored procedure to get user data with roles and permissions
+    const result = await this.sqlService.execute('sp_GetUserAuthData', {
+      userId: payload.sub
     });
 
-    const user = result.recordsets[0];
-    const roles = result.recordsets[1];
-    const perms = result.recordsets[2];
+    if (!result || !Array.isArray(result) || result.length === 0) {
+      throw new UnauthorizedException('User not found');
+    }
 
-    console.log("🚀 ~ JwtStrategy ~ validate ~ user:", user);
+    let user, roles, permissions;
 
-    if (!user || user.length === 0) {
+    if (Array.isArray(result[0])) {
+      user = result[0][0];
+      roles = result[1] || [];
+      permissions = result[2] || [];
+    } else {
+      user = result[0];
+      roles = [];
+      permissions = [];
+    }
+
+    if (!user || user.status !== 'active') {
       throw new UnauthorizedException('User not found or inactive');
     }
 
-    const userData = user[0];
-    console.log("🚀 ~ JwtStrategy ~ validate ~ userData:", userData);
-    console.log("🚀 ~ JwtStrategy ~ validateroles:", roles);
-    console.log("🚀 ~ JwtStrategy ~ perms:", perms);
-
     return {
-      id: userData.id,
-      email: userData.email,
-      organizationId: userData.organization_id,
-      userType: userData.user_type,
-      firstName: userData.first_name,
-      lastName: userData.last_name,
-      roles: roles[0]?.roles ? roles[0].roles.split(',') : [],
-      permissions: perms[0]?.permissions ? perms[0].permissions.split(',') : [],
+      id: user.id,
+      email: user.email,
+      userType: user.user_type,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      tenantId: payload.tenantId || null,
+      roles: roles.length > 0 && roles[0].roles ? roles[0].roles.split(',') : [],
+      permissions: permissions.length > 0 && permissions[0].permissions ? permissions[0].permissions.split(',') : [],
+      isSuperAdmin: user.is_super_admin || false,
     };
   }
 }

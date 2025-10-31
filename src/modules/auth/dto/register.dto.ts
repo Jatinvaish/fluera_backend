@@ -8,28 +8,6 @@ export class RegisterDto {
   @MinLength(8)
   @MaxLength(100)
   password: string;
-
-  @IsString()
-  @MinLength(2)
-  @MaxLength(100)
-  firstName: string;
-
-  @IsString()
-  @MinLength(2)
-  @MaxLength(100)
-  lastName: string;
-
-  @IsString()
-  @IsOptional()
-  organizationName?: string;
-
-  // @IsEnum(['agency', 'creator', 'brand'])
-  // @IsOptional()
-  // organizationType?: 'agency' | 'creator' | 'brand';
-
-  @IsEnum(['agency_admin', 'creator', 'brand_admin'])
-  @IsOptional()
-  organizationType?: 'agency_admin' | 'creator' | 'brand_admin';
 }
 
 export class LoginDto {
@@ -61,3 +39,28 @@ export class ResendVerificationDto {
   email: string;
 }
 
+// NEW: Onboarding DTO - used after email verification
+export class CompleteOnboardingDto {
+  @IsString()
+  @MinLength(2)
+  firstName: string;
+
+  @IsString()
+  @MinLength(2)
+  lastName: string;
+
+  @IsEnum(['agency_admin', 'creator', 'brand_admin'])
+  organizationType: 'agency_admin' | 'creator' | 'brand_admin';
+
+  @IsString()
+  @MinLength(3)
+  organizationName: string;
+
+  @IsString()
+  @IsOptional()
+  phone?: string;
+
+  @IsString()
+  @IsOptional()
+  timezone?: string;
+}

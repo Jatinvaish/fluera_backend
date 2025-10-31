@@ -1,7 +1,8 @@
+// ============================================
+// src/modules/audit-logs/* - COMPLETE
+// ============================================
 
-// ============================================
-// modules/global-modules/audit-logs/audit-logs.module.ts
-// ============================================
+// src/modules/audit-logs/audit-logs.module.ts
 import { Module } from '@nestjs/common';
 import { AuditLogsController } from './audit-logs.controller';
 import { AuditLogsService } from './audit-logs.service';

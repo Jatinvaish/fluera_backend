@@ -1,141 +1,135 @@
 
 // ============================================
-// modules/global-modules/system-config/system-config.service.ts
+// FIX 4: src/modules/global-modules/system-config/system-config.service.ts
 // ============================================
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { SqlServerService } from '../../../core/database/sql-server.service';
-import { CreateSystemConfigDto, UpdateSystemConfigDto } from './dto/system-config.dto';
 import { EncryptionService } from 'src/common/encryption.service';
+import { SqlServerService } from 'src/core/database';
 
 @Injectable()
 export class SystemConfigService {
   constructor(
-    private sqlService: SqlServerService,
-    private encryptionService: EncryptionService,
+    private readonly db: SqlServerService,
+    private readonly encryptionService: EncryptionService,
   ) {}
 
-  async findAll() {
-    const configs = await this.sqlService.query(`
-      SELECT id, config_key, config_value, config_type, is_encrypted, 
-             environment, created_at, updated_at
-      FROM system_config
-      ORDER BY config_key
-    `);
-
-    return configs.map(config => {
-      if (config.is_encrypted && config.config_value) {
-        try {
-          config.config_value = this.encryptionService.decrypt(config.config_value);
-        } catch (error) {
-          console.error('Failed to decrypt config value', error);
-        }
-      }
-      return config;
-    });
-  }
-
-  async findOne(id: bigint) {
-    const configs = await this.sqlService.query(
-      'SELECT * FROM system_config WHERE id = @id',
-      { id }
+  async getConfig(key: string, tenantId?: number) {
+    const result = await this.db.query(
+      `SELECT * FROM system_config 
+       WHERE config_key = @key 
+       AND (@tenantId IS NULL AND tenant_id IS NULL OR tenant_id = @tenantId)`,
+      { key, tenantId },
     );
 
-    if (configs.length === 0) {
-      throw new NotFoundException('Config not found');
+    if (!result || result.length === 0) {
+      throw new NotFoundException(`Config key '${key}' not found`);
     }
 
-    const config = configs[0];
+    const config = result[0];
+
+    // Decrypt if encrypted
     if (config.is_encrypted && config.config_value) {
-      config.config_value = this.encryptionService.decrypt(config.config_value);
-    }
-
-    return config;
-  }
-
-  async findByKey(key: string) {
-    const configs = await this.sqlService.query(
-      'SELECT * FROM system_config WHERE config_key = @key',
-      { key }
-    );
-
-    if (configs.length === 0) {
-      return null;
-    }
-
-    const config = configs[0];
-    if (config.is_encrypted && config.config_value) {
-      config.config_value = this.encryptionService.decrypt(config.config_value);
-    }
-
-    return config;
-  }
-
-  async create(dto: CreateSystemConfigDto, userId?: bigint) {
-    let valueToStore = dto.configValue;
-
-    if (dto.isEncrypted && valueToStore) {
-      valueToStore = this.encryptionService.encrypt(valueToStore);
-    }
-
-    const result = await this.sqlService.query(
-      `INSERT INTO system_config (config_key, config_value, config_type, is_encrypted, environment, created_by)
-       OUTPUT INSERTED.*
-       VALUES (@key, @value, @type, @encrypted, @environment, @userId)`,
-      {
-        key: dto.configKey,
-        value: valueToStore,
-        type: dto.configType || 'string',
-        encrypted: dto.isEncrypted || false,
-        environment: dto.environment || 'production',
-        userId: userId || null,
+      try {
+        config.config_value = await this.encryptionService.decrypt(
+          config.config_value,
+        );
+      } catch (error) {
+        console.error('Failed to decrypt config value:', error);
       }
-    );
-
-    return result[0];
-  }
-
-  async update(id: bigint, dto: UpdateSystemConfigDto, userId?: bigint) {
-    let valueToStore = dto.configValue;
-
-    if (dto.isEncrypted && valueToStore) {
-      valueToStore = this.encryptionService.encrypt(valueToStore);
     }
 
-    const result = await this.sqlService.query(
-      `UPDATE system_config
-       SET config_value = @value,
-           config_type = COALESCE(@type, config_type),
-           is_encrypted = COALESCE(@encrypted, is_encrypted),
+    return {
+      success: true,
+      data: config,
+    };
+  }
+
+  async setConfig(
+    key: string,
+    value: any,
+    configType: string = 'string',
+    isEncrypted: boolean = false,
+    tenantId?: number,
+    userId?: number,
+  ) {
+    let configValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+
+    // Encrypt if requested
+    if (isEncrypted) {
+      configValue = await this.encryptionService.encrypt(configValue);
+    }
+
+    const result = await this.db.query(
+      `MERGE system_config AS target
+       USING (SELECT @key AS config_key, @tenantId AS tenant_id) AS source
+       ON (target.config_key = source.config_key 
+           AND (@tenantId IS NULL AND target.tenant_id IS NULL OR target.tenant_id = source.tenant_id))
+       WHEN MATCHED THEN
+         UPDATE SET 
+           config_value = @value,
+           config_type = @configType,
+           is_encrypted = @isEncrypted,
            updated_at = GETUTCDATE(),
            updated_by = @userId
-       OUTPUT INSERTED.*
-       WHERE id = @id`,
+       WHEN NOT MATCHED THEN
+         INSERT (tenant_id, config_key, config_value, config_type, is_encrypted, created_by, updated_by)
+         VALUES (@tenantId, @key, @value, @configType, @isEncrypted, @userId, @userId)
+       OUTPUT INSERTED.*;`,
       {
-        id,
-        value: valueToStore,
-        type: dto.configType,
-        encrypted: dto.isEncrypted,
-        userId: userId || null,
-      }
+        key,
+        value: configValue,
+        configType,
+        isEncrypted: isEncrypted ? 1 : 0,
+        tenantId,
+        userId,
+      },
     );
 
-    if (result.length === 0) {
-      throw new NotFoundException('Config not found');
-    }
-
-    return result[0];
+    return {
+      success: true,
+      data: result[0],
+      message: 'Config saved successfully',
+    };
   }
 
-  async remove(id: bigint) {
-    const result = await this.sqlService.query(
-      'DELETE FROM system_config OUTPUT DELETED.* WHERE id = @id',
-      { id }
+  async deleteConfig(key: string, tenantId?: number) {
+    const result = await this.db.query(
+      `DELETE FROM system_config 
+       WHERE config_key = @key 
+       AND (@tenantId IS NULL AND tenant_id IS NULL OR tenant_id = @tenantId)`,
+      { key, tenantId },
     );
 
-    if (result.length === 0) {
-      throw new NotFoundException('Config not found');
+    return {
+      success: true,
+      message: 'Config deleted successfully',
+    };
+  }
+
+  async getAllConfigs(tenantId?: number) {
+    const result = await this.db.query(
+      `SELECT * FROM system_config 
+       WHERE @tenantId IS NULL AND tenant_id IS NULL OR tenant_id = @tenantId
+       ORDER BY config_key`,
+      { tenantId },
+    );
+
+    // Decrypt encrypted values
+    for (const config of result) {
+      if (config.is_encrypted && config.config_value) {
+        try {
+          config.config_value = await this.encryptionService.decrypt(
+            config.config_value,
+          );
+        } catch (error) {
+          console.error('Failed to decrypt config value:', error);
+        }
+      }
     }
 
-    return { message: 'Config deleted successfully' };
+    return {
+      success: true,
+      data: result,
+    };
   }
 }

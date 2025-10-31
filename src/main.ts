@@ -1,158 +1,15 @@
-// import { NestFactory } from '@nestjs/core';
-// import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
-// import { ValidationPipe, VersioningType } from '@nestjs/common';
-// import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-// import helmet from '@fastify/helmet';
-// import compression from '@fastify/compress';
-// import { AllExceptionsFilter } from './core/filters/all-exception.filter';
-// import { ResponseInterceptor } from './core/interceptors/response.interceptor';
-// import { AuditInterceptor } from './core/interceptors/audit.interceptor';
-// import { LoggingInterceptor } from './core/interceptors/logging.interceptor';
-// import { AppModule } from './app.module';
-
-// async function bootstrap() {
-//   const app = await NestFactory.create<NestFastifyApplication>(
-//     AppModule,
-//     new FastifyAdapter({ logger: true }),
-//     {
-//       cors: {
-//         origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
-//         credentials: true,
-//         methods: ['POST', 'OPTIONS'],
-//         allowedHeaders: [
-//           'Content-Type',
-//           'Authorization',
-//           'X-API-Key',
-//           'X-Request-ID',
-//           'X-Organization-ID',
-//         ],
-//       },
-//     },
-//   );
-
-//   // Security middleware
-//   await app.register(helmet, {
-//     contentSecurityPolicy: {
-//       directives: {
-//         defaultSrc: ["'self'"],
-//         styleSrc: ["'self'", "'unsafe-inline'"],
-//         scriptSrc: ["'self'"],
-//         imgSrc: ["'self'", 'data:', 'https:'],
-//       },
-//     },
-//   });
-
-//   // Compression
-//   await app.register(compression, { encodings: ['gzip', 'deflate'] });
-
-//   // Rate limiting
-//   // await app.register(rateLimit, {
-//   //   max: 100,
-//   //   timeWindow: '1 minute',
-//   //   errorResponseBuilder: (req, context) => ({
-//   //     statusCode: 429,
-//   //     error: 'Too Many Requests',
-//   //     message: 'Rate limit exceeded. Please try again later.',
-//   //   }),
-//   // });
-
-//   // Global prefix
-//   app.setGlobalPrefix('api');
-
-//   // API Versioning
-//   app.enableVersioning({
-//     type: VersioningType.URI,
-//     defaultVersion: '1',
-//     prefix: 'v',
-//   });
-
-//   // Global pipes
-//   app.useGlobalPipes(
-//     new ValidationPipe({
-//       transform: true,
-//       whitelist: true,
-//       forbidNonWhitelisted: true,
-//       transformOptions: {
-//         enableImplicitConversion: true,
-//       },
-//     }),
-//   );
-
-//   // Global filters
-//   app.useGlobalFilters(new AllExceptionsFilter());
-
-//   // Global interceptors
-//   app.useGlobalInterceptors(
-//     new LoggingInterceptor(),
-//     new ResponseInterceptor(),
-//   );
-
-//   // Swagger documentation
-//   if (process.env.NODE_ENV !== 'production') {
-//     const config = new DocumentBuilder()
-//       .setTitle('Fluera SaaS Platform API')
-//       .setDescription('Comprehensive Influencer Marketing Platform API')
-//       .setVersion('1.0')
-//       .addBearerAuth(
-//         {
-//           type: 'http',
-//           scheme: 'bearer',
-//           bearerFormat: 'JWT',
-//           name: 'Authorization',
-//           description: 'Enter JWT token',
-//           in: 'header',
-//         },
-//         'JWT-auth',
-//       )
-//       .addApiKey(
-//         {
-//           type: 'apiKey',
-//           name: 'X-API-Key',
-//           in: 'header',
-//           description: 'API Key for service-to-service authentication',
-//         },
-//         'api-key',
-//       )
-//       .addTag('Auth', 'Authentication endpoints')
-//       .addTag('System Config', 'System configuration management')
-//       .addTag('Audit Logs', 'Audit trail and logging')
-//       .addTag('ABAC', 'Attribute-Based Access Control')
-//       .build();
-
-//     const document = SwaggerModule.createDocument(app, config);
-//     SwaggerModule.setup('api/docs', app, document);
-//   }
-
-//   const port = process.env.PORT || 3000;
-//   await app.listen(port, '0.0.0.0');
-
-//   console.log(`
-//     ╔═══════════════════════════════════════════════════╗
-//     ║                                                   ║
-//     ║   🚀 Fluera SaaS Platform Backend Started       ║
-//     ║                                                   ║
-//     ║   📡 Server: http://localhost:${port}             ║
-//     ║   📚 Docs: http://localhost:${port}/api/docs     ║
-//     ║   🔒 Mode: ${process.env.NODE_ENV}               ║
-//     ║                                                   ║
-//     ╚═══════════════════════════════════════════════════╝
-//   `);
-// }
-
-// bootstrap();
-
-
-// ============================================
-// UPDATED main.ts (Remove schedule module)
-// ============================================
-import { NestFactory } from '@nestjs/core';
+// src/main.ts
+import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './core/filters/all-exception.filter';
-import { ResponseInterceptor } from './core/interceptors/response.interceptor';
+import { GlobalExceptionFilter } from './core/filters/all-exception.filter'; // ✅ FIX: Change to GlobalExceptionFilter
 import { LoggingInterceptor } from './core/interceptors/logging.interceptor';
+import { ResponseInterceptor } from './core/interceptors/response.interceptor';
+import { EncryptionService } from './common/encryption.service';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { FastifyRequest } from 'fastify';
+import { SqlServerService } from './core/database/sql-server.service';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -162,29 +19,29 @@ async function bootstrap() {
       cors: {
         origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
         credentials: true,
-        methods: ['POST', 'GET', 'OPTIONS'],
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allowedHeaders: [
           'Content-Type',
           'Authorization',
           'X-API-Key',
           'X-Request-ID',
-          'X-Organization-ID',
+          'X-Tenant-ID',
+          'X-Encryption-Enabled',
+          'X-Key-Version',
+          'X-Device-Fingerprint', // ← Add this
         ],
       },
     },
   );
 
-  // Global prefix
   app.setGlobalPrefix('api');
 
-  // API Versioning
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: '1',
     prefix: 'v',
   });
 
-  // Global pipes
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
@@ -195,34 +52,95 @@ async function bootstrap() {
       },
     }),
   );
+
   const config = new DocumentBuilder()
-    .setTitle('Fluera API')
+    .setTitle('Fluera API V3.0')
+    .setDescription('Multi-tenant SaaS with E2E Encryption')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
-  // Global filters
-  app.useGlobalFilters(new AllExceptionsFilter());
+  const databaseService = app.get(SqlServerService);
+  app.useGlobalFilters(new GlobalExceptionFilter(databaseService));
 
-  // Global interceptors - FIXED
+  const reflector = app.get(Reflector);
+  const encryptionService = app.get(EncryptionService);
+
   app.useGlobalInterceptors(
     new LoggingInterceptor(),
-    new ResponseInterceptor(),
+    new ResponseInterceptor(reflector, encryptionService),
   );
 
-  const port = process.env.PORT || 3000;
+  const fastifyInstance = app.getHttpAdapter().getInstance();
+
+  fastifyInstance.addHook('preHandler', async (request: FastifyRequest, reply) => {
+    console.log(`[${request.headers['x-request-id']}] preHandler called`);
+    console.log(`Encryption enabled:`, request.headers['x-encryption-enabled']);
+    console.log(`Request body:`, request.body);
+    if (request.method === 'OPTIONS') {
+      return;
+    }
+
+    const encryptionEnabled = request.headers['x-encryption-enabled'] === 'true';
+    const requestId = request.headers['x-request-id'] || 'unknown';
+
+    if (!encryptionEnabled) {
+      return;
+    }
+
+
+    if (!encryptionEnabled) {
+      return;
+    }
+
+    try {
+      const body = request.body as any;
+
+      if (body && typeof body === 'object' && body.__payload) {
+        console.log(`[${requestId}] Decrypting E2E encrypted payload...`);
+
+        const payload = body.__payload;
+        const receivedChecksum = body.__checksum;
+
+        if (receivedChecksum) {
+          const crypto = require('crypto');
+          const calculatedChecksum = crypto
+            .createHash('sha256')
+            .update(payload + process.env.ENCRYPTION_KEY)
+            .digest('hex');
+
+          if (calculatedChecksum !== receivedChecksum) {
+            console.error(`[${requestId}] Checksum mismatch!`);
+            throw new Error('Checksum verification failed');
+          }
+        }
+
+        const decrypted = encryptionService.decrypt(payload);
+        const decryptedBody = JSON.parse(decrypted);
+        request.body = decryptedBody;
+
+        console.log(`[${requestId}] ✓ Decrypted successfully`);
+      }
+    } catch (error) {
+      console.error(`[${requestId}] Decryption error:`, error.message);
+      throw error;
+    }
+  });
+
+  const port = process.env.PORT || 3060;
   await app.listen(port, '0.0.0.0');
-  console.log(`✅ Application running on: http://localhost:${port}`);
-  
+
   console.log(`
     ╔═══════════════════════════════════════════════════╗
     ║                                                   ║
-    ║   🚀 Fluera SaaS Platform Backend Started         ║
-    ║                                                   ║ 
+    ║   🚀 Fluera V3.0 - Multi-Tenant SaaS              ║
+    ║                                                   ║
     ║   📡 Server: http://localhost:${port}             ║
     ║   📚 Docs: http://localhost:${port}/api/docs      ║
     ║   🔒 Mode: ${process.env.NODE_ENV}                ║
+    ║   🔐 Encryption: AES-256-CBC (E2E)                ║
+    ║   🏢 Multi-Tenant: ENABLED                        ║
     ║                                                   ║
     ╚═══════════════════════════════════════════════════╝
   `);

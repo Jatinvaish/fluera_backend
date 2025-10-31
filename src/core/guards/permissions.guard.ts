@@ -1,40 +1,45 @@
-
-
-// ============================================
-// core/guards/permissions.guard.ts
-// ============================================
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { RESOURCE_PERMISSION_KEY, ResourcePermissionConfig } from '../decorators/resource-permission.decorator';
+import { PermissionsService } from 'src/modules/permissions/resource-permission.service';
 
 @Injectable()
-export class PermissionsGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+export class ResourcePermissionGuard implements CanActivate {
+  constructor(
+    private reflector: Reflector,
+    private permissionsService: PermissionsService,
+  ) { }
 
-  canActivate(context: ExecutionContext): boolean {
-    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const config = this.reflector.get<ResourcePermissionConfig>(
+      RESOURCE_PERMISSION_KEY,
       context.getHandler(),
-      context.getClass(),
-    ]);
+    );
 
-    if (!requiredPermissions) {
+    if (!config) {
       return true;
     }
 
     const request = context.switchToHttp().getRequest();
     const user = request.user;
+    const tenantId = request.tenant?.id || request.user?.tenantId;
 
-    if (!user || !user.permissions) {
-      throw new ForbiddenException('User permissions not found');
-    }
+    const resourceId = config.extractResourceId
+      ? config.extractResourceId(request)
+      : request.params.id;
 
-    const hasPermission = requiredPermissions.every((permission) =>
-      user.permissions.includes(permission),
+    // ✅ USE SP FOR PERMISSION CHECK
+    const hasPermission = await this.permissionsService.checkResourcePermission(
+      user.id,
+      tenantId,
+      config.resourceType,
+      BigInt(resourceId),
+      config.permissionType,
     );
 
     if (!hasPermission) {
       throw new ForbiddenException(
-        `User does not have required permissions: ${requiredPermissions.join(', ')}`,
+        `You don't have ${config.permissionType} permission for this ${config.resourceType}`
       );
     }
 
