@@ -9,7 +9,6 @@ import { SqlServerService } from '../../core/database/sql-server.service';
 import { HashingService } from '../../common/hashing.service';
 import { EncryptionService } from '../../common/encryption.service';
 import { VerificationService } from '../../common/verification.service';
-import axios from 'axios';
 import {
   RegisterDto,
   LoginDto,
@@ -19,6 +18,7 @@ import {
 } from './dto/auth.dto';
 import { RedisService } from 'src/core/redis/redis.service';
 import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.service';
+import { EmailService } from '../email-templates/email.service';
 
 interface DeviceInfo {
   deviceFingerprint?: string;
@@ -45,6 +45,7 @@ export class AuthService {
     private configService: ConfigService,
     private redisService: RedisService, // ✅ ADD
     private auditLogger: AuditLoggerService, // ✅ ADD
+    private emailService: EmailService, // ✅ ADD
   ) { }
 
   /**
@@ -66,7 +67,6 @@ export class AuthService {
     const userKeys = this.encryptionService.generateUserKey(registerDto.password);
 
     let userId: bigint;
-    console.log('dsasdaasd',)
     if (existing.length > 0) {
       userId = existing[0].id;
       await this.sqlService.query(
@@ -85,10 +85,8 @@ export class AuthService {
           encryptedPrivateKey: userKeys.encryptedPrivateKey,
         }
       );
-      console.log('afyujhfgsda',)
       await this.verificationService.deleteVerificationCodes(registerDto.email, 'email_verify');
     } else {
-      console.log('965464465',)
       const result = await this.sqlService.query(
         `INSERT INTO users (
           email, password_hash, user_type, status,
@@ -136,10 +134,15 @@ export class AuthService {
     await this.verificationService.verifyCode(email, code, 'email_verify');
 
     const users = await this.sqlService.query(
-      `SELECT u.*, vc.user_id 
+      `SELECT u.*, vc.user_id AS vc_user_id,
+              STRING_AGG(r.name, ',') AS roles
        FROM users u
        JOIN verification_codes vc ON u.id = vc.user_id
-       WHERE u.email = @email AND vc.code = @code AND vc.used_at IS NOT NULL`,
+       LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = 1
+       LEFT JOIN roles r ON ur.role_id = r.id
+       WHERE u.email = @email AND vc.code = @code AND vc.used_at IS NOT NULL
+       GROUP BY u.id, u.email, u.password_hash, u.first_name, u.last_name,
+                u.status, u.email_verified_at, u.user_type, u.is_super_admin, vc.user_id`,
       { email, code }
     );
 
@@ -156,14 +159,18 @@ export class AuthService {
       { userId: user.id }
     );
 
+    // FIX: Check if user is SaaS owner
+    const userRoles = user.roles ? user.roles.split(',') : [];
+    const isSaaSOwner = userRoles.includes('super_admin') || userRoles.includes('saas_admin') || user.is_super_admin;
+
     // Log event
     await this.logSystemEvent(user.id, 'user.email_verified', { email });
 
     const tokens = await this.generateTokens({
       id: user.id,
       email: user.email,
-      userType: 'pending',
-      onboardingRequired: true,
+      userType: user.user_type,
+      onboardingRequired: !isSaaSOwner,
     });
 
     await this.createSession(user.id, tokens.refreshToken);
@@ -173,12 +180,14 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
-        userType: 'pending',
-        onboardingRequired: true,
+        userType: user.user_type,
+        onboardingRequired: !isSaaSOwner,
+        isSaaSOwner,
       },
       ...tokens,
     };
   }
+
 
   /**
    * Login user
@@ -187,11 +196,11 @@ export class AuthService {
     const requestId = crypto.randomUUID();
 
     try {
-      // 1. Check rate limit (brute force protection)
+      // Rate limit check
       const { allowed } = await this.redisService.checkRateLimit(
         `login:${loginDto.email}`,
-        5, // 5 attempts
-        300 // 5 minutes
+        5,
+        300
       );
 
       if (!allowed) {
@@ -204,38 +213,39 @@ export class AuthService {
         throw new UnauthorizedException('Too many login attempts. Please try again later.');
       }
 
-      // 2. Get user (with caching)
-      const cacheKey = `user:${loginDto.email}`;
-      let user = await this.redisService.getCachedQuery(cacheKey);
+      // Get user with roles
+      const users = await this.sqlService.query(
+        `SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, 
+                u.status, u.email_verified_at, u.user_type, u.is_super_admin,
+                STRING_AGG(r.name, ',') AS roles
+         FROM users u
+         LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = 1
+         LEFT JOIN roles r ON ur.role_id = r.id
+         WHERE u.email = @email
+         GROUP BY u.id, u.email, u.password_hash, u.first_name, u.last_name, 
+                  u.status, u.email_verified_at, u.user_type, u.is_super_admin`,
+        { email: loginDto.email }
+      );
 
-      if (!user) {
-        const users = await this.sqlService.query(
-          `SELECT id, email, password_hash, first_name, last_name, 
-                  status, email_verified_at, user_type, is_super_admin
-           FROM users WHERE email = @email`,
-          { email: loginDto.email }
+      if (users.length === 0) {
+        await this.auditLogger.logAuth(
+          0,
+          'FAILED_LOGIN',
+          { reason: 'user_not_found', email: loginDto.email },
+          deviceInfo?.ipAddress,
+          deviceInfo?.userAgent
         );
-
-        if (users.length === 0) {
-          await this.auditLogger.logAuth(
-            0,
-            'FAILED_LOGIN',
-            { reason: 'user_not_found', email: loginDto.email },
-            deviceInfo?.ipAddress,
-            deviceInfo?.userAgent
-          );
-          throw new UnauthorizedException('Invalid credentials');
-        }
-
-        user = users[0];
-        // Cache for 5 minutes
-        await this.redisService.cacheQuery(cacheKey, user, 300);
+        throw new UnauthorizedException('Invalid credentials');
       }
 
-      // 3. Verify password
+      const user = users[0];
+      if (!user?.password_hash) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      // Verify password
       const isPasswordValid = await this.hashingService.comparePassword(
         loginDto.password,
-        user.password_hash
+        user?.password_hash
       );
 
       if (!isPasswordValid) {
@@ -249,17 +259,17 @@ export class AuthService {
         throw new UnauthorizedException('Invalid credentials');
       }
 
-      // 4. Check email verification
+      // Check email verification
       if (!user.email_verified_at) {
         throw new UnauthorizedException('Please verify your email first');
       }
 
-      // 5. Check account status
+      // Check account status
       if (user.status !== 'active') {
         throw new UnauthorizedException('Account is not active');
       }
 
-      // 6. Update login stats (async, non-blocking)
+      // Update login stats (async, non-blocking)
       this.sqlService.query(
         `UPDATE users 
          SET last_login_at = GETUTCDATE(), 
@@ -269,35 +279,45 @@ export class AuthService {
         { userId: user.id }
       ).catch(err => this.logger.error('Failed to update login stats', err));
 
-      // 7. Get tenants (with caching)
-      const tenantCacheKey = `user:${user.id}:tenants`;
-      let tenants = await this.redisService.getCachedQuery(tenantCacheKey);
+      // FIX: Check if user is super_admin or saas_admin
+      const userRoles = user.roles ? user.roles.split(',') : [];
+      const isSaaSOwner = userRoles.includes('super_admin') || userRoles.includes('saas_admin') || user.is_super_admin;
 
-      if (!tenants) {
-        tenants = await this.sqlService.query(
-          `SELECT tm.tenant_id, t.name, t.tenant_type, tm.role_id
-           FROM tenant_members tm
-           JOIN tenants t ON tm.tenant_id = t.id
-           WHERE tm.user_id = @userId AND tm.is_active = 1`,
-          { userId: user.id }
-        );
-        await this.redisService.cacheQuery(tenantCacheKey, tenants, 600);
+      let primaryTenant = null;
+      let tenants: any = [];
+
+      // Only get tenants if NOT SaaS owner
+      if (!isSaaSOwner) {
+        const tenantCacheKey = `user:${user.id}:tenants`;
+        tenants = await this.redisService.getCachedQuery(tenantCacheKey);
+
+        if (!tenants) {
+          tenants = await this.sqlService.query(
+            `SELECT tm.tenant_id, t.name, t.tenant_type, tm.role_id
+             FROM tenant_members tm
+             JOIN tenants t ON tm.tenant_id = t.id
+             WHERE tm.user_id = @userId AND tm.is_active = 1`,
+            { userId: user.id }
+          );
+          await this.redisService.cacheQuery(tenantCacheKey, tenants, 600);
+        }
+
+        primaryTenant = tenants.length > 0 ? tenants[0].tenant_id : null;
       }
 
-      const primaryTenant = tenants.length > 0 ? tenants[0].tenant_id : null;
-
-      // 8. Generate tokens
+      // Generate tokens
       const tokens = await this.generateTokens({
         id: user.id,
         email: user.email,
         userType: user.user_type,
         tenantId: primaryTenant,
+        onboardingRequired: !isSaaSOwner && user.user_type === 'pending',
       });
 
-      // 9. Create session
+      // Create session
       await this.createSession(user.id, tokens.refreshToken, deviceInfo, primaryTenant);
 
-      // 10. Cache session data
+      // Cache session data
       await this.redisService.cacheUserSession(
         user.id,
         {
@@ -305,14 +325,14 @@ export class AuthService {
           tenantId: primaryTenant,
           loginAt: new Date(),
         },
-        900 // 15 minutes
+        900
       );
 
-      // 11. Audit log (async)
+      // Audit log
       this.auditLogger.logAuth(
         user.id,
         'LOGIN',
-        { tenantId: primaryTenant, deviceInfo },
+        { tenantId: primaryTenant, deviceInfo, isSaaSOwner },
         deviceInfo?.ipAddress,
         deviceInfo?.userAgent
       ).catch(err => this.logger.error('Failed to log auth event', err));
@@ -331,6 +351,8 @@ export class AuthService {
             type: t.tenant_type,
           })),
           isSuperAdmin: user.is_super_admin || false,
+          isSaaSOwner,
+          onboardingRequired: !isSaaSOwner && user.user_type === 'pending',
         },
         ...tokens,
       };
@@ -340,10 +362,12 @@ export class AuthService {
     }
   }
 
+
   /**
    * Social login (Google/Microsoft)
    */
   async loginWithSocial(provider: string, profile: any, deviceInfo?: DeviceInfo) {
+    console.log("🚀 ~ AuthService ~ loginWithSocial ~ provider:", provider)
     return this.sqlService.transaction(async (transaction) => {
       const socialAccount = await transaction.request()
         .input('provider', provider)
@@ -360,10 +384,9 @@ export class AuthService {
 
       if (socialAccount.recordset.length > 0) {
         user = socialAccount.recordset[0];
-
         // Update tokens
         await transaction.request()
-          .input('id', user.id)
+          .input('id', user.user_id)
           .input('accessToken', profile.accessToken)
           .input('refreshToken', profile.refreshToken || null)
           .query(`
@@ -411,7 +434,6 @@ export class AuthService {
 
           user = userResult.recordset[0];
         }
-
         // Create social account link
         await transaction.request()
           .input('userId', user.id)
@@ -433,7 +455,7 @@ export class AuthService {
 
       // Get tenant memberships
       const tenants = await transaction.request()
-        .input('userId', user.id)
+        .input('userId', Number(user.user_id))
         .query(`
           SELECT tm.tenant_id, t.name, t.tenant_type
           FROM tenant_members tm
@@ -444,24 +466,23 @@ export class AuthService {
       const primaryTenant = tenants.recordset.length > 0 ? tenants.recordset[0].tenant_id : null;
 
       const tokens = await this.generateTokens({
-        id: user.id,
+        id: user.user_id,
         email: user.email,
         userType: user.user_type || 'pending',
         tenantId: primaryTenant,
         onboardingRequired: user.user_type === 'pending',
       });
 
-      await this.createSession(user.id, tokens.refreshToken, deviceInfo, primaryTenant);
-
+      await this.createSession(user.user_id, tokens.refreshToken, deviceInfo, primaryTenant);
       // Log event
-      await this.logSystemEvent(user.id, `user.social_login.${provider}`, {
+      await this.logSystemEvent(user.user_id, `user.social_login.${provider}`, {
         email: user.email,
         isNewUser,
       }, primaryTenant);
 
       return {
         user: {
-          id: user.id,
+          id: user.user_id,
           email: user.email,
           firstName: user.first_name,
           lastName: user.last_name,
@@ -806,7 +827,7 @@ export class AuthService {
     );
 
     await this.logSystemEvent(users[0].id, 'user.password_reset_requested', { email });
-
+    await this.emailService.sendPasswordResetEmail(email, token);
     return { message: 'If email exists, reset link will be sent', token };
   }
 
@@ -885,12 +906,15 @@ export class AuthService {
   // ============================================
 
   private async generateTokens(user: any) {
+    // Check if user is super_admin or saas_admin (no onboarding needed)
+    const skipOnboarding = ['super_admin', 'saas_admin'].includes(user.userType);
+
     const payload = {
       sub: user.id,
       email: user.email,
       userType: user.userType,
       tenantId: user.tenantId || null,
-      onboardingRequired: user.onboardingRequired !== false,
+      onboardingRequired: skipOnboarding ? false : (user.onboardingRequired !== false),
     };
 
     const [accessToken, refreshToken] = await Promise.all([

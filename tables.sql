@@ -3004,11 +3004,10 @@ VALUES (
 
 GO
 
-
 USE [fluera_new_structure]
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CheckResourcePermission]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CheckResourcePermission]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3019,7 +3018,7 @@ GO
 -- ============================================
 -- 7. Get User Permissions for Resource
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CheckResourcePermission]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CheckResourcePermission]
     @userId BIGINT,
     @tenantId BIGINT,
     @resourceType NVARCHAR(50),
@@ -3053,7 +3052,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CleanupExpiredSessions]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CleanupExpiredSessions]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3064,7 +3063,7 @@ GO
 -- ============================================
 -- 15. Cleanup Expired Sessions
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CleanupExpiredSessions]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CleanupExpiredSessions]
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -3077,7 +3076,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateAuditLog]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateAuditLog]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3088,7 +3087,7 @@ GO
 -- ============================================
 -- 8. Create Audit Log
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateAuditLog]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateAuditLog]
     @tenantId BIGINT = NULL,
     @userId BIGINT = NULL,
     @entityType NVARCHAR(100),
@@ -3114,7 +3113,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateErrorLog]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateErrorLog]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3122,7 +3121,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_CreateErrorLog]
+CREATE PROCEDURE [dbo].[sp_CreateErrorLog]
     @tenant_id BIGINT = NULL,
     @user_id BIGINT = NULL,
     @error_type NVARCHAR(100),
@@ -3151,7 +3150,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateNotification]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateNotification]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3163,7 +3162,7 @@ GO
 
 -- SP: Create Notification
 -- FIX: Changed user_id to recipient_id and added event_type, channel
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateNotification]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateNotification]
     @recipient_id BIGINT,
     @tenant_id BIGINT = NULL,
     @event_type NVARCHAR(100),
@@ -3188,7 +3187,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateSystemEvent]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateSystemEvent]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3200,7 +3199,7 @@ GO
 
 -- SP: Create System Event
 -- FIX: Changed severity parameter name from @severity to match column
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateSystemEvent]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateSystemEvent]
     @tenant_id BIGINT = NULL,
     @user_id BIGINT = NULL,
     @event_type NVARCHAR(100),
@@ -3227,7 +3226,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateTenant]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateTenant]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3238,7 +3237,7 @@ GO
 -- ==================== TENANTS ====================
 
 -- SP: Create Tenant
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateTenant]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateTenant]
     @tenant_type NVARCHAR(20),
     @name NVARCHAR(255),
     @slug NVARCHAR(100),
@@ -3300,14 +3299,14 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateUser]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateUser]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
 SET QUOTED_IDENTIFIER ON
 GO
 
- CREATE OR ALTER    PROCEDURE [dbo].[sp_CreateUser]
+ CREATE    PROCEDURE [dbo].[sp_CreateUser]
     @email NVARCHAR(320),
     @password_hash NVARCHAR(255),
     @first_name NVARCHAR(100) = NULL,
@@ -3337,7 +3336,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateUserSession]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateUserSession]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3347,7 +3346,7 @@ GO
 
 -- SP: Create User Session
 -- FIX: Removed session_type and tenant_id parameters that don't exist in table
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateUserSession]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateUserSession]
     @user_id BIGINT,
     @active_tenant_id BIGINT = NULL,
     @session_token NVARCHAR(512),
@@ -3374,7 +3373,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateVerificationCode]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateVerificationCode]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3385,7 +3384,7 @@ GO
 -- ==================== VERIFICATION CODES ====================
 
 -- SP: Create Verification Code
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateVerificationCode]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateVerificationCode]
     @user_id BIGINT = NULL,
     @email NVARCHAR(320),
     @code NVARCHAR(10),
@@ -3417,7 +3416,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_DeleteEmailTemplate]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_DeleteEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3428,7 +3427,7 @@ GO
 -- ============================================
 -- 5. Delete Email Template
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_DeleteEmailTemplate]
+CREATE OR ALTER PROCEDURE [dbo].[sp_DeleteEmailTemplate]
     @id BIGINT,
     @organizationId BIGINT
 AS
@@ -3441,7 +3440,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_EndUserSession]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_EndUserSession]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3451,7 +3450,7 @@ GO
 
 -- SP: End User Session
 -- FIX: Changed logged_out_at to use updated_at (column doesn't exist in table)
-CREATE OR ALTER   PROCEDURE [dbo].[sp_EndUserSession]
+CREATE OR ALTER PROCEDURE [dbo].[sp_EndUserSession]
     @session_token NVARCHAR(512)
 AS
 BEGIN
@@ -3464,7 +3463,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetActiveSession]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetActiveSession]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3473,7 +3472,7 @@ GO
 
 
 -- SP: Get Active Session
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetActiveSession]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetActiveSession]
     @session_token NVARCHAR(512)
 AS
 BEGIN
@@ -3487,7 +3486,40 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetEmailTemplate]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetAuditLogs]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetAuditLogs]
+    @userId BIGINT = NULL,
+    @tenantId BIGINT = NULL,
+    @entityType NVARCHAR(100) = NULL,
+    @startDate DATETIME2(7) = NULL,
+    @endDate DATETIME2(7) = NULL,
+    @limit INT = 100,
+    @offset INT = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT *
+    FROM audit_logs
+    WHERE 1=1
+        AND (@userId IS NULL OR user_id = @userId)
+        AND (@tenantId IS NULL OR tenant_id = @tenantId)
+        AND (@entityType IS NULL OR entity_type = @entityType)
+        AND (@startDate IS NULL OR created_at >= @startDate)
+        AND (@endDate IS NULL OR created_at <= @endDate)
+    ORDER BY created_at DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+END
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3501,7 +3533,7 @@ GO
 -- ============================================
 -- 2. Get Email Template
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetEmailTemplate]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetEmailTemplate]
     @tenant_id BIGINT = NULL,
     @category NVARCHAR(100)
 AS
@@ -3533,7 +3565,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetOrganizationTemplates]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetOrganizationTemplates]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3544,7 +3576,7 @@ GO
 -- ============================================
 -- 4. Get Tenant Templates
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetOrganizationTemplates]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetOrganizationTemplates]
     @organizationId BIGINT,
     @includeGlobal BIT = 1
 AS
@@ -3570,7 +3602,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetSystemConfigByKey]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetSystemConfigByKey]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3582,7 +3614,7 @@ GO
 
 -- SP: Get System Config by Key
 -- FIX: Removed environment parameter (doesn't exist in query)
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetSystemConfigByKey]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetSystemConfigByKey]
     @config_key NVARCHAR(255)
 AS
 BEGIN
@@ -3594,7 +3626,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetTenantMembers]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantMembers]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3605,7 +3637,7 @@ GO
 -- ============================================
 -- 11. Get Tenant Members with Roles
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetTenantMembers]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetTenantMembers]
     @tenantId BIGINT
 AS
 BEGIN
@@ -3633,7 +3665,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetTenantUsageStats]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantUsageStats]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3644,7 +3676,7 @@ GO
 -- ============================================
 -- 13. Get Tenant Usage Stats
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetTenantUsageStats]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetTenantUsageStats]
     @tenantId BIGINT
 AS
 BEGIN
@@ -3684,7 +3716,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserAccessibleMenus]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAccessibleMenus]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3695,7 +3727,7 @@ GO
 -- =====================================================
 -- SP: Get User Accessible Menus (if not exists)
 -- =====================================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetUserAccessibleMenus]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserAccessibleMenus]
     @userId BIGINT
 AS
 BEGIN
@@ -3752,7 +3784,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserAuthData]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAuthData]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3767,7 +3799,7 @@ GO
 -- ==================== USER AUTHENTICATION ====================
 
 -- SP: Get User Auth Data (Used in JWT Strategy)
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetUserAuthData]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserAuthData]
     @userId BIGINT
 AS
 BEGIN
@@ -3813,7 +3845,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserSessions]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserSessions]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3824,7 +3856,7 @@ GO
 -- ============================================
 -- 9. Get User Sessions
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetUserSessions]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserSessions]
     @userId BIGINT
 AS
 BEGIN
@@ -3848,7 +3880,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_IncrementTemplateUsage]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_IncrementTemplateUsage]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3859,7 +3891,7 @@ GO
 -- ============================================
 -- 6. Increment Template Usage
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_IncrementTemplateUsage]
+CREATE OR ALTER PROCEDURE [dbo].[sp_IncrementTemplateUsage]
     @template_id BIGINT
 AS
 BEGIN
@@ -3871,7 +3903,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_ListMenuPermissions]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_ListMenuPermissions]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3881,7 +3913,7 @@ GO
 -- =====================================================
 -- SP: List Menu Permissions (if not exists)
 -- =====================================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_ListMenuPermissions]
+CREATE OR ALTER PROCEDURE [dbo].[sp_ListMenuPermissions]
     @page INT = 1,
     @limit INT = 50,
     @search NVARCHAR(255) = NULL,
@@ -3940,14 +3972,14 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_ListPermissions]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_ListPermissions]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
 SET QUOTED_IDENTIFIER ON
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_ListPermissions]
+CREATE PROCEDURE [dbo].[sp_ListPermissions]
     @category NVARCHAR(100) = NULL,
     @scope NVARCHAR(20) = 'all',
     @page INT = 1,
@@ -3997,7 +4029,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_RotateTenantKeys]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_RotateTenantKeys]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4008,7 +4040,7 @@ GO
 -- ============================================
 -- 10. Rotate Tenant Encryption Keys
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_RotateTenantKeys]
+CREATE OR ALTER PROCEDURE [dbo].[sp_RotateTenantKeys]
     @tenantId BIGINT,
     @newPublicKey NVARCHAR(MAX),
     @newEncryptedPrivateKey NVARCHAR(MAX),
@@ -4062,7 +4094,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpdateSessionActivity]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpdateSessionActivity]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4073,7 +4105,7 @@ GO
 -- ============================================
 -- 14. Update Session Activity
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_UpdateSessionActivity]
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpdateSessionActivity]
     @sessionId BIGINT
 AS
 BEGIN
@@ -4085,7 +4117,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertEmailTemplate]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4096,7 +4128,7 @@ GO
 -- ============================================
 -- 3. Upsert Email Template
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_UpsertEmailTemplate]
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertEmailTemplate]
     @id BIGINT = NULL,
     @tenantId BIGINT = NULL,
     @name NVARCHAR(255),
@@ -4143,7 +4175,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertOAuthProvider]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertOAuthProvider]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4155,7 +4187,7 @@ GO
 
 -- SP: Upsert OAuth Provider
 -- FIX: Changed table name from oauth_providers to user_social_accounts
-CREATE OR ALTER   PROCEDURE [dbo].[sp_UpsertOAuthProvider]
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertOAuthProvider]
     @user_id BIGINT,
     @provider NVARCHAR(50),
     @provider_user_id NVARCHAR(255),
@@ -4183,7 +4215,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertSystemConfig]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertSystemConfig]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4193,7 +4225,7 @@ GO
 
 -- SP: Upsert System Config
 -- FIX: Removed environment parameter (column doesn't exist in table)
-CREATE OR ALTER   PROCEDURE [dbo].[sp_UpsertSystemConfig]
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertSystemConfig]
     @config_key NVARCHAR(255),
     @config_value NVARCHAR(MAX),
     @config_type NVARCHAR(50) = 'string',
@@ -4221,7 +4253,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_VerifyTenantAccess]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_VerifyTenantAccess]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4232,7 +4264,7 @@ GO
 -- ============================================
 -- 12. Verify Tenant Access
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_VerifyTenantAccess]
+CREATE OR ALTER PROCEDURE [dbo].[sp_VerifyTenantAccess]
     @userId BIGINT,
     @tenantId BIGINT
 AS
@@ -4251,7 +4283,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_VerifyUserEmail]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_VerifyUserEmail]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4259,7 +4291,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_VerifyUserEmail]
+CREATE PROCEDURE [dbo].[sp_VerifyUserEmail]
     @email NVARCHAR(320),
     @code NVARCHAR(20)
 AS
@@ -4316,3 +4348,456 @@ END
 GO
 
 
+-- =====================================================
+-- MISSING STORED PROCEDURES
+-- =====================================================
+
+-- SP: Create Security Event
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateSecurityEvent]
+    @tenant_id BIGINT = NULL,
+    @user_id BIGINT = NULL,
+    @event_type NVARCHAR(100),
+    @event_category NVARCHAR(50),
+    @severity NVARCHAR(20),
+    @description NVARCHAR(MAX),
+    @ip_address NVARCHAR(45) = NULL,
+    @user_agent NVARCHAR(MAX) = NULL,
+    @location NVARCHAR(MAX) = NULL,
+    @resource_type NVARCHAR(50) = NULL,
+    @resource_id BIGINT = NULL,
+    @action_taken NVARCHAR(MAX) = NULL,
+    @risk_score INT = 0,
+    @is_anomaly BIT = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[security_events] (
+        tenant_id, user_id, event_type, event_category, severity,
+        description, ip_address, user_agent, location,
+        resource_type, resource_id, action_taken, risk_score, is_anomaly,
+        is_resolved, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @tenant_id, @user_id, @event_type, @event_category, @severity,
+        @description, @ip_address, @user_agent, @location,
+        @resource_type, @resource_id, @action_taken, @risk_score, @is_anomaly,
+        0, GETUTCDATE()
+    );
+END
+GO
+
+-- =====================================================
+-- SYSTEM ROLES AND PERMISSIONS SETUP
+-- =====================================================
+
+USE [fluera_new_structure]
+GO
+
+-- ============================================
+-- 1. INSERT SYSTEM ROLES
+-- ============================================
+
+SET IDENTITY_INSERT [dbo].[roles] ON;
+GO
+
+INSERT INTO [dbo].[roles] (
+    id, tenant_id, name, display_name, description, 
+    is_system_role, is_default, hierarchy_level, created_at
+)
+VALUES
+-- SaaS Owner Roles (No tenant, system-wide)
+(1, NULL, 'super_admin', 'Super Administrator', 'Full system access with all privileges', 1, 0, 1000, GETUTCDATE()),
+(2, NULL, 'saas_admin', 'SaaS Administrator', 'Platform-wide administrative access', 1, 0, 900, GETUTCDATE()),
+
+-- Tenant-specific System Roles
+(3, NULL, 'agency_admin', 'Agency Administrator', 'Full access within agency tenant', 1, 1, 800, GETUTCDATE()),
+(4, NULL, 'brand_admin', 'Brand Administrator', 'Full access within brand tenant', 1, 1, 800, GETUTCDATE()),
+(5, NULL, 'creator_admin', 'Creator Administrator', 'Full access within creator profile', 1, 1, 800, GETUTCDATE()),
+(6, NULL, 'owner', 'Owner', 'Tenant owner with full control', 1, 0, 850, GETUTCDATE());
+
+SET IDENTITY_INSERT [dbo].[roles] OFF;
+GO
+
+-- ============================================
+-- 2. INSERT SYSTEM PERMISSIONS
+-- ============================================
+
+SET IDENTITY_INSERT [dbo].[permissions] ON;
+GO
+
+INSERT INTO [dbo].[permissions] (
+    id, permission_key, resource, action, description, category, is_system_permission, created_at
+)
+VALUES
+-- System Management
+(1, 'system:manage', 'system', 'manage', 'Full system management access', 'System', 1, GETUTCDATE()),
+(2, 'system:read', 'system', 'read', 'View system information', 'System', 1, GETUTCDATE()),
+
+-- User Management
+(3, 'users:create', 'users', 'create', 'Create new users', 'Users', 1, GETUTCDATE()),
+(4, 'users:read', 'users', 'read', 'View user information', 'Users', 1, GETUTCDATE()),
+(5, 'users:write', 'users', 'write', 'Update user information', 'Users', 1, GETUTCDATE()),
+(6, 'users:delete', 'users', 'delete', 'Delete users', 'Users', 1, GETUTCDATE()),
+
+-- Tenant Management
+(7, 'tenants:create', 'tenants', 'create', 'Create new tenants', 'Tenants', 1, GETUTCDATE()),
+(8, 'tenants:read', 'tenants', 'read', 'View tenant information', 'Tenants', 1, GETUTCDATE()),
+(9, 'tenants:write', 'tenants', 'write', 'Update tenant information', 'Tenants', 1, GETUTCDATE()),
+(10, 'tenants:delete', 'tenants', 'delete', 'Delete tenants', 'Tenants', 1, GETUTCDATE()),
+
+-- Role Management
+(11, 'roles:create', 'roles', 'create', 'Create new roles', 'RBAC', 1, GETUTCDATE()),
+(12, 'roles:read', 'roles', 'read', 'View role information', 'RBAC', 1, GETUTCDATE()),
+(13, 'roles:write', 'roles', 'write', 'Update role information', 'RBAC', 1, GETUTCDATE()),
+(14, 'roles:delete', 'roles', 'delete', 'Delete roles', 'RBAC', 1, GETUTCDATE()),
+
+-- Permission Management
+(15, 'permissions:create', 'permissions', 'create', 'Create new permissions', 'RBAC', 1, GETUTCDATE()),
+(16, 'permissions:read', 'permissions', 'read', 'View permission information', 'RBAC', 1, GETUTCDATE()),
+(17, 'permissions:write', 'permissions', 'write', 'Update permission information', 'RBAC', 1, GETUTCDATE()),
+(18, 'permissions:delete', 'permissions', 'delete', 'Delete permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- Role Permission Management
+(19, 'role-permissions:read', 'role-permissions', 'read', 'View role permissions', 'RBAC', 1, GETUTCDATE()),
+(20, 'role-permissions:write', 'role-permissions', 'write', 'Assign/remove role permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- User Role Management
+(21, 'user-roles:read', 'user-roles', 'read', 'View user roles', 'RBAC', 1, GETUTCDATE()),
+(22, 'user-roles:write', 'user-roles', 'write', 'Assign/remove user roles', 'RBAC', 1, GETUTCDATE()),
+
+-- Menu Permission Management
+(23, 'menu-permissions:read', 'menu-permissions', 'read', 'View menu permissions', 'RBAC', 1, GETUTCDATE()),
+(24, 'menu-permissions:write', 'menu-permissions', 'write', 'Manage menu permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- Campaign Management
+(25, 'campaigns:create', 'campaigns', 'create', 'Create campaigns', 'Campaigns', 1, GETUTCDATE()),
+(26, 'campaigns:read', 'campaigns', 'read', 'View campaigns', 'Campaigns', 1, GETUTCDATE()),
+(27, 'campaigns:write', 'campaigns', 'write', 'Update campaigns', 'Campaigns', 1, GETUTCDATE()),
+(28, 'campaigns:delete', 'campaigns', 'delete', 'Delete campaigns', 'Campaigns', 1, GETUTCDATE()),
+
+-- Content Management
+(29, 'content:create', 'content', 'create', 'Upload content', 'Content', 1, GETUTCDATE()),
+(30, 'content:read', 'content', 'read', 'View content', 'Content', 1, GETUTCDATE()),
+(31, 'content:write', 'content', 'write', 'Update content', 'Content', 1, GETUTCDATE()),
+(32, 'content:delete', 'content', 'delete', 'Delete content', 'Content', 1, GETUTCDATE()),
+(33, 'content:approve', 'content', 'approve', 'Approve content', 'Content', 1, GETUTCDATE()),
+
+-- Audit Logs
+(34, 'audit-logs:read', 'audit-logs', 'read', 'View audit logs', 'System', 1, GETUTCDATE()),
+(35, 'audit-logs:create', 'audit-logs', 'create', 'Create audit logs', 'System', 1, GETUTCDATE()),
+
+-- System Events
+(36, 'system-events:read', 'system-events', 'read', 'View system events', 'System', 1, GETUTCDATE()),
+(37, 'system-events:create', 'system-events', 'create', 'Create system events', 'System', 1, GETUTCDATE());
+
+SET IDENTITY_INSERT [dbo].[permissions] OFF;
+GO
+
+-- ============================================
+-- 3. ASSIGN PERMISSIONS TO ROLES
+-- ============================================
+
+-- Super Admin - ALL permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 1, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE is_system_permission = 1;
+
+-- SaaS Admin - Most permissions except system:manage
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 2, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE is_system_permission = 1
+    AND permission_key NOT IN ('system:manage', 'permissions:delete', 'roles:delete');
+
+-- Agency Admin - Agency-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(3, 4, GETUTCDATE()),  -- users:read
+(3, 5, GETUTCDATE()),  -- users:write
+(3, 8, GETUTCDATE()),  -- tenants:read
+(3, 9, GETUTCDATE()),  -- tenants:write
+(3, 12, GETUTCDATE()), -- roles:read
+(3, 16, GETUTCDATE()), -- permissions:read
+(3, 19, GETUTCDATE()), -- role-permissions:read
+(3, 21, GETUTCDATE()), -- user-roles:read
+(3, 22, GETUTCDATE()), -- user-roles:write
+(3, 25, GETUTCDATE()), -- campaigns:create
+(3, 26, GETUTCDATE()), -- campaigns:read
+(3, 27, GETUTCDATE()), -- campaigns:write
+(3, 28, GETUTCDATE()), -- campaigns:delete
+(3, 30, GETUTCDATE()), -- content:read
+(3, 31, GETUTCDATE()), -- content:write
+(3, 33, GETUTCDATE()), -- content:approve
+(3, 34, GETUTCDATE()); -- audit-logs:read
+
+-- Brand Admin - Brand-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(4, 4, GETUTCDATE()),  -- users:read
+(4, 5, GETUTCDATE()),  -- users:write
+(4, 8, GETUTCDATE()),  -- tenants:read
+(4, 9, GETUTCDATE()),  -- tenants:write
+(4, 12, GETUTCDATE()), -- roles:read
+(4, 16, GETUTCDATE()), -- permissions:read
+(4, 21, GETUTCDATE()), -- user-roles:read
+(4, 25, GETUTCDATE()), -- campaigns:create
+(4, 26, GETUTCDATE()), -- campaigns:read
+(4, 27, GETUTCDATE()), -- campaigns:write
+(4, 30, GETUTCDATE()), -- content:read
+(4, 31, GETUTCDATE()), -- content:write
+(4, 33, GETUTCDATE()), -- content:approve
+(4, 34, GETUTCDATE()); -- audit-logs:read
+
+-- Creator Admin - Creator-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(5, 4, GETUTCDATE()),  -- users:read
+(5, 8, GETUTCDATE()),  -- tenants:read
+(5, 9, GETUTCDATE()),  -- tenants:write
+(5, 26, GETUTCDATE()), -- campaigns:read
+(5, 29, GETUTCDATE()), -- content:create
+(5, 30, GETUTCDATE()), -- content:read
+(5, 31, GETUTCDATE()); -- content:write
+
+-- Owner - Full tenant access
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 6, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE permission_key NOT LIKE 'system:%'
+    AND is_system_permission = 1;
+
+GO
+
+-- ============================================
+-- 4. ASSIGN ROLES TO TEST USERS
+-- ============================================
+
+-- Assuming users with IDs 1-5 exist
+INSERT INTO [dbo].[user_roles] (user_id, role_id, is_active, assigned_at, created_at)
+VALUES
+(5, 1, 1, GETUTCDATE(), GETUTCDATE()), -- User 5: Super Admin
+(1, 3, 1, GETUTCDATE(), GETUTCDATE()), -- User 1: Agency Admin
+(2, 3, 1, GETUTCDATE(), GETUTCDATE()), -- User 2: Agency Admin
+(3, 4, 1, GETUTCDATE(), GETUTCDATE()), -- User 3: Brand Admin
+(4, 5, 1, GETUTCDATE(), GETUTCDATE()); -- User 4: Creator Admin
+
+GO
+ 
+PRINT 'System roles, permissions, and menu permissions setup completed successfully!'
+GO
+
+
+--
+
+ -- 1. EMAIL VERIFICATION TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Verify your email</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, please use the verification code below to complete your registration.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 600; letter-spacing: 0.25em; color: #111827; font-family: ''Courier New'', monospace;">
+                    {{code}}
+                </div>
+            </div>
+            <p style="margin: 20px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This code expires in {{expiryMinutes}} minutes
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you didn''t request this, you can safely ignore this email.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'email_verification' AND tenant_id = 0;
+
+-- 2. PASSWORD RESET TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Reset your password</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                We received a request to reset your password. Click the button below to choose a new password.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="text-align: center;">
+                <a href="{{resetLink}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Reset Password
+                </a>
+            </div>
+            <p style="margin: 24px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This link expires in 1 hour
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you didn''t request this, please ignore this email or contact support if you have concerns.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'password_reset' AND tenant_id = 0;
+
+-- 3. WELCOME EMAIL TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Welcome to Fluera</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, your account is now active and ready to use.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px;">
+                <p style="margin: 0 0 12px 0; font-size: 13px; font-weight: 500; color: #111827;">Getting started:</p>
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; font-weight: 400; color: #6b7280; line-height: 1.8;">
+                    <li>Complete your profile</li>
+                    <li>Explore campaigns and collaborations</li>
+                    <li>Connect with your network</li>
+                </ul>
+            </div>
+            <div style="text-align: center; margin-top: 24px;">
+                <a href="{{loginUrl}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Go to Dashboard
+                </a>
+            </div>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                Need help? Visit our documentation or contact support.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'welcome' AND tenant_id = 0;
+
+-- 4. INVITATION EMAIL TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">You''ve been invited</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                {{inviterName}} has invited you to join {{tenantName}} on Fluera.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="text-align: center;">
+                <a href="{{inviteLink}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Accept Invitation
+                </a>
+            </div>
+            <p style="margin: 24px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This invitation expires in 7 days
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you weren''t expecting this invitation, you can safely ignore this email.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'invitation' AND tenant_id = 0;
+
+-- 5. TWO-FACTOR AUTHENTICATION (2FA) CODE TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Security code</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, use this code to complete your sign in.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 600; letter-spacing: 0.25em; color: #111827; font-family: ''Courier New'', monospace;">
+                    {{code}}
+                </div>
+            </div>
+            <p style="margin: 20px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This code expires in {{expiryMinutes}} minutes
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                Never share this code with anyone. Fluera will never ask for this code.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = '2fa_code' AND tenant_id = 0;
