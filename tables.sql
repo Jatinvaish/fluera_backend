@@ -3004,11 +3004,10 @@ VALUES (
 
 GO
 
-
 USE [fluera_new_structure]
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CheckResourcePermission]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CheckResourcePermission]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3019,7 +3018,7 @@ GO
 -- ============================================
 -- 7. Get User Permissions for Resource
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CheckResourcePermission]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CheckResourcePermission]
     @userId BIGINT,
     @tenantId BIGINT,
     @resourceType NVARCHAR(50),
@@ -3053,7 +3052,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CleanupExpiredSessions]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CleanupExpiredSessions]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3064,7 +3063,7 @@ GO
 -- ============================================
 -- 15. Cleanup Expired Sessions
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CleanupExpiredSessions]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CleanupExpiredSessions]
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -3077,7 +3076,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateAuditLog]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateAuditLog]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3088,7 +3087,7 @@ GO
 -- ============================================
 -- 8. Create Audit Log
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateAuditLog]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateAuditLog]
     @tenantId BIGINT = NULL,
     @userId BIGINT = NULL,
     @entityType NVARCHAR(100),
@@ -3114,7 +3113,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateErrorLog]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateErrorLog]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3122,7 +3121,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_CreateErrorLog]
+CREATE PROCEDURE [dbo].[sp_CreateErrorLog]
     @tenant_id BIGINT = NULL,
     @user_id BIGINT = NULL,
     @error_type NVARCHAR(100),
@@ -3151,7 +3150,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateNotification]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateNotification]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3163,7 +3162,7 @@ GO
 
 -- SP: Create Notification
 -- FIX: Changed user_id to recipient_id and added event_type, channel
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateNotification]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateNotification]
     @recipient_id BIGINT,
     @tenant_id BIGINT = NULL,
     @event_type NVARCHAR(100),
@@ -3188,7 +3187,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateSystemEvent]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateSystemEvent]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3200,7 +3199,7 @@ GO
 
 -- SP: Create System Event
 -- FIX: Changed severity parameter name from @severity to match column
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateSystemEvent]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateSystemEvent]
     @tenant_id BIGINT = NULL,
     @user_id BIGINT = NULL,
     @event_type NVARCHAR(100),
@@ -3227,7 +3226,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateTenant]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateTenant]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3238,7 +3237,7 @@ GO
 -- ==================== TENANTS ====================
 
 -- SP: Create Tenant
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateTenant]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateTenant]
     @tenant_type NVARCHAR(20),
     @name NVARCHAR(255),
     @slug NVARCHAR(100),
@@ -3300,14 +3299,14 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateUser]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateUser]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
 SET QUOTED_IDENTIFIER ON
 GO
 
- CREATE OR ALTER    PROCEDURE [dbo].[sp_CreateUser]
+ CREATE    PROCEDURE [dbo].[sp_CreateUser]
     @email NVARCHAR(320),
     @password_hash NVARCHAR(255),
     @first_name NVARCHAR(100) = NULL,
@@ -3337,7 +3336,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateUserSession]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateUserSession]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3347,7 +3346,7 @@ GO
 
 -- SP: Create User Session
 -- FIX: Removed session_type and tenant_id parameters that don't exist in table
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateUserSession]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateUserSession]
     @user_id BIGINT,
     @active_tenant_id BIGINT = NULL,
     @session_token NVARCHAR(512),
@@ -3374,7 +3373,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateVerificationCode]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateVerificationCode]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3385,7 +3384,7 @@ GO
 -- ==================== VERIFICATION CODES ====================
 
 -- SP: Create Verification Code
-CREATE OR ALTER   PROCEDURE [dbo].[sp_CreateVerificationCode]
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateVerificationCode]
     @user_id BIGINT = NULL,
     @email NVARCHAR(320),
     @code NVARCHAR(10),
@@ -3417,7 +3416,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_DeleteEmailTemplate]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_DeleteEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3428,7 +3427,7 @@ GO
 -- ============================================
 -- 5. Delete Email Template
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_DeleteEmailTemplate]
+CREATE OR ALTER PROCEDURE [dbo].[sp_DeleteEmailTemplate]
     @id BIGINT,
     @organizationId BIGINT
 AS
@@ -3441,7 +3440,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_EndUserSession]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_EndUserSession]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3451,7 +3450,7 @@ GO
 
 -- SP: End User Session
 -- FIX: Changed logged_out_at to use updated_at (column doesn't exist in table)
-CREATE OR ALTER   PROCEDURE [dbo].[sp_EndUserSession]
+CREATE OR ALTER PROCEDURE [dbo].[sp_EndUserSession]
     @session_token NVARCHAR(512)
 AS
 BEGIN
@@ -3464,7 +3463,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetActiveSession]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetActiveSession]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3473,7 +3472,7 @@ GO
 
 
 -- SP: Get Active Session
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetActiveSession]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetActiveSession]
     @session_token NVARCHAR(512)
 AS
 BEGIN
@@ -3487,7 +3486,40 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetEmailTemplate]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetAuditLogs]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetAuditLogs]
+    @userId BIGINT = NULL,
+    @tenantId BIGINT = NULL,
+    @entityType NVARCHAR(100) = NULL,
+    @startDate DATETIME2(7) = NULL,
+    @endDate DATETIME2(7) = NULL,
+    @limit INT = 100,
+    @offset INT = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT *
+    FROM audit_logs
+    WHERE 1=1
+        AND (@userId IS NULL OR user_id = @userId)
+        AND (@tenantId IS NULL OR tenant_id = @tenantId)
+        AND (@entityType IS NULL OR entity_type = @entityType)
+        AND (@startDate IS NULL OR created_at >= @startDate)
+        AND (@endDate IS NULL OR created_at <= @endDate)
+    ORDER BY created_at DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+END
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3501,7 +3533,7 @@ GO
 -- ============================================
 -- 2. Get Email Template
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetEmailTemplate]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetEmailTemplate]
     @tenant_id BIGINT = NULL,
     @category NVARCHAR(100)
 AS
@@ -3533,7 +3565,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetOrganizationTemplates]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetOrganizationTemplates]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3544,7 +3576,7 @@ GO
 -- ============================================
 -- 4. Get Tenant Templates
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetOrganizationTemplates]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetOrganizationTemplates]
     @organizationId BIGINT,
     @includeGlobal BIT = 1
 AS
@@ -3570,7 +3602,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetSystemConfigByKey]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetSystemConfigByKey]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3582,7 +3614,7 @@ GO
 
 -- SP: Get System Config by Key
 -- FIX: Removed environment parameter (doesn't exist in query)
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetSystemConfigByKey]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetSystemConfigByKey]
     @config_key NVARCHAR(255)
 AS
 BEGIN
@@ -3594,7 +3626,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetTenantMembers]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantMembers]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3605,7 +3637,7 @@ GO
 -- ============================================
 -- 11. Get Tenant Members with Roles
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetTenantMembers]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetTenantMembers]
     @tenantId BIGINT
 AS
 BEGIN
@@ -3633,7 +3665,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetTenantUsageStats]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantUsageStats]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3644,7 +3676,7 @@ GO
 -- ============================================
 -- 13. Get Tenant Usage Stats
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetTenantUsageStats]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetTenantUsageStats]
     @tenantId BIGINT
 AS
 BEGIN
@@ -3684,7 +3716,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserAccessibleMenus]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAccessibleMenus]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3695,7 +3727,7 @@ GO
 -- =====================================================
 -- SP: Get User Accessible Menus (if not exists)
 -- =====================================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetUserAccessibleMenus]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserAccessibleMenus]
     @userId BIGINT
 AS
 BEGIN
@@ -3752,7 +3784,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserAuthData]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAuthData]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3767,7 +3799,7 @@ GO
 -- ==================== USER AUTHENTICATION ====================
 
 -- SP: Get User Auth Data (Used in JWT Strategy)
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetUserAuthData]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserAuthData]
     @userId BIGINT
 AS
 BEGIN
@@ -3813,7 +3845,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserSessions]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserSessions]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3824,7 +3856,7 @@ GO
 -- ============================================
 -- 9. Get User Sessions
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_GetUserSessions]
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserSessions]
     @userId BIGINT
 AS
 BEGIN
@@ -3848,7 +3880,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_IncrementTemplateUsage]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_IncrementTemplateUsage]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3859,7 +3891,7 @@ GO
 -- ============================================
 -- 6. Increment Template Usage
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_IncrementTemplateUsage]
+CREATE OR ALTER PROCEDURE [dbo].[sp_IncrementTemplateUsage]
     @template_id BIGINT
 AS
 BEGIN
@@ -3871,7 +3903,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_ListMenuPermissions]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_ListMenuPermissions]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3881,7 +3913,7 @@ GO
 -- =====================================================
 -- SP: List Menu Permissions (if not exists)
 -- =====================================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_ListMenuPermissions]
+CREATE OR ALTER PROCEDURE [dbo].[sp_ListMenuPermissions]
     @page INT = 1,
     @limit INT = 50,
     @search NVARCHAR(255) = NULL,
@@ -3940,14 +3972,14 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_ListPermissions]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_ListPermissions]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
 SET QUOTED_IDENTIFIER ON
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_ListPermissions]
+CREATE PROCEDURE [dbo].[sp_ListPermissions]
     @category NVARCHAR(100) = NULL,
     @scope NVARCHAR(20) = 'all',
     @page INT = 1,
@@ -3997,7 +4029,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_RotateTenantKeys]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_RotateTenantKeys]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4008,7 +4040,7 @@ GO
 -- ============================================
 -- 10. Rotate Tenant Encryption Keys
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_RotateTenantKeys]
+CREATE OR ALTER PROCEDURE [dbo].[sp_RotateTenantKeys]
     @tenantId BIGINT,
     @newPublicKey NVARCHAR(MAX),
     @newEncryptedPrivateKey NVARCHAR(MAX),
@@ -4062,7 +4094,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpdateSessionActivity]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpdateSessionActivity]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4073,7 +4105,7 @@ GO
 -- ============================================
 -- 14. Update Session Activity
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_UpdateSessionActivity]
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpdateSessionActivity]
     @sessionId BIGINT
 AS
 BEGIN
@@ -4085,7 +4117,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertEmailTemplate]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4096,7 +4128,7 @@ GO
 -- ============================================
 -- 3. Upsert Email Template
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_UpsertEmailTemplate]
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertEmailTemplate]
     @id BIGINT = NULL,
     @tenantId BIGINT = NULL,
     @name NVARCHAR(255),
@@ -4143,7 +4175,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertOAuthProvider]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertOAuthProvider]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4155,7 +4187,7 @@ GO
 
 -- SP: Upsert OAuth Provider
 -- FIX: Changed table name from oauth_providers to user_social_accounts
-CREATE OR ALTER   PROCEDURE [dbo].[sp_UpsertOAuthProvider]
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertOAuthProvider]
     @user_id BIGINT,
     @provider NVARCHAR(50),
     @provider_user_id NVARCHAR(255),
@@ -4183,7 +4215,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertSystemConfig]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertSystemConfig]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4193,7 +4225,7 @@ GO
 
 -- SP: Upsert System Config
 -- FIX: Removed environment parameter (column doesn't exist in table)
-CREATE OR ALTER   PROCEDURE [dbo].[sp_UpsertSystemConfig]
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertSystemConfig]
     @config_key NVARCHAR(255),
     @config_value NVARCHAR(MAX),
     @config_type NVARCHAR(50) = 'string',
@@ -4221,7 +4253,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_VerifyTenantAccess]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_VerifyTenantAccess]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4232,7 +4264,7 @@ GO
 -- ============================================
 -- 12. Verify Tenant Access
 -- ============================================
-CREATE OR ALTER   PROCEDURE [dbo].[sp_VerifyTenantAccess]
+CREATE OR ALTER PROCEDURE [dbo].[sp_VerifyTenantAccess]
     @userId BIGINT,
     @tenantId BIGINT
 AS
@@ -4251,7 +4283,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_VerifyUserEmail]    Script Date: 31-10-2025 23:41:52 ******/
+/****** Object:  StoredProcedure [dbo].[sp_VerifyUserEmail]    Script Date: 05-11-2025 23:40:28 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4259,7 +4291,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_VerifyUserEmail]
+CREATE PROCEDURE [dbo].[sp_VerifyUserEmail]
     @email NVARCHAR(320),
     @code NVARCHAR(20)
 AS
@@ -4314,5 +4346,3 @@ BEGIN
     END CATCH
 END
 GO
-
-
