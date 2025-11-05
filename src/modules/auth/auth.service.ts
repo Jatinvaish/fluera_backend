@@ -18,6 +18,7 @@ import {
 } from './dto/auth.dto';
 import { RedisService } from 'src/core/redis/redis.service';
 import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.service';
+import { EmailService } from '../email-templates/email.service';
 
 interface DeviceInfo {
   deviceFingerprint?: string;
@@ -44,6 +45,7 @@ export class AuthService {
     private configService: ConfigService,
     private redisService: RedisService, // ✅ ADD
     private auditLogger: AuditLoggerService, // ✅ ADD
+    private emailService: EmailService, // ✅ ADD
   ) { }
 
   /**
@@ -65,7 +67,6 @@ export class AuthService {
     const userKeys = this.encryptionService.generateUserKey(registerDto.password);
 
     let userId: bigint;
-    console.log('dsasdaasd',)
     if (existing.length > 0) {
       userId = existing[0].id;
       await this.sqlService.query(
@@ -84,10 +85,8 @@ export class AuthService {
           encryptedPrivateKey: userKeys.encryptedPrivateKey,
         }
       );
-      console.log('afyujhfgsda',)
       await this.verificationService.deleteVerificationCodes(registerDto.email, 'email_verify');
     } else {
-      console.log('965464465',)
       const result = await this.sqlService.query(
         `INSERT INTO users (
           email, password_hash, user_type, status,
@@ -828,7 +827,7 @@ export class AuthService {
     );
 
     await this.logSystemEvent(users[0].id, 'user.password_reset_requested', { email });
-
+    await this.emailService.sendPasswordResetEmail(email, token);
     return { message: 'If email exists, reset link will be sent', token };
   }
 

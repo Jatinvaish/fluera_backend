@@ -4588,3 +4588,216 @@ GO
  
 PRINT 'System roles, permissions, and menu permissions setup completed successfully!'
 GO
+
+
+--
+
+ -- 1. EMAIL VERIFICATION TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Verify your email</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, please use the verification code below to complete your registration.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 600; letter-spacing: 0.25em; color: #111827; font-family: ''Courier New'', monospace;">
+                    {{code}}
+                </div>
+            </div>
+            <p style="margin: 20px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This code expires in {{expiryMinutes}} minutes
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you didn''t request this, you can safely ignore this email.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'email_verification' AND tenant_id = 0;
+
+-- 2. PASSWORD RESET TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Reset your password</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                We received a request to reset your password. Click the button below to choose a new password.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="text-align: center;">
+                <a href="{{resetLink}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Reset Password
+                </a>
+            </div>
+            <p style="margin: 24px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This link expires in 1 hour
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you didn''t request this, please ignore this email or contact support if you have concerns.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'password_reset' AND tenant_id = 0;
+
+-- 3. WELCOME EMAIL TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Welcome to Fluera</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, your account is now active and ready to use.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px;">
+                <p style="margin: 0 0 12px 0; font-size: 13px; font-weight: 500; color: #111827;">Getting started:</p>
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; font-weight: 400; color: #6b7280; line-height: 1.8;">
+                    <li>Complete your profile</li>
+                    <li>Explore campaigns and collaborations</li>
+                    <li>Connect with your network</li>
+                </ul>
+            </div>
+            <div style="text-align: center; margin-top: 24px;">
+                <a href="{{loginUrl}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Go to Dashboard
+                </a>
+            </div>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                Need help? Visit our documentation or contact support.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'welcome' AND tenant_id = 0;
+
+-- 4. INVITATION EMAIL TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">You''ve been invited</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                {{inviterName}} has invited you to join {{tenantName}} on Fluera.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="text-align: center;">
+                <a href="{{inviteLink}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Accept Invitation
+                </a>
+            </div>
+            <p style="margin: 24px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This invitation expires in 7 days
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you weren''t expecting this invitation, you can safely ignore this email.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'invitation' AND tenant_id = 0;
+
+-- 5. TWO-FACTOR AUTHENTICATION (2FA) CODE TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Security code</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, use this code to complete your sign in.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 600; letter-spacing: 0.25em; color: #111827; font-family: ''Courier New'', monospace;">
+                    {{code}}
+                </div>
+            </div>
+            <p style="margin: 20px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This code expires in {{expiryMinutes}} minutes
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                Never share this code with anyone. Fluera will never ask for this code.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = '2fa_code' AND tenant_id = 0;
