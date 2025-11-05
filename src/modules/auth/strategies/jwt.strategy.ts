@@ -32,14 +32,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(req: any, payload: any) {
     try {
       // 🔒 Extract token for blacklist check
-      const token:any = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
-      
+      const token: any = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+
       // 🔒 Check if token is blacklisted (revoked)
-      const isBlacklisted = await this.isTokenBlacklisted(token);
-      if (isBlacklisted) {
-        this.logger.warn(`Blacklisted token attempted: ${payload.sub}`);
-        throw new UnauthorizedException('Token has been revoked');
-      }
+      //TODO: enable token blacklist check
+      // const isBlacklisted = await this.isTokenBlacklisted(token);
+      // if (isBlacklisted) {
+      //   this.logger.warn(`Blacklisted token attempted: ${payload.sub}`);
+      //   throw new UnauthorizedException('Token has been revoked');
+      // }
 
       // 🔒 Validate token claims
       if (!payload.sub || !payload.email) {

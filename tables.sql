@@ -4346,3 +4346,245 @@ BEGIN
     END CATCH
 END
 GO
+
+
+-- =====================================================
+-- MISSING STORED PROCEDURES
+-- =====================================================
+
+-- SP: Create Security Event
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateSecurityEvent]
+    @tenant_id BIGINT = NULL,
+    @user_id BIGINT = NULL,
+    @event_type NVARCHAR(100),
+    @event_category NVARCHAR(50),
+    @severity NVARCHAR(20),
+    @description NVARCHAR(MAX),
+    @ip_address NVARCHAR(45) = NULL,
+    @user_agent NVARCHAR(MAX) = NULL,
+    @location NVARCHAR(MAX) = NULL,
+    @resource_type NVARCHAR(50) = NULL,
+    @resource_id BIGINT = NULL,
+    @action_taken NVARCHAR(MAX) = NULL,
+    @risk_score INT = 0,
+    @is_anomaly BIT = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[security_events] (
+        tenant_id, user_id, event_type, event_category, severity,
+        description, ip_address, user_agent, location,
+        resource_type, resource_id, action_taken, risk_score, is_anomaly,
+        is_resolved, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @tenant_id, @user_id, @event_type, @event_category, @severity,
+        @description, @ip_address, @user_agent, @location,
+        @resource_type, @resource_id, @action_taken, @risk_score, @is_anomaly,
+        0, GETUTCDATE()
+    );
+END
+GO
+
+-- =====================================================
+-- SYSTEM ROLES AND PERMISSIONS SETUP
+-- =====================================================
+
+USE [fluera_new_structure]
+GO
+
+-- ============================================
+-- 1. INSERT SYSTEM ROLES
+-- ============================================
+
+SET IDENTITY_INSERT [dbo].[roles] ON;
+GO
+
+INSERT INTO [dbo].[roles] (
+    id, tenant_id, name, display_name, description, 
+    is_system_role, is_default, hierarchy_level, created_at
+)
+VALUES
+-- SaaS Owner Roles (No tenant, system-wide)
+(1, NULL, 'super_admin', 'Super Administrator', 'Full system access with all privileges', 1, 0, 1000, GETUTCDATE()),
+(2, NULL, 'saas_admin', 'SaaS Administrator', 'Platform-wide administrative access', 1, 0, 900, GETUTCDATE()),
+
+-- Tenant-specific System Roles
+(3, NULL, 'agency_admin', 'Agency Administrator', 'Full access within agency tenant', 1, 1, 800, GETUTCDATE()),
+(4, NULL, 'brand_admin', 'Brand Administrator', 'Full access within brand tenant', 1, 1, 800, GETUTCDATE()),
+(5, NULL, 'creator_admin', 'Creator Administrator', 'Full access within creator profile', 1, 1, 800, GETUTCDATE()),
+(6, NULL, 'owner', 'Owner', 'Tenant owner with full control', 1, 0, 850, GETUTCDATE());
+
+SET IDENTITY_INSERT [dbo].[roles] OFF;
+GO
+
+-- ============================================
+-- 2. INSERT SYSTEM PERMISSIONS
+-- ============================================
+
+SET IDENTITY_INSERT [dbo].[permissions] ON;
+GO
+
+INSERT INTO [dbo].[permissions] (
+    id, permission_key, resource, action, description, category, is_system_permission, created_at
+)
+VALUES
+-- System Management
+(1, 'system:manage', 'system', 'manage', 'Full system management access', 'System', 1, GETUTCDATE()),
+(2, 'system:read', 'system', 'read', 'View system information', 'System', 1, GETUTCDATE()),
+
+-- User Management
+(3, 'users:create', 'users', 'create', 'Create new users', 'Users', 1, GETUTCDATE()),
+(4, 'users:read', 'users', 'read', 'View user information', 'Users', 1, GETUTCDATE()),
+(5, 'users:write', 'users', 'write', 'Update user information', 'Users', 1, GETUTCDATE()),
+(6, 'users:delete', 'users', 'delete', 'Delete users', 'Users', 1, GETUTCDATE()),
+
+-- Tenant Management
+(7, 'tenants:create', 'tenants', 'create', 'Create new tenants', 'Tenants', 1, GETUTCDATE()),
+(8, 'tenants:read', 'tenants', 'read', 'View tenant information', 'Tenants', 1, GETUTCDATE()),
+(9, 'tenants:write', 'tenants', 'write', 'Update tenant information', 'Tenants', 1, GETUTCDATE()),
+(10, 'tenants:delete', 'tenants', 'delete', 'Delete tenants', 'Tenants', 1, GETUTCDATE()),
+
+-- Role Management
+(11, 'roles:create', 'roles', 'create', 'Create new roles', 'RBAC', 1, GETUTCDATE()),
+(12, 'roles:read', 'roles', 'read', 'View role information', 'RBAC', 1, GETUTCDATE()),
+(13, 'roles:write', 'roles', 'write', 'Update role information', 'RBAC', 1, GETUTCDATE()),
+(14, 'roles:delete', 'roles', 'delete', 'Delete roles', 'RBAC', 1, GETUTCDATE()),
+
+-- Permission Management
+(15, 'permissions:create', 'permissions', 'create', 'Create new permissions', 'RBAC', 1, GETUTCDATE()),
+(16, 'permissions:read', 'permissions', 'read', 'View permission information', 'RBAC', 1, GETUTCDATE()),
+(17, 'permissions:write', 'permissions', 'write', 'Update permission information', 'RBAC', 1, GETUTCDATE()),
+(18, 'permissions:delete', 'permissions', 'delete', 'Delete permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- Role Permission Management
+(19, 'role-permissions:read', 'role-permissions', 'read', 'View role permissions', 'RBAC', 1, GETUTCDATE()),
+(20, 'role-permissions:write', 'role-permissions', 'write', 'Assign/remove role permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- User Role Management
+(21, 'user-roles:read', 'user-roles', 'read', 'View user roles', 'RBAC', 1, GETUTCDATE()),
+(22, 'user-roles:write', 'user-roles', 'write', 'Assign/remove user roles', 'RBAC', 1, GETUTCDATE()),
+
+-- Menu Permission Management
+(23, 'menu-permissions:read', 'menu-permissions', 'read', 'View menu permissions', 'RBAC', 1, GETUTCDATE()),
+(24, 'menu-permissions:write', 'menu-permissions', 'write', 'Manage menu permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- Campaign Management
+(25, 'campaigns:create', 'campaigns', 'create', 'Create campaigns', 'Campaigns', 1, GETUTCDATE()),
+(26, 'campaigns:read', 'campaigns', 'read', 'View campaigns', 'Campaigns', 1, GETUTCDATE()),
+(27, 'campaigns:write', 'campaigns', 'write', 'Update campaigns', 'Campaigns', 1, GETUTCDATE()),
+(28, 'campaigns:delete', 'campaigns', 'delete', 'Delete campaigns', 'Campaigns', 1, GETUTCDATE()),
+
+-- Content Management
+(29, 'content:create', 'content', 'create', 'Upload content', 'Content', 1, GETUTCDATE()),
+(30, 'content:read', 'content', 'read', 'View content', 'Content', 1, GETUTCDATE()),
+(31, 'content:write', 'content', 'write', 'Update content', 'Content', 1, GETUTCDATE()),
+(32, 'content:delete', 'content', 'delete', 'Delete content', 'Content', 1, GETUTCDATE()),
+(33, 'content:approve', 'content', 'approve', 'Approve content', 'Content', 1, GETUTCDATE()),
+
+-- Audit Logs
+(34, 'audit-logs:read', 'audit-logs', 'read', 'View audit logs', 'System', 1, GETUTCDATE()),
+(35, 'audit-logs:create', 'audit-logs', 'create', 'Create audit logs', 'System', 1, GETUTCDATE()),
+
+-- System Events
+(36, 'system-events:read', 'system-events', 'read', 'View system events', 'System', 1, GETUTCDATE()),
+(37, 'system-events:create', 'system-events', 'create', 'Create system events', 'System', 1, GETUTCDATE());
+
+SET IDENTITY_INSERT [dbo].[permissions] OFF;
+GO
+
+-- ============================================
+-- 3. ASSIGN PERMISSIONS TO ROLES
+-- ============================================
+
+-- Super Admin - ALL permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 1, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE is_system_permission = 1;
+
+-- SaaS Admin - Most permissions except system:manage
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 2, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE is_system_permission = 1
+    AND permission_key NOT IN ('system:manage', 'permissions:delete', 'roles:delete');
+
+-- Agency Admin - Agency-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(3, 4, GETUTCDATE()),  -- users:read
+(3, 5, GETUTCDATE()),  -- users:write
+(3, 8, GETUTCDATE()),  -- tenants:read
+(3, 9, GETUTCDATE()),  -- tenants:write
+(3, 12, GETUTCDATE()), -- roles:read
+(3, 16, GETUTCDATE()), -- permissions:read
+(3, 19, GETUTCDATE()), -- role-permissions:read
+(3, 21, GETUTCDATE()), -- user-roles:read
+(3, 22, GETUTCDATE()), -- user-roles:write
+(3, 25, GETUTCDATE()), -- campaigns:create
+(3, 26, GETUTCDATE()), -- campaigns:read
+(3, 27, GETUTCDATE()), -- campaigns:write
+(3, 28, GETUTCDATE()), -- campaigns:delete
+(3, 30, GETUTCDATE()), -- content:read
+(3, 31, GETUTCDATE()), -- content:write
+(3, 33, GETUTCDATE()), -- content:approve
+(3, 34, GETUTCDATE()); -- audit-logs:read
+
+-- Brand Admin - Brand-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(4, 4, GETUTCDATE()),  -- users:read
+(4, 5, GETUTCDATE()),  -- users:write
+(4, 8, GETUTCDATE()),  -- tenants:read
+(4, 9, GETUTCDATE()),  -- tenants:write
+(4, 12, GETUTCDATE()), -- roles:read
+(4, 16, GETUTCDATE()), -- permissions:read
+(4, 21, GETUTCDATE()), -- user-roles:read
+(4, 25, GETUTCDATE()), -- campaigns:create
+(4, 26, GETUTCDATE()), -- campaigns:read
+(4, 27, GETUTCDATE()), -- campaigns:write
+(4, 30, GETUTCDATE()), -- content:read
+(4, 31, GETUTCDATE()), -- content:write
+(4, 33, GETUTCDATE()), -- content:approve
+(4, 34, GETUTCDATE()); -- audit-logs:read
+
+-- Creator Admin - Creator-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(5, 4, GETUTCDATE()),  -- users:read
+(5, 8, GETUTCDATE()),  -- tenants:read
+(5, 9, GETUTCDATE()),  -- tenants:write
+(5, 26, GETUTCDATE()), -- campaigns:read
+(5, 29, GETUTCDATE()), -- content:create
+(5, 30, GETUTCDATE()), -- content:read
+(5, 31, GETUTCDATE()); -- content:write
+
+-- Owner - Full tenant access
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 6, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE permission_key NOT LIKE 'system:%'
+    AND is_system_permission = 1;
+
+GO
+
+-- ============================================
+-- 4. ASSIGN ROLES TO TEST USERS
+-- ============================================
+
+-- Assuming users with IDs 1-5 exist
+INSERT INTO [dbo].[user_roles] (user_id, role_id, is_active, assigned_at, created_at)
+VALUES
+(5, 1, 1, GETUTCDATE(), GETUTCDATE()), -- User 5: Super Admin
+(1, 3, 1, GETUTCDATE(), GETUTCDATE()), -- User 1: Agency Admin
+(2, 3, 1, GETUTCDATE(), GETUTCDATE()), -- User 2: Agency Admin
+(3, 4, 1, GETUTCDATE(), GETUTCDATE()), -- User 3: Brand Admin
+(4, 5, 1, GETUTCDATE(), GETUTCDATE()); -- User 4: Creator Admin
+
+GO
+ 
+PRINT 'System roles, permissions, and menu permissions setup completed successfully!'
+GO
