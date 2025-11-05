@@ -37,7 +37,7 @@ export class EmailTemplateController {
    * GET /email-templates?includeGlobal=true
    */
   @Get()
-  @Roles('admin', 'agency_admin', 'brand_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin', 'brand_admin')
   async getTemplates(
     @Request() req,
     @Query('includeGlobal') includeGlobal?: string,
@@ -59,7 +59,7 @@ export class EmailTemplateController {
    * GET /email-templates/category/:category
    */
   @Get('category/:category')
-  @Roles('admin', 'agency_admin', 'brand_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin', 'brand_admin')
   async getTemplateByCategory(
     @Request() req,
     @Param('category') category: string,
@@ -81,7 +81,7 @@ export class EmailTemplateController {
    * POST /email-templates
    */
   @Post()
-  @Roles('admin', 'agency_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin')
   async createTemplate(
     @Request() req,
     @Body() createDto: CreateEmailTemplateDto,
@@ -113,7 +113,7 @@ export class EmailTemplateController {
    * PUT /email-templates/:id
    */
   @Put(':id')
-  @Roles('admin', 'agency_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin')
   async updateTemplate(
     @Request() req,
     @Param('id') id: string,
@@ -143,7 +143,7 @@ export class EmailTemplateController {
    * DELETE /email-templates/:id
    */
   @Delete(':id')
-  @Roles('admin', 'agency_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin')
   @HttpCode(HttpStatus.OK)
   async deleteTemplate(
     @Request() req,
@@ -166,7 +166,7 @@ export class EmailTemplateController {
    * POST /email-templates/preview
    */
   @Post('preview')
-  @Roles('admin', 'agency_admin', 'brand_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin', 'brand_admin')
   async previewTemplate(
     @Request() req,
     @Body() previewDto: PreviewTemplateDto,
@@ -190,7 +190,7 @@ export class EmailTemplateController {
    * GET /email-templates/stats
    */
   @Get('stats')
-  @Roles('admin', 'agency_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin')
   async getTemplateStats(@Request() req) {
     const organizationId = req.user.organizationId;
     const stats = await this.emailTemplateService.getTemplateStats(organizationId);
@@ -206,7 +206,7 @@ export class EmailTemplateController {
    * POST /email-templates/:id/clone
    */
   @Post(':id/clone')
-  @Roles('admin', 'agency_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin')
   async cloneTemplate(
     @Request() req,
     @Param('id') id: string,
@@ -234,7 +234,7 @@ export class EmailTemplateController {
    * POST /email-templates/validate
    */
   @Post('validate')
-  @Roles('admin', 'agency_admin', 'brand_admin')
+  @Roles('super_admin', 'saas_admin', 'agency_admin', 'brand_admin')
   async validateTemplate(
     @Body('template') template: string,
     @Body('variables') variables: Record<string, any>,

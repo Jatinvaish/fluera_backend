@@ -223,7 +223,6 @@ export class AuthController {
         accessToken: access_token,
         refreshToken: refresh_token,
       }, deviceInfo);
-      console.log("🚀 ~ afterrrrrrrrrr:",  )
 
       // Redirect to frontend with tokens
       const redirectUrl = `${process.env.FRONTEND_URL}/auth/google/callback?` +

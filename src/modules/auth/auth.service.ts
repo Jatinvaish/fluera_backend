@@ -9,7 +9,6 @@ import { SqlServerService } from '../../core/database/sql-server.service';
 import { HashingService } from '../../common/hashing.service';
 import { EncryptionService } from '../../common/encryption.service';
 import { VerificationService } from '../../common/verification.service';
-import axios from 'axios';
 import {
   RegisterDto,
   LoginDto,
@@ -241,11 +240,13 @@ export class AuthService {
       }
 
       const user = users[0];
-
+      if (!user?.password_hash) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
       // Verify password
       const isPasswordValid = await this.hashingService.comparePassword(
         loginDto.password,
-        user.password_hash
+        user?.password_hash
       );
 
       if (!isPasswordValid) {
