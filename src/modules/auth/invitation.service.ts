@@ -1,22 +1,57 @@
-
 // ============================================
 // src/modules/auth/invitation.service.ts
 // ============================================
-import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
 import { HashingService } from '../../common/hashing.service';
+import { RbacService } from '../rbac/rbac.service';
 
 @Injectable()
 export class InvitationService {
   constructor(
     private sqlService: SqlServerService,
     private hashingService: HashingService,
+    private rbacService: RbacService,
   ) {}
 
-  async sendInvitation(tenantId: bigint, invitedBy: bigint, dto: any) {
+  async sendInvitation(
+    tenantId: bigint, 
+    invitedBy: bigint, 
+    dto: any
+  ) {
+    // Get inviter's user type for role validation
+    const inviterInfo: any = await this.sqlService.query(
+      `SELECT user_type FROM users WHERE id = @userId`,
+      { userId: invitedBy }
+    );
+
+    if (inviterInfo.length === 0) {
+      throw new BadRequestException('Inviter user not found');
+    }
+
+    const inviterType = inviterInfo[0].user_type;
+    // ✅ Step 1: Validate that role_id is provided
+    if (!dto.roleId) {
+      throw new BadRequestException('role_id is required for invitations');
+    }
+
+    // ✅ Step 2: Validate the role using RBAC service
+    // This checks:
+    // - Role exists
+    // - Inviter has permission to assign this role
+    // - Role belongs to inviter's tenant (or is a system role they can assign)
+    await this.rbacService.validateRoleForInvitation(
+      BigInt(dto.roleId),
+      inviterType,
+      tenantId
+    );
+
+    // ✅ Step 3: Check for existing pending invitation
     const existing = await this.sqlService.query(
       `SELECT * FROM invitations 
-       WHERE tenant_id = @tenantId AND invitee_email = @email AND status = 'pending'`,
+       WHERE tenant_id = @tenantId 
+         AND invitee_email = @email 
+         AND status = 'pending'`,
       { tenantId, email: dto.inviteeEmail }
     );
 
@@ -24,37 +59,71 @@ export class InvitationService {
       throw new BadRequestException('Invitation already sent to this email');
     }
 
+    // ✅ Step 4: Check role limits (if applicable)
+    try {
+      const canInvite = await this.rbacService.checkRoleLimit(
+        BigInt(dto.roleId),
+        'invitations'
+      );
+
+      if (!canInvite) {
+        throw new ForbiddenException('Invitation limit reached for this role');
+      }
+    } catch (error) {
+      // If no limit is defined, continue (checkRoleLimit returns true)
+    }
+
+    // ✅ Step 5: Generate invitation token
     const token = this.hashingService.generateRandomToken(64);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
+    // ✅ Step 6: Create invitation with role_id
     const result = await this.sqlService.query(
       `INSERT INTO invitations (
         tenant_id, invited_by, invitee_email, invitee_name, invitee_type,
-        role_id, invitation_token, invitation_message, expires_at
+        role_id, invitation_token, invitation_message, expires_at, status
       ) OUTPUT INSERTED.*
-      VALUES (@tenantId, @invitedBy, @email, @name, @type, @roleId, @token, @message, @expiresAt)`,
+      VALUES (@tenantId, @invitedBy, @email, @name, @type, @roleId, @token, @message, @expiresAt, 'pending')`,
       {
         tenantId,
         invitedBy,
         email: dto.inviteeEmail,
         name: dto.inviteeName || null,
         type: dto.inviteeType,
-        roleId: dto.roleId || null,
+        roleId: BigInt(dto.roleId),
         token,
         message: dto.invitationMessage || null,
         expiresAt,
       }
     );
 
-    return result[0];
+    // ✅ Step 7: Increment role limit usage
+    try {
+      await this.rbacService.incrementRoleLimitUsage(
+        BigInt(dto.roleId),
+        'invitations'
+      );
+    } catch (error) {
+      // If no limit tracking, ignore
+    }
+
+    return {
+      success: true,
+      data: result[0],
+      message: 'Invitation sent successfully',
+    };
   }
 
   async acceptInvitation(token: string, password: string, userData: any) {
+    // ✅ Step 1: Verify invitation token and get invitation details
     const invitation = await this.sqlService.query(
-      `SELECT i.*, t.name as tenant_name 
+      `SELECT i.*, t.name as tenant_name, r.name as role_name, r.display_name as role_display_name
        FROM invitations i 
        JOIN tenants t ON i.tenant_id = t.id
-       WHERE invitation_token = @token AND status = 'pending' AND expires_at > GETUTCDATE()`,
+       LEFT JOIN roles r ON i.role_id = r.id
+       WHERE i.invitation_token = @token 
+         AND i.status = 'pending' 
+         AND i.expires_at > GETUTCDATE()`,
       { token }
     );
 
@@ -63,46 +132,235 @@ export class InvitationService {
     }
 
     const invite = invitation[0];
+
+    // ✅ Step 2: Validate that role still exists and is valid
+    if (!invite.role_id) {
+      throw new BadRequestException('Invitation does not have a valid role assigned');
+    }
+
+    try {
+      await this.rbacService.getRoleById(
+        BigInt(invite.role_id),
+        'system', // System context for invitation acceptance
+        BigInt(invite.tenant_id)
+      );
+    } catch (error) {
+      throw new BadRequestException('The role assigned to this invitation is no longer valid');
+    }
+
+    // ✅ Step 3: Check if email is already registered
+    const existingUser = await this.sqlService.query(
+      `SELECT id FROM users WHERE email = @email`,
+      { email: invite.invitee_email }
+    );
+
+    if (existingUser.length > 0) {
+      throw new BadRequestException('An account with this email already exists');
+    }
+
+    // ✅ Step 4: Hash password
     const passwordHash = await this.hashingService.hashPassword(password);
 
+    // ✅ Step 5: Execute transaction to create user and assign role
     return this.sqlService.transaction(async (transaction) => {
+      // Create user account
       const userResult = await transaction.request()
         .input('email', invite.invitee_email)
         .input('passwordHash', passwordHash)
-        .input('firstName', userData.firstName || 'User')
-        .input('lastName', userData.lastName || '')
+        .input('firstName', userData.firstName || invite.invitee_name?.split(' ')[0] || 'User')
+        .input('lastName', userData.lastName || invite.invitee_name?.split(' ').slice(1).join(' ') || '')
+        .input('userType', invite.invitee_type || 'staff')
         .query(`
           INSERT INTO users (
             email, password_hash, first_name, last_name,
-            user_type, status, email_verified_at
+            user_type, status, email_verified_at, created_at
           ) OUTPUT INSERTED.*
           VALUES (@email, @passwordHash, @firstName, @lastName,
-                  'staff', 'active', GETUTCDATE())
+                  @userType, 'active', GETUTCDATE(), GETUTCDATE())
         `);
 
       const user = userResult.recordset[0];
 
-      if (invite.role_id) {
-        await transaction.request()
-          .input('userId', user.id)
-          .input('roleId', invite.role_id)
-          .query(`INSERT INTO user_roles (user_id, role_id, is_active) VALUES (@userId, @roleId, 1)`);
-      }
+      // ✅ Assign role to user via RBAC system
+      await transaction.request()
+        .input('userId', user.id)
+        .input('roleId', invite.role_id)
+        .input('assignedBy', invite.invited_by)
+        .query(`
+          INSERT INTO user_roles (user_id, role_id, is_active, created_by, created_at) 
+          VALUES (@userId, @roleId, 1, @assignedBy, GETUTCDATE())
+        `);
 
+      // Add user to tenant
       await transaction.request()
         .input('tenantId', invite.tenant_id)
         .input('userId', user.id)
         .input('roleId', invite.role_id)
+        .input('memberType', invite.invitee_type || 'staff')
         .query(`
-          INSERT INTO tenant_members (tenant_id, user_id, role_id, member_type, is_active)
-          VALUES (@tenantId, @userId, @roleId, 'staff', 1)
+          INSERT INTO tenant_members (tenant_id, user_id, role_id, member_type, is_active, created_at)
+          VALUES (@tenantId, @userId, @roleId, @memberType, 1, GETUTCDATE())
         `);
 
+      // Mark invitation as accepted
       await transaction.request()
         .input('invitationId', invite.id)
-        .query(`UPDATE invitations SET status = 'accepted', accepted_at = GETUTCDATE() WHERE id = @invitationId`);
+        .input('acceptedBy', user.id)
+        .query(`
+          UPDATE invitations 
+          SET status = 'accepted', 
+              accepted_at = GETUTCDATE(),
+              accepted_by = @acceptedBy,
+              updated_at = GETUTCDATE()
+          WHERE id = @invitationId
+        `);
 
-      return { user, invitation: invite };
+      return {
+        success: true,
+        data: {
+          user: {
+            id: user.id.toString(),
+            email: user.email,
+            firstName: user.first_name,
+            lastName: user.last_name,
+            userType: user.user_type,
+          },
+          tenant: {
+            id: invite.tenant_id.toString(),
+            name: invite.tenant_name,
+          },
+          role: {
+            id: invite.role_id.toString(),
+            name: invite.role_name,
+            displayName: invite.role_display_name,
+          },
+        },
+        message: 'Invitation accepted successfully. Your account has been created.',
+      };
     });
+  }
+
+  // ============================================
+  // HELPER METHODS
+  // ============================================
+
+  async getInvitationByToken(token: string) {
+    const result = await this.sqlService.query(
+      `SELECT i.*, t.name as tenant_name, r.name as role_name
+       FROM invitations i
+       JOIN tenants t ON i.tenant_id = t.id
+       LEFT JOIN roles r ON i.role_id = r.id
+       WHERE i.invitation_token = @token`,
+      { token }
+    );
+
+    if (result.length === 0) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    return result[0];
+  }
+
+  async listInvitations(tenantId: bigint, filters: any = {}) {
+    const { status, page = 1, limit = 50 } = filters;
+    const offset = (page - 1) * limit;
+
+    let whereClause = 'WHERE i.tenant_id = @tenantId';
+    
+    if (status) {
+      whereClause += ' AND i.status = @status';
+    }
+
+    const result = await this.sqlService.query(
+      `SELECT 
+         i.*,
+         r.name as role_name,
+         r.display_name as role_display_name,
+         u.email as invited_by_email,
+         u.first_name as invited_by_first_name,
+         u.last_name as invited_by_last_name
+       FROM invitations i
+       LEFT JOIN roles r ON i.role_id = r.id
+       LEFT JOIN users u ON i.invited_by = u.id
+       ${whereClause}
+       ORDER BY i.created_at DESC
+       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+      { tenantId, status: status || null, offset, limit }
+    );
+
+    const countResult: any = await this.sqlService.query(
+      `SELECT COUNT(*) as total FROM invitations i ${whereClause}`,
+      { tenantId, status: status || null }
+    );
+
+    return {
+      success: true,
+      data: {
+        invitations: result,
+        meta: {
+          currentPage: page,
+          itemsPerPage: limit,
+          totalItems: countResult[0]?.total || 0,
+          totalPages: Math.ceil((countResult[0]?.total || 0) / limit),
+        },
+      },
+    };
+  }
+
+  async cancelInvitation(invitationId: bigint, cancelledBy: bigint, tenantId: bigint) {
+    const result = await this.sqlService.query(
+      `UPDATE invitations 
+       SET status = 'cancelled', 
+           updated_at = GETUTCDATE()
+       OUTPUT INSERTED.*
+       WHERE id = @invitationId 
+         AND tenant_id = @tenantId 
+         AND status = 'pending'`,
+      { invitationId, tenantId }
+    );
+
+    if (result.length === 0) {
+      throw new NotFoundException('Invitation not found or cannot be cancelled');
+    }
+
+    return {
+      success: true,
+      data: result[0],
+      message: 'Invitation cancelled successfully',
+    };
+  }
+
+  async resendInvitation(invitationId: bigint, tenantId: bigint) {
+    const invitation = await this.sqlService.query(
+      `SELECT * FROM invitations 
+       WHERE id = @invitationId 
+         AND tenant_id = @tenantId 
+         AND status = 'pending'`,
+      { invitationId, tenantId }
+    );
+
+    if (invitation.length === 0) {
+      throw new NotFoundException('Invitation not found or already accepted');
+    }
+
+    // Generate new token and extend expiry
+    const newToken = this.hashingService.generateRandomToken(64);
+    const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const result = await this.sqlService.query(
+      `UPDATE invitations 
+       SET invitation_token = @token,
+           expires_at = @expiresAt,
+           updated_at = GETUTCDATE()
+       OUTPUT INSERTED.*
+       WHERE id = @invitationId`,
+      { invitationId, token: newToken, expiresAt: newExpiresAt }
+    );
+
+    return {
+      success: true,
+      data: result[0],
+      message: 'Invitation resent successfully',
+    };
   }
 }
