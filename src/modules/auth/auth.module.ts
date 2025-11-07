@@ -11,6 +11,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { InvitationService } from './invitation.service';
 import { VerificationService } from 'src/common/verification.service';
 import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.service';
+import { RbacService } from '../rbac/rbac.service';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.serv
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, VerificationService, AuditLoggerService, InvitationService, JwtStrategy],
+  providers: [AuthService, VerificationService, AuditLoggerService, InvitationService,RbacService, JwtStrategy],
   exports: [AuthService, JwtStrategy],
 })
 export class AuthModule {}

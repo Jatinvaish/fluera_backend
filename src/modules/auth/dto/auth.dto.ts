@@ -129,40 +129,4 @@ export class ResetPasswordDto {
   @MinLength(8)
   newPassword: string;
 }
-
-export class SendInvitationDto {
-  @IsEmail()
-  inviteeEmail: string;
-
-  @IsString()
-  @IsOptional()
-  inviteeName?: string;
-
-  @IsEnum(['creator', 'brand', 'staff', 'manager'])
-  inviteeType: string;
-
-  @IsString()
-  @IsOptional()
-  roleId?: string;
-
-  @IsString()
-  @IsOptional()
-  invitationMessage?: string;
-}
-
-export class AcceptInvitationDto {
-  @IsString()
-  token: string;
-
-  @IsString()
-  @MinLength(8)
-  password: string;
-
-  @IsString()
-  @IsOptional()
-  firstName?: string;
-
-  @IsString()
-  @IsOptional()
-  lastName?: string;
-}
+ 

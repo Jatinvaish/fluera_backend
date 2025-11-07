@@ -18,14 +18,13 @@ import {
   CreateCreatorDto,
   ResetPasswordRequestDto,
   ResetPasswordDto,
-  SendInvitationDto,
-  AcceptInvitationDto,
 } from './dto/auth.dto';
 import { Public, CurrentUser, TenantId } from '../../core/decorators';
 import { VerificationService } from '../../common/verification.service';
 import axios from 'axios';
 import type { FastifyReply } from 'fastify';
 import { RateLimit } from '../../core/guards/rate-limit.guard';
+import { SendInvitationDto, AcceptInvitationDto } from '../rbac/dto/rbac.dto';
 
 
 @Controller('auth')
