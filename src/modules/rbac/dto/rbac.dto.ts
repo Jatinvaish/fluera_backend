@@ -1,8 +1,8 @@
-// ============================================
 // modules/rbac/dto/rbac.dto.ts
-// ============================================
+import { IsString, IsOptional, IsBoolean, IsNumber, IsArray, IsEnum, Min, Max, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { IsString, IsOptional, IsBoolean, IsNumber, IsArray, IsEnum, IsIn, Max, Min } from 'class-validator';
+
+// ==================== ROLE DTOs ====================
 
 export class CreateRoleDto {
   @IsString()
@@ -16,17 +16,19 @@ export class CreateRoleDto {
   @IsOptional()
   description?: string;
 
-  @IsString()
+  @IsBoolean()
   @IsOptional()
-  color?: string;
+  isSystemRole?: boolean = false;
 
   @IsBoolean()
   @IsOptional()
-  isDefault?: boolean;
+  isDefault?: boolean = false;
 
   @IsNumber()
   @IsOptional()
-  hierarchyLevel?: number;
+  @Min(0)
+  @Max(100)
+  hierarchyLevel?: number = 0;
 }
 
 export class UpdateRoleDto {
@@ -38,23 +40,45 @@ export class UpdateRoleDto {
   @IsOptional()
   description?: string;
 
-  @IsString()
-  @IsOptional()
-  color?: string;
-
-  @IsBoolean()
-  @IsOptional()
-  isDefault?: boolean;
-
   @IsNumber()
   @IsOptional()
   hierarchyLevel?: number;
 }
 
-export class CreatePermissionDto {
-  @IsString()
-  name: string;
+export class ListRolesDto {
+  @IsOptional()
+  @IsEnum(['system', 'tenant', 'all'])
+  scope?: 'system' | 'tenant' | 'all' = 'all';
 
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(1)
+  @Max(100)
+  limit?: number = 50;
+}
+
+export class GetRoleDto {
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number;
+}
+
+export class DeleteRoleDto {
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number;
+}
+
+// ==================== PERMISSION DTOs ====================
+
+export class CreatePermissionDto {
   @IsString()
   resource: string;
 
@@ -68,117 +92,166 @@ export class CreatePermissionDto {
   @IsString()
   @IsOptional()
   category?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isSystemPermission?: boolean = false;
 }
 
+export class ListPermissionsDto {
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsEnum(['system', 'custom', 'all'])
+  scope?: 'system' | 'custom' | 'all' = 'all';
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(1)
+  @Max(100)
+  limit?: number = 50;
+}
+
+export class GetPermissionDto {
+  @IsNumber()
+  @Type(() => Number)
+  permissionId: number;
+}
+
+export class DeletePermissionDto {
+  @IsNumber()
+  @Type(() => Number)
+  permissionId: number;
+}
+
+// ==================== ROLE-PERMISSION DTOs ====================
+
 export class AssignPermissionsDto {
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number;
+
   @IsArray()
+  @IsString({ each: true })
+  permissionKeys: string[];
+}
+
+export class BulkAssignPermissionsDto {
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PermissionChangeDto)
+  changes: PermissionChangeDto[];
+}
+
+class PermissionChangeDto {
+  @IsEnum(['I', 'D']) // Insert or Delete
+  mode: 'I' | 'D';
+
+  @IsNumber()
+  @Type(() => Number)
+  permissionId: number;
+}
+
+export class GetRolePermissionsTreeDto {
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number;
+}
+
+export class RemovePermissionsDto {
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number;
+
+  @IsArray()
+  @IsNumber({}, { each: true })
   permissionIds: number[];
 }
 
-export class AssignRoleDto {
+// ==================== USER-ROLE DTOs ====================
+
+export class AssignRoleToUserDto {
   @IsNumber()
+  @Type(() => Number)
   userId: number;
 
   @IsNumber()
+  @Type(() => Number)
   roleId: number;
 }
 
-
-
-export class CreateRoleLimitDto {
+export class GetUserRolesDto {
   @IsNumber()
+  @Type(() => Number)
+  userId: number;
+}
+
+export class RemoveRoleFromUserDto {
+  @IsNumber()
+  @Type(() => Number)
+  userId: number;
+
+  @IsNumber()
+  @Type(() => Number)
   roleId: number;
-
-  @IsString()
-  @IsEnum(['invitations', 'campaigns', 'contracts', 'storage', 'creators', 'brands'])
-  limitType: string;
-
-  @IsNumber()
-  limitValue: number;
-
-  @IsString()
-  @IsEnum(['daily', 'monthly', 'yearly', 'never'])
-  @IsOptional()
-  resetPeriod?: string;
 }
 
-export class UpdateRoleLimitDto {
+export class GetUserEffectivePermissionsDto {
   @IsNumber()
-  @IsOptional()
-  limitValue?: number;
-
-  @IsString()
-  @IsOptional()
-  resetPeriod?: string;
+  @Type(() => Number)
+  userId: number;
 }
+
+// ==================== MENU-PERMISSION DTOs ====================
 
 export class LinkMenuPermissionDto {
   @IsString()
   menuKey: string;
 
   @IsNumber()
+  @Type(() => Number)
   permissionId: number;
 
   @IsBoolean()
   @IsOptional()
-  isRequired?: boolean;
+  isRequired: boolean = true;
 }
 
 export class BulkLinkMenuPermissionsDto {
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LinkMenuPermissionDto)
   mappings: LinkMenuPermissionDto[];
 }
 
-export class GetUserMenuAccessDto {
-  @IsNumber()
-  userId: number;
-}
-
-export class CreateDefaultRolesDto {
+export class UnlinkMenuPermissionDto {
   @IsString()
-  userType: 'agency_admin' | 'brand_admin' | 'creator_admin';
+  menuKey: string;
 
   @IsNumber()
-  organizationId: number;
+  @Type(() => Number)
+  permissionId: number;
 }
 
-export class GetRolesByUserTypeDto {
+export class GetMenuPermissionsDto {
   @IsString()
-  userType: 'agency_admin' | 'brand_admin' | 'creator_admin';
-
-  @IsNumber()
-  @IsOptional()
-  organizationId?: number;
+  menuKey: string;
 }
-
-export class AssignDefaultRoleDto {
-  @IsNumber()
-  userId: number;
-
-  @IsString()
-  userType: 'agency_admin' | 'brand_admin' | 'creator_admin';
-}
-
-
 
 export class ListMenuPermissionsDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  page?: number = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  @Max(100)
-  limit?: number = 10;
-
-  @IsOptional()
-  @IsString()
-  search?: string;
-
   @IsOptional()
   @IsString()
   menuKey?: string;
@@ -189,45 +262,196 @@ export class ListMenuPermissionsDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['menu_key', 'permission_name', 'created_at', 'is_required'])
+  search?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(1)
+  @Max(100)
+  limit?: number = 50;
+
+  @IsOptional()
+  @IsEnum(['menu_key', 'permission_name', 'created_at'])
   sortBy?: string = 'created_at';
 
   @IsOptional()
-  @IsString()
-  @IsIn(['ASC', 'DESC'])
+  @IsEnum(['ASC', 'DESC'])
   sortOrder?: 'ASC' | 'DESC' = 'DESC';
 }
 
-export class GetMenuPermissionsDto {
-  @IsString()
-  menuKey: string;
-}
-
-export class UnlinkMenuPermissionDto {
-  @IsString()
-  menuKey: string;
-
-  @IsNumber()
-  permissionId: number;
-}
-
-
-export class UpdateMenuPermissionDto {
-  @IsNumber()
-  id: number;
-
-  @IsString()
-  menuKey: string;
-
-  @IsNumber()
-  permissionId: number;
-
-  @IsBoolean()
+export class GetUserAccessibleMenusDto {
   @IsOptional()
-  isRequired?: boolean;
+  @IsNumber()
+  @Type(() => Number)
+  userId?: number;
 }
 
-export class GetMenuPermissionDto {
+export class CheckMenuAccessDto {
+  @IsString()
+  menuKey: string;
+
+  @IsOptional()
   @IsNumber()
-  id: number;
+  @Type(() => Number)
+  userId?: number;
+}
+
+// ==================== RESOURCE-PERMISSION DTOs ====================
+
+export class GrantResourcePermissionDto {
+  @IsString()
+  resourceType: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  resourceId: number;
+
+  @IsEnum(['user', 'role'])
+  entityType: 'user' | 'role';
+
+  @IsNumber()
+  @Type(() => Number)
+  entityId: number;
+
+  @IsString()
+  permissionType: string; // 'read', 'write', 'delete', 'share', etc.
+
+  @IsOptional()
+  @IsString()
+  expiresAt?: string; // ISO date string
+}
+
+export class RevokeResourcePermissionDto {
+  @IsString()
+  resourceType: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  resourceId: number;
+
+  @IsEnum(['user', 'role'])
+  entityType: 'user' | 'role';
+
+  @IsNumber()
+  @Type(() => Number)
+  entityId: number;
+
+  @IsOptional()
+  @IsString()
+  permissionType?: string;
+}
+
+export class CheckResourcePermissionDto {
+  @IsString()
+  resourceType: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  resourceId: number;
+
+  @IsString()
+  permissionType: string;
+}
+
+export class CheckBatchPermissionsDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CheckResourcePermissionDto)
+  checks: CheckResourcePermissionDto[];
+}
+
+export class ListResourcePermissionsDto {
+  @IsString()
+  resourceType: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  resourceId: number;
+}
+
+// ==================== ROLE-LIMIT DTOs ====================
+
+export class CreateRoleLimitDto {
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number;
+
+  @IsString()
+  @IsEnum(['invitations', 'campaigns', 'contracts', 'storage', 'creators', 'brands'])
+  limitType: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  limitValue: number;
+
+  @IsOptional()
+  @IsEnum(['daily', 'monthly', 'yearly', 'never'])
+  resetPeriod?: string;
+}
+
+export class UpdateRoleLimitDto {
+  @IsNumber()
+  @Type(() => Number)
+  limitId: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  limitValue?: number;
+
+  @IsOptional()
+  @IsEnum(['daily', 'monthly', 'yearly', 'never'])
+  resetPeriod?: string;
+}
+
+export class GetRoleLimitsDto {
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number;
+}
+
+// ==================== INVITATION DTOs (Enhanced) ====================
+
+export class SendInvitationDto {
+  @IsString()
+  inviteeEmail: string;
+
+  @IsString()
+  @IsOptional()
+  inviteeName?: string;
+
+  @IsEnum(['creator', 'brand', 'staff', 'manager'])
+  inviteeType: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  roleId: number; // ✅ Required role_id
+
+  @IsString()
+  @IsOptional()
+  invitationMessage?: string;
+}
+
+export class AcceptInvitationDto {
+  @IsString()
+  token: string;
+
+  @IsString()
+  password: string;
+
+  @IsString()
+  @IsOptional()
+  firstName?: string;
+
+  @IsString()
+  @IsOptional()
+  lastName?: string;
 }
