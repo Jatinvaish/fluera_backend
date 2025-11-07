@@ -134,14 +134,15 @@ export class AuthService {
     await this.verificationService.verifyCode(email, code, 'email_verify');
 
     const users = await this.sqlService.query(
-      `SELECT u.*, vc.user_id AS vc_user_id,
+      `SELECT u.id,u.username, u.email, u.password_hash, u.first_name, u.last_name,
+                u.status, u.email_verified_at, u.user_type, u.is_super_admin, vc.user_id AS vc_user_id,
               STRING_AGG(r.name, ',') AS roles
        FROM users u
        JOIN verification_codes vc ON u.id = vc.user_id
        LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = 1
        LEFT JOIN roles r ON ur.role_id = r.id
        WHERE u.email = @email AND vc.code = @code AND vc.used_at IS NOT NULL
-       GROUP BY u.id, u.email, u.password_hash, u.first_name, u.last_name,
+       GROUP BY u.id,u.username, u.email, u.password_hash, u.first_name, u.last_name,
                 u.status, u.email_verified_at, u.user_type, u.is_super_admin, vc.user_id`,
       { email, code }
     );
