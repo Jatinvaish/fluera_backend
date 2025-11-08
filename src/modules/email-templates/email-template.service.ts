@@ -6,8 +6,8 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { SqlServerService } from 'src/core/database/sql-server.service';
 
 export interface EmailTemplate {
-  id: bigint;
-  organization_id: bigint;
+  id: number;
+  organization_id: number;
   name: string;
   category: string;
   subject: string;
@@ -21,7 +21,7 @@ export interface EmailTemplate {
 }
 
 export interface CreateTemplateDto {
-  organizationId: bigint;
+  organizationId: number;
   name: string;
   category: string;
   subject: string;
@@ -32,7 +32,7 @@ export interface CreateTemplateDto {
 }
 
 export interface UpdateTemplateDto extends Partial<CreateTemplateDto> {
-  id: bigint;
+  id: number;
 }
 
 @Injectable()
@@ -44,7 +44,7 @@ export class EmailTemplateService {
   /**
    * Get template by category and organization
    */
-  async getTemplate(category: string, organizationId?: bigint): Promise<EmailTemplate | null> {
+  async getTemplate(category: string, organizationId?: number): Promise<EmailTemplate | null> {
     try {
       const result = await this.sqlService.execute(
         'sp_GetEmailTemplate',
@@ -68,7 +68,7 @@ export class EmailTemplateService {
   /**
    * Create or update email template
    */
-  async upsertTemplate(dto: CreateTemplateDto | UpdateTemplateDto, userId: bigint): Promise<bigint> {
+  async upsertTemplate(dto: CreateTemplateDto | UpdateTemplateDto, userId: number): Promise<number> {
     try {
       const id = 'id' in dto ? dto.id : null;
 
@@ -100,7 +100,7 @@ export class EmailTemplateService {
    * Get all templates for an organization
    */
   async getOrganizationTemplates(
-    organizationId: bigint,
+    organizationId: number,
     includeGlobal: boolean = true
   ): Promise<EmailTemplate[]> {
     try {
@@ -124,7 +124,7 @@ export class EmailTemplateService {
   /**
    * Delete a template
    */
-  async deleteTemplate(id: bigint, organizationId: bigint): Promise<boolean> {
+  async deleteTemplate(id: number, organizationId: number): Promise<boolean> {
     try {
       // ✅ USE SP INSTEAD OF INLINE SQL
       const result = await this.sqlService.execute(
@@ -171,7 +171,7 @@ export class EmailTemplateService {
   async previewTemplate(
     category: string,
     variables: Record<string, any>,
-    organizationId?: bigint
+    organizationId?: number
   ): Promise<{ subject: string; html: string }> {
     const template = await this.getTemplate(category, organizationId);
 
@@ -207,7 +207,7 @@ export class EmailTemplateService {
   /**
    * Get template statistics
    */
-  async getTemplateStats(organizationId: bigint): Promise<any[]> {
+  async getTemplateStats(organizationId: number): Promise<any[]> {
     try {
       const result = await this.sqlService.query(
         `SELECT 
@@ -233,11 +233,11 @@ export class EmailTemplateService {
    * Clone template to organization
    */
   async cloneTemplate(
-    sourceTemplateId: bigint,
-    targetOrganizationId: bigint,
-    userId: bigint,
+    sourceTemplateId: number,
+    targetOrganizationId: number,
+    userId: number,
     newName?: string
-  ): Promise<bigint> {
+  ): Promise<number> {
     try {
       // Get source template
       const source = await this.sqlService.query(

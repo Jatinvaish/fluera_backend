@@ -66,7 +66,7 @@ export class AuthService {
     // Generate E2E encryption keys for user
     const userKeys = this.encryptionService.generateUserKey(registerDto.password);
 
-    let userId: bigint;
+    let userId: number;
     if (existing.length > 0) {
       userId = existing[0].id;
       await this.sqlService.query(
@@ -499,7 +499,7 @@ export class AuthService {
   /**
    * Create Agency (Multi-tenant)
    */
-  async createAgency(dto: CreateAgencyDto, userId: bigint) {
+  async createAgency(dto: CreateAgencyDto, userId: number) {
     return this.sqlService.transaction(async (transaction) => {
       const slug = this.generateSlug(dto.name);
 
@@ -574,7 +574,7 @@ export class AuthService {
   /**
    * Create Brand
    */
-  async createBrand(dto: CreateBrandDto, userId: bigint) {
+  async createBrand(dto: CreateBrandDto, userId: number) {
     return this.sqlService.transaction(async (transaction) => {
       const slug = this.generateSlug(dto.name);
       const tenantKeys = this.encryptionService.generateTenantKey();
@@ -661,7 +661,7 @@ export class AuthService {
   /**
    * Create Creator
    */
-  async createCreator(dto: CreateCreatorDto, userId: bigint) {
+  async createCreator(dto: CreateCreatorDto, userId: number) {
     return this.sqlService.transaction(async (transaction) => {
       const slug = this.generateSlug(dto.stageName || `${dto.firstName}-${dto.lastName}`);
       const tenantKeys = this.encryptionService.generateTenantKey();
@@ -794,7 +794,7 @@ export class AuthService {
   /**
    * Logout
    */
-  async logout(userId: bigint) {
+  async logout(userId: number) {
     await this.sqlService.query(
       'UPDATE user_sessions SET is_active = 0 WHERE user_id = @userId',
       { userId }
@@ -937,10 +937,10 @@ export class AuthService {
   }
 
   private async createSession(
-    userId: bigint,
+    userId: number,
     refreshToken: string,
     deviceInfo?: DeviceInfo,
-    tenantId?: bigint | null
+    tenantId?: number | null
   ) {
     const sessionToken = this.hashingService.generateRandomToken();
 
@@ -980,10 +980,10 @@ export class AuthService {
   }
 
   private async logSystemEvent(
-    userId: bigint,
+    userId: number,
     eventName: string,
     eventData: any,
-    tenantId?: bigint | null
+    tenantId?: number | null
   ) {
     try {
       await this.sqlService.query(
@@ -1004,13 +1004,13 @@ export class AuthService {
   }
 
   private async createAuditLog(
-    userId: bigint,
+    userId: number,
     entityType: string,
-    entityId: bigint,
+    entityId: number,
     actionType: string,
     oldValues: any,
     newValues: any,
-    tenantId?: bigint | null
+    tenantId?: number | null
   ) {
     try {
       await this.sqlService.query(
@@ -1033,7 +1033,7 @@ export class AuthService {
     }
   }
 
-  async getUserSessions(userId: bigint) {
+  async getUserSessions(userId: number) {
     const sessions = await this.sqlService.execute('sp_GetUserSessions', {
       userId,
     });

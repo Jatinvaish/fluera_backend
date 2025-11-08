@@ -25,7 +25,7 @@ export class SystemEventsController {
     @Body('limit') limit?: number,
   ) {
     return this.systemEventsService.findAll(
-      organizationId ? BigInt(organizationId) : undefined,
+      organizationId ? Number(organizationId) : undefined,
       limit
     );
   }

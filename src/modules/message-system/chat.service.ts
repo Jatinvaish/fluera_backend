@@ -27,7 +27,7 @@ export class ChatService {
 
   // ==================== CHANNELS ====================
 
-  async createChannel(dto: CreateChannelDto, userId: bigint, organizationId: bigint) {
+  async createChannel(dto: CreateChannelDto, userId: number, organizationId: number) {
     // Create channel
     const result = await this.sqlService.query(
       `INSERT INTO chat_channels (organization_id, name, description, channel_type, 
@@ -42,7 +42,7 @@ export class ChatService {
         description: dto.description || null,
         channelType: dto.channelType,
         relatedType: dto.relatedType || null,
-        relatedId: dto.relatedId ? BigInt(dto.relatedId) : null,
+        relatedId: dto.relatedId ? Number(dto.relatedId) : null,
         isPrivate: dto.isPrivate || false,
         userId
       }
@@ -52,7 +52,7 @@ export class ChatService {
 
     // Add creator as owner
     await this.addChannelMember(
-      BigInt(channel.id),
+      Number(channel.id),
       userId,
       userId,
       MemberRole.OWNER
@@ -61,10 +61,10 @@ export class ChatService {
     // Add additional members if provided
     if (dto.memberIds && dto.memberIds.length > 0) {
       for (const memberId of dto.memberIds) {
-        if (BigInt(memberId) !== userId) {
+        if (Number(memberId) !== userId) {
           await this.addChannelMember(
-            BigInt(channel.id),
-            BigInt(memberId),
+            Number(channel.id),
+            Number(memberId),
             userId,
             MemberRole.MEMBER
           );
@@ -72,10 +72,10 @@ export class ChatService {
       }
     }
 
-    return this.getChannelById(BigInt(channel.id), userId);
+    return this.getChannelById(Number(channel.id), userId);
   }
 
-  async getChannelById(channelId: bigint, userId: bigint) {
+  async getChannelById(channelId: number, userId: number) {
     // Check if user is member
     const membership = await this.sqlService.query(
       `SELECT * FROM chat_channel_members 
@@ -108,7 +108,7 @@ export class ChatService {
     return result[0];
   }
 
-  async getUserChannels(userId: bigint, organizationId: bigint, dto: GetChannelsDto) {
+  async getUserChannels(userId: number, organizationId: number, dto: GetChannelsDto) {
     let query = `
       SELECT c.*, 
              ccm.role as user_role,
@@ -158,7 +158,7 @@ export class ChatService {
     return this.sqlService.query(query, params);
   }
 
-  async updateChannel(channelId: bigint, dto: UpdateChannelDto, userId: bigint) {
+  async updateChannel(channelId: number, dto: UpdateChannelDto, userId: number) {
     // Check if user is admin/owner
     await this.checkChannelPermission(channelId, userId, [MemberRole.OWNER, MemberRole.ADMIN]);
 
@@ -189,7 +189,7 @@ export class ChatService {
     return result[0];
   }
 
-  async archiveChannel(channelId: bigint, isArchived: boolean, userId: bigint) {
+  async archiveChannel(channelId: number, isArchived: boolean, userId: number) {
     await this.checkChannelPermission(channelId, userId, [MemberRole.OWNER, MemberRole.ADMIN]);
 
     await this.sqlService.query(
@@ -202,7 +202,7 @@ export class ChatService {
     return { message: isArchived ? 'Channel archived' : 'Channel unarchived' };
   }
 
-  async deleteChannel(channelId: bigint, userId: bigint) {
+  async deleteChannel(channelId: number, userId: number) {
     await this.checkChannelPermission(channelId, userId, [MemberRole.OWNER]);
 
     // Soft delete by archiving
@@ -218,7 +218,7 @@ export class ChatService {
 
   // ==================== CHANNEL MEMBERS ====================
 
-  async addChannelMembers(channelId: bigint, dto: AddChannelMembersDto, userId: bigint) {
+  async addChannelMembers(channelId: number, dto: AddChannelMembersDto, userId: number) {
     await this.checkChannelPermission(channelId, userId, [MemberRole.OWNER, MemberRole.ADMIN]);
 
     const addedMembers:any = [];
@@ -227,7 +227,7 @@ export class ChatService {
       try {
         const member:any = await this.addChannelMember(
           channelId,
-          BigInt(memberId),
+          Number(memberId),
           userId,
           dto.role || MemberRole.MEMBER
         );
@@ -248,7 +248,7 @@ export class ChatService {
     };
   }
 
-  async addChannelMember(channelId: bigint, memberId: bigint, addedBy: bigint, role: MemberRole = MemberRole.MEMBER) {
+  async addChannelMember(channelId: number, memberId: number, addedBy: number, role: MemberRole = MemberRole.MEMBER) {
     const result = await this.sqlService.query(
       `INSERT INTO chat_channel_members (channel_id, user_id, role, is_active, joined_at, created_by)
        OUTPUT INSERTED.*
@@ -259,7 +259,7 @@ export class ChatService {
     return result[0];
   }
 
-  async removeChannelMember(channelId: bigint, memberId: bigint, removedBy: bigint) {
+  async removeChannelMember(channelId: number, memberId: number, removedBy: number) {
     // Check permission (owner/admin can remove, or user can remove themselves)
     if (removedBy !== memberId) {
       await this.checkChannelPermission(channelId, removedBy, [MemberRole.OWNER, MemberRole.ADMIN]);
@@ -277,7 +277,7 @@ export class ChatService {
     return { message: 'Member removed successfully' };
   }
 
-  async getChannelMembers(channelId: bigint, userId: bigint) {
+  async getChannelMembers(channelId: number, userId: number) {
     // Check if user is member
     await this.checkChannelMembership(channelId, userId);
 
@@ -293,20 +293,20 @@ export class ChatService {
     );
   }
 
-  async updateMemberRole(channelId: bigint, dto: UpdateMemberRoleDto, updatedBy: bigint) {
+  async updateMemberRole(channelId: number, dto: UpdateMemberRoleDto, updatedBy: number) {
     await this.checkChannelPermission(channelId, updatedBy, [MemberRole.OWNER]);
 
     await this.sqlService.query(
       `UPDATE chat_channel_members 
        SET role = @role, updated_by = @updatedBy, updated_at = GETUTCDATE()
        WHERE channel_id = @channelId AND user_id = @userId`,
-      { channelId, userId: BigInt(dto.userId), role: dto.role, updatedBy }
+      { channelId, userId: Number(dto.userId), role: dto.role, updatedBy }
     );
 
     return { message: 'Member role updated successfully' };
   }
 
-  async updateMemberNotification(channelId: bigint, dto: UpdateMemberNotificationDto, userId: bigint) {
+  async updateMemberNotification(channelId: number, dto: UpdateMemberNotificationDto, userId: number) {
     await this.sqlService.query(
       `UPDATE chat_channel_members 
        SET is_muted = COALESCE(@isMuted, is_muted),
@@ -327,9 +327,9 @@ export class ChatService {
 
   // ==================== MESSAGES ====================
 
-  async sendMessage(dto: SendMessageDto, userId: bigint, organizationId: bigint) {
+  async sendMessage(dto: SendMessageDto, userId: number, organizationId: number) {
     // Check if user is member
-    await this.checkChannelMembership(BigInt(dto.channelId), userId);
+    await this.checkChannelMembership(Number(dto.channelId), userId);
 
     // Create message
     const result = await this.sqlService.query(
@@ -342,13 +342,13 @@ export class ChatService {
                @attachments, @mentions, GETUTCDATE(), @userId)`,
       {
         organizationId,
-        channelId: BigInt(dto.channelId),
+        channelId: Number(dto.channelId),
         userId,
         messageType: dto.messageType || 'text',
         content: dto.content,
         formattedContent: dto.formattedContent || null,
-        replyToMessageId: dto.replyToMessageId ? BigInt(dto.replyToMessageId) : null,
-        threadId: dto.threadId ? BigInt(dto.threadId) : null,
+        replyToMessageId: dto.replyToMessageId ? Number(dto.replyToMessageId) : null,
+        threadId: dto.threadId ? Number(dto.threadId) : null,
         attachments: dto.attachments ? JSON.stringify(dto.attachments) : null,
         mentions: dto.mentions ? JSON.stringify(dto.mentions) : null
       }
@@ -361,13 +361,13 @@ export class ChatService {
            last_message_at = GETUTCDATE(),
            last_activity_at = GETUTCDATE()
        WHERE id = @channelId`,
-      { channelId: BigInt(dto.channelId) }
+      { channelId: Number(dto.channelId) }
     );
 
     return result[0];
   }
 
-  async getMessages(channelId: bigint, userId: bigint, dto: GetMessagesDto) {
+  async getMessages(channelId: number, userId: number, dto: GetMessagesDto) {
     // Check membership
     await this.checkChannelMembership(channelId, userId);
 
@@ -391,12 +391,12 @@ export class ChatService {
 
     if (dto.beforeMessageId) {
       query += ` AND m.id < @beforeMessageId`;
-      params.beforeMessageId = BigInt(dto.beforeMessageId);
+      params.beforeMessageId = Number(dto.beforeMessageId);
     }
 
     if (dto.afterMessageId) {
       query += ` AND m.id > @afterMessageId`;
-      params.afterMessageId = BigInt(dto.afterMessageId);
+      params.afterMessageId = Number(dto.afterMessageId);
     }
 
     query += ` ORDER BY m.sent_at DESC`;
@@ -408,7 +408,7 @@ export class ChatService {
     return this.sqlService.query(query, params);
   }
 
-  async editMessage(messageId: bigint, dto: EditMessageDto, userId: bigint) {
+  async editMessage(messageId: number, dto: EditMessageDto, userId: number) {
     // Check if user is message sender
     const message = await this.sqlService.query(
       `SELECT * FROM messages WHERE id = @messageId AND sender_id = @userId`,
@@ -439,7 +439,7 @@ export class ChatService {
     return result[0];
   }
 
-  async deleteMessage(messageId: bigint, userId: bigint, hardDelete: boolean = false) {
+  async deleteMessage(messageId: number, userId: number, hardDelete: boolean = false) {
     const message = await this.sqlService.query(
       `SELECT * FROM messages WHERE id = @messageId`,
       { messageId }
@@ -475,7 +475,7 @@ export class ChatService {
     return { message: 'Message deleted successfully' };
   }
 
-  async reactToMessage(messageId: bigint, emoji: string, userId: bigint, organizationId: bigint) {
+  async reactToMessage(messageId: number, emoji: string, userId: number, organizationId: number) {
     // Check if reaction exists
     const existing = await this.sqlService.query(
       `SELECT * FROM message_reactions 
@@ -502,7 +502,7 @@ export class ChatService {
     }
   }
 
-  async pinMessage(messageId: bigint, isPinned: boolean, userId: bigint) {
+  async pinMessage(messageId: number, isPinned: boolean, userId: number) {
     const message = await this.sqlService.query(
       `SELECT channel_id FROM messages WHERE id = @messageId`,
       { messageId }
@@ -533,7 +533,7 @@ export class ChatService {
 
   // ==================== SEARCH ====================
 
-  async searchMessages(userId: bigint, organizationId: bigint, dto: SearchMessagesDto) {
+  async searchMessages(userId: number, organizationId: number, dto: SearchMessagesDto) {
     let query = `
       SELECT m.*,
              u.first_name as sender_first_name,
@@ -557,12 +557,12 @@ export class ChatService {
 
     if (dto.channelId) {
       query += ` AND m.channel_id = @channelId`;
-      params.channelId = BigInt(dto.channelId);
+      params.channelId = Number(dto.channelId);
     }
 
     if (dto.userId) {
       query += ` AND m.sender_id = @senderId`;
-      params.senderId = BigInt(dto.userId);
+      params.senderId = Number(dto.userId);
     }
 
     if (dto.messageType) {
@@ -591,7 +591,7 @@ export class ChatService {
 
   // ==================== DIRECT MESSAGES ====================
 
-  async createDirectMessage(dto: CreateDirectMessageDto, userId: bigint, organizationId: bigint) {
+  async createDirectMessage(dto: CreateDirectMessageDto, userId: number, organizationId: number) {
     // Check if DM channel already exists
     let channel = await this.sqlService.query(
       `SELECT c.* FROM chat_channels c
@@ -600,10 +600,10 @@ export class ChatService {
        WHERE c.channel_type = 'direct' 
        AND c.organization_id = @organizationId
        AND (SELECT COUNT(*) FROM chat_channel_members WHERE channel_id = c.id AND is_active = 1) = 2`,
-      { userId, recipientId: BigInt(dto.recipientUserId), organizationId }
+      { userId, recipientId: Number(dto.recipientUserId), organizationId }
     );
 
-    let channelId: bigint;
+    let channelId: number;
 
     if (channel.length === 0) {
       // Create new DM channel
@@ -618,7 +618,7 @@ export class ChatService {
 
       // Add both users as members
       await this.addChannelMember(channelId, userId, userId, MemberRole.MEMBER);
-      await this.addChannelMember(channelId, BigInt(dto.recipientUserId), userId, MemberRole.MEMBER);
+      await this.addChannelMember(channelId, Number(dto.recipientUserId), userId, MemberRole.MEMBER);
     } else {
       channelId = channel[0].id;
     }
@@ -638,10 +638,10 @@ export class ChatService {
 
   // ==================== MARK AS READ ====================
 
-  async markAsRead(dto: MarkAsReadDto, userId: bigint) {
+  async markAsRead(dto: MarkAsReadDto, userId: number) {
     const messageId = dto.messageId 
-      ? BigInt(dto.messageId)
-      : await this.getLastMessageId(BigInt(dto.channelId));
+      ? Number(dto.messageId)
+      : await this.getLastMessageId(Number(dto.channelId));
 
     if (!messageId) {
       return { message: 'No messages to mark as read' };
@@ -653,13 +653,13 @@ export class ChatService {
            last_read_at = GETUTCDATE(),
            updated_by = @userId
        WHERE channel_id = @channelId AND user_id = @userId`,
-      { channelId: BigInt(dto.channelId), messageId, userId }
+      { channelId: Number(dto.channelId), messageId, userId }
     );
 
     return { message: 'Marked as read' };
   }
 
-  async getUnreadCount(userId: bigint, organizationId: bigint) {
+  async getUnreadCount(userId: number, organizationId: number) {
     const result = await this.sqlService.query(
       `SELECT 
          COUNT(*) as total_unread,
@@ -681,7 +681,7 @@ export class ChatService {
 
   // ==================== THREADS ====================
 
-  async getThreadMessages(threadId: bigint, userId: bigint, limit: number = 50, offset: number = 0) {
+  async getThreadMessages(threadId: number, userId: number, limit: number = 50, offset: number = 0) {
     // Check if user has access to parent message's channel
     const parentMessage = await this.sqlService.query(
       `SELECT channel_id FROM messages WHERE id = @threadId`,
@@ -712,7 +712,7 @@ export class ChatService {
 
   // ==================== FILE ATTACHMENTS ====================
 
-  async getChannelFiles(channelId: bigint, userId: bigint, limit: number = 50, offset: number = 0) {
+  async getChannelFiles(channelId: number, userId: number, limit: number = 50, offset: number = 0) {
     await this.checkChannelMembership(channelId, userId);
 
     return this.sqlService.query(
@@ -733,7 +733,7 @@ export class ChatService {
 
   // ==================== HELPER METHODS ====================
 
-  async checkChannelMembership(channelId: bigint, userId: bigint) {
+  async checkChannelMembership(channelId: number, userId: number) {
     const result = await this.sqlService.query(
       `SELECT * FROM chat_channel_members 
        WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
@@ -747,7 +747,7 @@ export class ChatService {
     return result[0];
   }
 
-  async checkChannelPermission(channelId: bigint, userId: bigint, allowedRoles: MemberRole[]) {
+  async checkChannelPermission(channelId: number, userId: number, allowedRoles: MemberRole[]) {
     const member = await this.checkChannelMembership(channelId, userId);
 
     if (!allowedRoles.includes(member.role)) {
@@ -757,7 +757,7 @@ export class ChatService {
     return member;
   }
 
-  async updateChannelMemberCount(channelId: bigint) {
+  async updateChannelMemberCount(channelId: number) {
     await this.sqlService.query(
       `UPDATE chat_channels 
        SET member_count = (SELECT COUNT(*) FROM chat_channel_members 
@@ -767,7 +767,7 @@ export class ChatService {
     );
   }
 
-  async getLastMessageId(channelId: bigint): Promise<bigint | null> {
+  async getLastMessageId(channelId: number): Promise<number | null> {
     const result = await this.sqlService.query(
       `SELECT TOP 1 id FROM messages 
        WHERE channel_id = @channelId AND is_deleted = 0 
@@ -780,7 +780,7 @@ export class ChatService {
 
   // ==================== PINNED MESSAGES ====================
 
-  async getPinnedMessages(channelId: bigint, userId: bigint) {
+  async getPinnedMessages(channelId: number, userId: number) {
     await this.checkChannelMembership(channelId, userId);
 
     return this.sqlService.query(
@@ -803,7 +803,7 @@ export class ChatService {
 
   // ==================== MESSAGE REACTIONS ====================
 
-  async getMessageReactions(messageId: bigint, userId: bigint) {
+  async getMessageReactions(messageId: number, userId: number) {
     const message = await this.sqlService.query(
       `SELECT channel_id FROM messages WHERE id = @messageId`,
       { messageId }

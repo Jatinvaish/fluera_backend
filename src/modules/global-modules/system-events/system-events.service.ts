@@ -32,7 +32,7 @@ export class SystemEventsService {
     return result[0];
   }
 
-  async findAll(organizationId?: bigint, limit: number = 100) {
+  async findAll(organizationId?: number, limit: number = 100) {
     let query = 'SELECT * FROM system_events';
     const params: any = { limit };
 

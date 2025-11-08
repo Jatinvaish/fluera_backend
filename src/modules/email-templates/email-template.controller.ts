@@ -125,7 +125,7 @@ export class EmailTemplateController {
     const templateId = await this.emailTemplateService.upsertTemplate(
       {
         ...updateDto,
-        id: BigInt(id),
+        id: Number(id),
         organizationId,
       },
       userId,
@@ -151,7 +151,7 @@ export class EmailTemplateController {
   ) {
     const organizationId = req.user.organizationId;
     const deleted = await this.emailTemplateService.deleteTemplate(
-      BigInt(id),
+      Number(id),
       organizationId,
     );
 
@@ -216,7 +216,7 @@ export class EmailTemplateController {
     const organizationId = req.user.organizationId;
 
     const newTemplateId = await this.emailTemplateService.cloneTemplate(
-      BigInt(id),
+      Number(id),
       organizationId,
       userId,
       newName,

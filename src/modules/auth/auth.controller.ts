@@ -19,7 +19,7 @@ import {
   ResetPasswordRequestDto,
   ResetPasswordDto,
 } from './dto/auth.dto';
-import { Public, CurrentUser, TenantId } from '../../core/decorators';
+import { Public, CurrentUser, TenantId, Unencrypted } from '../../core/decorators';
 import { VerificationService } from '../../common/verification.service';
 import axios from 'axios';
 import type { FastifyReply } from 'fastify';
@@ -64,6 +64,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @RateLimit(5, 300) // 🔒 5 attempts per 5 minutes
+  @Unencrypted()
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto, @Req() req: any) {
     const deviceInfo = this.extractDeviceInfo(req);
@@ -84,7 +85,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@CurrentUser('id') userId: bigint) {
+  async logout(@CurrentUser('id') userId: number) {
     return this.authService.logout(userId);
   }
 
@@ -111,7 +112,7 @@ export class AuthController {
   @Post('create-agency')
   async createAgency(
     @Body() dto: CreateAgencyDto,
-    @CurrentUser('id') userId: bigint
+    @CurrentUser('id') userId: number
   ) {
     return this.authService.createAgency(dto, userId);
   }
@@ -119,7 +120,7 @@ export class AuthController {
   @Post('create-brand')
   async createBrand(
     @Body() dto: CreateBrandDto,
-    @CurrentUser('id') userId: bigint
+    @CurrentUser('id') userId: number
   ) {
     return this.authService.createBrand(dto, userId);
   }
@@ -127,7 +128,7 @@ export class AuthController {
   @Post('create-creator')
   async createCreator(
     @Body() dto: CreateCreatorDto,
-    @CurrentUser('id') userId: bigint
+    @CurrentUser('id') userId: number
   ) {
     return this.authService.createCreator(dto, userId);
   }
@@ -139,8 +140,8 @@ export class AuthController {
   @Post('invitation/send')
   async sendInvitation(
     @Body() dto: SendInvitationDto,
-    @TenantId() tenantId: bigint,
-    @CurrentUser('id') userId: bigint,
+    @TenantId() tenantId: number,
+    @CurrentUser('id') userId: number,
   ) {
     return this.invitationService.sendInvitation(tenantId, userId, dto);
   }
@@ -325,7 +326,7 @@ export class AuthController {
     }
   }
   @Get('sessions')
-  async getUserSessions(@CurrentUser('id') userId: bigint) {
+  async getUserSessions(@CurrentUser('id') userId: number) {
     return this.authService.getUserSessions(userId);
   }
   // ============================================
