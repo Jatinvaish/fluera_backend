@@ -12,7 +12,7 @@ export class VerificationService {
     private emailService: EmailService,
   ) {}
 
-  async sendVerificationCode(email: string, codeType: string, userId?: bigint) {
+  async sendVerificationCode(email: string, codeType: string, userId?: number) {
     const code = this.hashingService.generateNumericCode(6);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 

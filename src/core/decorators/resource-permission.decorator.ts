@@ -6,7 +6,7 @@ export const RESOURCE_PERMISSION_KEY = 'resourcePermission';
 export interface ResourcePermissionConfig {
   resourceType: string;
   permissionType: string;
-  extractResourceId?: (request: any) => bigint | string;
+  extractResourceId?: (request: any) => number | string;
 }
 
 export const RequireResourcePermission = (config: ResourcePermissionConfig) =>

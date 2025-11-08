@@ -7,11 +7,11 @@ import { IsString, IsOptional, IsNumber } from 'class-validator';
 export class CreateSystemEventDto {
   @IsNumber()
   @IsOptional()
-  organizationId?: bigint;
+  organizationId?: number;
 
   @IsNumber()
   @IsOptional()
-  userId?: bigint;
+  userId?: number;
 
   @IsString()
   eventType: string;
@@ -29,7 +29,7 @@ export class CreateSystemEventDto {
 
   @IsNumber()
   @IsOptional()
-  sessionId?: bigint;
+  sessionId?: number;
 
   @IsString()
   @IsOptional()

@@ -43,7 +43,7 @@ export class AuditLogsController {
   @Permissions('audit_logs:create')
   async create(
     @Body() dto: CreateAuditLogDto,
-    @TenantId() tenantId: bigint,
+    @TenantId() tenantId: number,
     @CurrentUser() user: any
   ) {
     const auditEntry: AuditLogEntry = {
@@ -72,7 +72,7 @@ export class AuditLogsController {
   @Permissions('audit_logs:read')
   async findAll(
     @Query() query: QueryAuditLogsDto,
-    @TenantId() tenantId: bigint,
+    @TenantId() tenantId: number,
     @CurrentUser() user: any
   ) {
     // Parse dates if provided
@@ -103,7 +103,7 @@ export class AuditLogsController {
   @Get('recent')
   @Permissions('audit_logs:read')
   async getRecent(
-    @TenantId() tenantId: bigint,
+    @TenantId() tenantId: number,
     @CurrentUser() user: any
   ) {
     const yesterday = new Date();
@@ -134,7 +134,7 @@ export class AuditLogsController {
   async getEntityLogs(
     @Query('type') entityType: string,
     @Query('id') entityId: string,
-    @TenantId() tenantId: bigint,
+    @TenantId() tenantId: number,
     @CurrentUser() user: any
   ) {
     if (!entityType || !entityId) {

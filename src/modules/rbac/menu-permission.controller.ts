@@ -12,12 +12,12 @@ export class MenuPermissionsController {
   @Permissions('menu-permissions:write')
   async linkMenuPermission(
     @Body() dto: { menuKey: string; permissionId: number; isRequired?: boolean },
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
     @CurrentUser('userType') userType: string
   ) {
     return this.menuPermissionsService.linkMenuPermission(
       dto.menuKey,
-      BigInt(dto.permissionId),
+      Number(dto.permissionId),
       dto.isRequired ?? true,
       userId,
       userType
@@ -28,7 +28,7 @@ export class MenuPermissionsController {
   @Permissions('menu-permissions:write')
   async bulkLinkMenuPermissions(
     @Body() dto: { mappings: Array<{ menuKey: string; permissionId: number; isRequired?: boolean }> },
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
     @CurrentUser('userType') userType: string
   ) {
     return this.menuPermissionsService.bulkLinkMenuPermissions(
@@ -46,7 +46,7 @@ export class MenuPermissionsController {
   ) {
     return this.menuPermissionsService.unlinkMenuPermission(
       dto.menuKey,
-      BigInt(dto.permissionId),
+      Number(dto.permissionId),
       userType
     );
   }
@@ -67,24 +67,24 @@ export class MenuPermissionsController {
   @Permissions('menu-permissions:read')
   async getUserAccessibleMenus(
     @Body() dto: { userId?: number },
-    @CurrentUser('id') currentUserId: bigint
+    @CurrentUser('id') currentUserId: number
   ) {
-    const targetUserId = dto.userId ? BigInt(dto.userId) : currentUserId;
+    const targetUserId = dto.userId ? Number(dto.userId) : currentUserId;
     return this.menuPermissionsService.getUserAccessibleMenus(targetUserId);
   }
 
   // NO PERMISSION CHECK - Crucial for loading menu access
   @Post('my-access')
-  async getMyAccessibleMenus(@CurrentUser('id') userId: bigint) {
+  async getMyAccessibleMenus(@CurrentUser('id') userId: number) {
     return this.menuPermissionsService.getUserAccessibleMenus(userId);
   }
 
   @Post('check-access')
   async checkMenuAccess(
     @Body() dto: { menuKey: string; userId?: number },
-    @CurrentUser('id') currentUserId: bigint
+    @CurrentUser('id') currentUserId: number
   ) {
-    const targetUserId = dto.userId ? BigInt(dto.userId) : currentUserId;
+    const targetUserId = dto.userId ? Number(dto.userId) : currentUserId;
     const canAccess = await this.menuPermissionsService.canUserAccessMenu(
       targetUserId,
       dto.menuKey

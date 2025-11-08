@@ -28,5 +28,5 @@ export class UpdateTenantDto {
 
 export class SwitchTenantDto {
   @IsNumber()
-  tenantId: bigint;
+  tenantId: number;
 }

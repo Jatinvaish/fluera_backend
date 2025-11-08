@@ -17,7 +17,7 @@ export class TenantsService {
   /**
    * Get user's tenants
    */
-  async getUserTenants(userId: bigint) {
+  async getUserTenants(userId: number) {
     const tenants = await this.sqlService.query(
       `SELECT 
         t.id, t.tenant_type, t.name, t.slug, t.logo_url,
@@ -38,7 +38,7 @@ export class TenantsService {
   /**
    * Get tenant by ID
    */
-  async getTenantById(tenantId: bigint, userId: bigint) {
+  async getTenantById(tenantId: number, userId: number) {
     const hasAccess = await this.verifyUserAccess(userId, tenantId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this tenant');
@@ -67,7 +67,7 @@ export class TenantsService {
   /**
    * Update tenant
    */
-  async updateTenant(tenantId: bigint, userId: bigint, dto: any) {
+  async updateTenant(tenantId: number, userId: number, dto: any) {
     const hasAccess = await this.verifyUserAccess(userId, tenantId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this tenant');
@@ -115,7 +115,7 @@ export class TenantsService {
   /**
    * Get tenant members
    */
-  async getTenantMembers(tenantId: bigint, userId: bigint) {
+  async getTenantMembers(tenantId: number, userId: number) {
     const hasAccess = await this.verifyUserAccess(userId, tenantId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this tenant');
@@ -131,7 +131,7 @@ export class TenantsService {
   /**
    * Get tenant usage statistics
    */
-  async getTenantUsage(tenantId: bigint, userId: bigint) {
+  async getTenantUsage(tenantId: number, userId: number) {
     const hasAccess = await this.verifyUserAccess(userId, tenantId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this tenant');
@@ -175,7 +175,7 @@ export class TenantsService {
   // ============================================
   // NEW METHOD: Rotate Tenant Encryption Keys
   // ============================================
-  async rotateTenantKeys(tenantId: bigint, userId: bigint) {
+  async rotateTenantKeys(tenantId: number, userId: number) {
     const hasAccess = await this.verifyUserAccess(userId, tenantId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this tenant');
@@ -202,7 +202,7 @@ export class TenantsService {
   /**
    * Verify user has access to tenant
    */
-  private async verifyUserAccess(userId: bigint, tenantId: bigint): Promise<boolean> {
+  private async verifyUserAccess(userId: number, tenantId: number): Promise<boolean> {
     // ✅ USE SP INSTEAD OF INLINE SQL
     const result = await this.sqlService.execute('sp_VerifyTenantAccess', {
       userId,

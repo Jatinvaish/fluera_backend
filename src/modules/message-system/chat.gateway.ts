@@ -17,8 +17,8 @@ import { SendMessageDto, TypingIndicatorDto, MarkAsReadDto } from './dto/chat.dt
 import { SqlServerService } from 'src/core/database/sql-server.service';
 
 interface AuthenticatedSocket extends Socket {
-  userId: bigint;
-  organizationId: bigint;
+  userId: number;
+  organizationId: number;
   user: any;
 }
 
@@ -166,7 +166,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       const message = await this.chatService.editMessage(
-        BigInt(data.messageId),
+        Number(data.messageId),
         {
           content: data.content, formattedContent: data.formattedContent,
           messageId: data.messageId?.toString()
@@ -177,7 +177,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Get channel ID
       const originalMessage = await this.sqlService.query(
         'SELECT channel_id FROM messages WHERE id = @id',
-        { id: BigInt(data.messageId) }
+        { id: Number(data.messageId) }
       );
 
       if (originalMessage.length > 0) {
@@ -202,11 +202,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const originalMessage = await this.sqlService.query(
         'SELECT channel_id FROM messages WHERE id = @id',
-        { id: BigInt(data.messageId) }
+        { id: Number(data.messageId) }
       );
 
       await this.chatService.deleteMessage(
-        BigInt(data.messageId),
+        Number(data.messageId),
         client.userId,
         data.hardDelete,
       );
@@ -232,7 +232,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       const result = await this.chatService.reactToMessage(
-        BigInt(data.messageId),
+        Number(data.messageId),
         data.emoji,
         client.userId,
         client.organizationId,
@@ -240,7 +240,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const message = await this.sqlService.query(
         'SELECT channel_id FROM messages WHERE id = @id',
-        { id: BigInt(data.messageId) }
+        { id: Number(data.messageId) }
       );
 
       if (message.length > 0) {
@@ -344,7 +344,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       // Verify membership
       await this.chatService.checkChannelMembership(
-        BigInt(data.channelId),
+        Number(data.channelId),
         client.userId,
       );
 
@@ -421,7 +421,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { success: true };
   }
 
-  private broadcastUserStatus(userId: bigint, organizationId: bigint, status: string) {
+  private broadcastUserStatus(userId: number, organizationId: number, status: string) {
     this.server.to(`org-${organizationId}`).emit('user_status_changed', {
       userId: userId.toString(),
       status,
@@ -469,7 +469,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  private notifyMentionedUsers(userIds: number[], message: any, organizationId: bigint) {
+  private notifyMentionedUsers(userIds: number[], message: any, organizationId: number) {
     for (const userId of userIds) {
       const userKey = `${organizationId}-${userId}`;
       const sockets = this.userSockets.get(userKey);
@@ -491,7 +491,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`channel-${channelId}`).emit(event, data);
   }
 
-  public notifyUser(userId: bigint, organizationId: bigint, event: string, data: any) {
+  public notifyUser(userId: number, organizationId: number, event: string, data: any) {
     const userKey = `${organizationId}-${userId}`;
     const sockets = this.userSockets.get(userKey);
 
@@ -502,11 +502,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  public broadcastToOrganization(organizationId: bigint, event: string, data: any) {
+  public broadcastToOrganization(organizationId: number, event: string, data: any) {
     this.server.to(`org-${organizationId}`).emit(event, data);
   }
 
-  public getOnlineUsers(organizationId: bigint): string[] {
+  public getOnlineUsers(organizationId: number): string[] {
     const onlineUsers: string[] = [];
     for (const [userKey, sockets] of this.userSockets.entries()) {
       if (userKey.startsWith(`${organizationId}-`) && sockets.size > 0) {
@@ -517,7 +517,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return onlineUsers;
   }
 
-  public isUserOnline(userId: bigint, organizationId: bigint): boolean {
+  public isUserOnline(userId: number, organizationId: number): boolean {
     const userKey = `${organizationId}-${userId}`;
     const sockets = this.userSockets.get(userKey);
     return sockets ? sockets.size > 0 : false;
