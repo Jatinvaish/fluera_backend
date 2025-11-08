@@ -1,5 +1,5 @@
 // ============================================
-// modules/chat/dto/chat.dto.ts
+// modules/chat/dto/chat.dto.ts - PRODUCTION READY v2.0
 // ============================================
 import { 
   IsString, 
@@ -44,7 +44,7 @@ export class CreateChannelDto {
 
   @IsString()
   @IsOptional()
-  relatedType?: string; // 'campaign', 'brand', 'creator'
+  relatedType?: string;
 
   @IsNumber()
   @IsOptional()
@@ -57,7 +57,7 @@ export class CreateChannelDto {
   @IsArray()
   @IsNumber({}, { each: true })
   @IsOptional()
-  memberIds?: number[]; // Initial members
+  memberIds?: number[];
 }
 
 export class UpdateChannelDto {
@@ -68,7 +68,7 @@ export class UpdateChannelDto {
   name?: string;
 
   @IsString()
-  channelId:string;
+  channelId: string;
 
   @IsString()
   @IsOptional()
@@ -88,9 +88,8 @@ export class ArchiveChannelDto {
   @IsBoolean()
   isArchived: boolean;
 
-  
   @IsString()
-  channelId:string;
+  channelId: string;
 }
 
 // ==================== CHANNEL MEMBER DTOs ====================
@@ -128,7 +127,6 @@ export class UpdateMemberRoleDto {
   @IsEnum(MemberRole)
   role: MemberRole;
 
-  
   @IsString()
   channelId: string;
 }
@@ -164,17 +162,21 @@ export class SendMessageDto {
   channelId: number;
 
   @IsEnum(MessageType)
-//   @IsOptional()
   messageType: MessageType = MessageType.TEXT;
+
+  // ✅ E2E Encryption fields (client must encrypt before sending)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50000)
+  encryptedContent: string; // Base64 encoded encrypted content
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(10000)
-  content: string;
+  encryptionIv: string; // Initialization vector for AES-256-GCM
 
   @IsString()
-  @IsOptional()
-  formattedContent?: string; // HTML/Markdown formatted
+  @IsNotEmpty()
+  encryptionAuthTag: string; // Authentication tag for AES-256-GCM
 
   @IsNumber()
   @IsOptional()
@@ -191,7 +193,7 @@ export class SendMessageDto {
   @IsArray()
   @IsNumber({}, { each: true })
   @IsOptional()
-  mentions?: number[]; // User IDs to mention
+  mentions?: number[];
 }
 
 export class AttachmentDto {
@@ -210,17 +212,26 @@ export class AttachmentDto {
   @IsString()
   @IsOptional()
   thumbnailUrl?: string;
+
+  // ✅ Encrypted file metadata
+  @IsString()
+  @IsOptional()
+  encryptedFileKey?: string; // File-specific encryption key
 }
 
 export class EditMessageDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(10000)
-  content: string;
+  @MaxLength(50000)
+  encryptedContent: string;
 
   @IsString()
-  @IsOptional()
-  formattedContent?: string;
+  @IsNotEmpty()
+  encryptionIv: string;
+
+  @IsString()
+  @IsNotEmpty()
+  encryptionAuthTag: string;
 
   @IsString()
   messageId: string;
@@ -229,7 +240,7 @@ export class EditMessageDto {
 export class DeleteMessageDto {
   @IsBoolean()
   @IsOptional()
-  hardDelete?: boolean = false; // Soft delete by default
+  hardDelete?: boolean = false;
 }
 
 export class ReactToMessageDto {
@@ -248,6 +259,32 @@ export class PinMessageDto {
 
   @IsString()
   messageId: string;
+}
+
+// ==================== READ RECEIPTS DTOs (NEW) ====================
+
+export class GetMessageStatusDto {
+  @IsString()
+  @IsNotEmpty()
+  messageId: string;
+}
+
+export class BulkMarkAsReadDto {
+  @IsString()
+  @IsNotEmpty()
+  channelId: string;
+
+  @IsArray()
+  @IsNumber({}, { each: true })
+  @IsNotEmpty()
+  messageIds: number[];
+}
+
+export class MarkAsDeliveredDto {
+  @IsArray()
+  @IsNumber({}, { each: true })
+  @IsNotEmpty()
+  messageIds: number[];
 }
 
 // ==================== SEARCH & FILTER DTOs ====================
@@ -360,10 +397,19 @@ export class CreateDirectMessageDto {
   @IsNotEmpty()
   recipientUserId: number;
 
+  // ✅ E2E Encryption fields
   @IsString()
   @IsNotEmpty()
-  @MaxLength(10000)
-  content: string;
+  @MaxLength(50000)
+  encryptedContent: string;
+
+  @IsString()
+  @IsNotEmpty()
+  encryptionIv: string;
+
+  @IsString()
+  @IsNotEmpty()
+  encryptionAuthTag: string;
 
   @IsArray()
   @IsOptional()
@@ -388,7 +434,7 @@ export class MarkAsReadDto {
 
   @IsNumber()
   @IsOptional()
-  messageId?: number; // Mark up to this message
+  messageId?: number;
 }
 
 // ==================== FILE UPLOAD DTOs ====================

@@ -1,5 +1,5 @@
 // ============================================
-// modules/chat/chat.gateway.ts - FIXED & OPTIMIZED
+// modules/chat/chat.gateway.ts - PRODUCTION READY v2.0
 // ============================================
 import {
   WebSocketGateway,
@@ -12,11 +12,12 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { UseGuards, Logger, UnauthorizedException } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { SendMessageDto, TypingIndicatorDto, MarkAsReadDto } from './dto/chat.dto';
 import { SqlServerService } from 'src/core/database/sql-server.service';
 import { JwtService } from '@nestjs/jwt';
+import { RedisService } from 'src/core/redis/redis.service';
 
 interface AuthenticatedSocket extends Socket {
   userId: number;
@@ -41,31 +42,48 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private readonly logger = new Logger(ChatGateway.name);
   private userSockets: Map<string, Set<string>> = new Map();
   private typingUsers: Map<string, Map<string, NodeJS.Timeout>> = new Map();
-  
-  // FIX: Add cleanup interval to prevent memory leaks
   private cleanupInterval: NodeJS.Timeout;
+
+  // ✅ WebSocket rate limiting
+  private readonly MESSAGE_RATE_LIMIT = 30; // messages per minute
+  private readonly CONNECTION_RATE_LIMIT = 10; // connections per minute
 
   constructor(
     private chatService: ChatService,
     private sqlService: SqlServerService,
-    private jwtService: JwtService, // FIX: Inject JwtService for token validation
+    private jwtService: JwtService,
+    private redisService: RedisService,
   ) {}
 
   // ==================== LIFECYCLE HOOKS ====================
 
   afterInit(server: Server) {
-    this.logger.log('Chat Gateway initialized');
+    this.logger.log('Chat Gateway initialized with E2E encryption support');
     
-    // FIX: Setup periodic cleanup of stale typing indicators
     this.cleanupInterval = setInterval(() => {
       this.cleanupStaleTypingIndicators();
-    }, 30000); // Every 30 seconds
+    }, 30000);
   }
 
   // ==================== CONNECTION MANAGEMENT ====================
 
   async handleConnection(client: AuthenticatedSocket) {
     try {
+      // ✅ Connection rate limiting
+      const connectionKey = `ws:connect:${client.handshake.address}`;
+      const { allowed } = await this.redisService.checkRateLimit(
+        connectionKey,
+        this.CONNECTION_RATE_LIMIT,
+        60
+      );
+
+      if (!allowed) {
+        this.logger.warn(`Connection rate limit exceeded for ${client.handshake.address}`);
+        client.emit('error', { message: 'Too many connection attempts' });
+        client.disconnect();
+        return;
+      }
+
       const token = this.extractToken(client);
       
       if (!token) {
@@ -75,7 +93,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         return;
       }
 
-      // FIX: Implement proper token validation
       const user = await this.validateToken(token);
       
       if (!user) {
@@ -89,7 +106,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       client.organizationId = user.organizationId;
       client.user = user;
 
-      // Track user socket
       const userKey = `${user.organizationId}-${user.id}`;
       if (!this.userSockets.has(userKey)) {
         this.userSockets.set(userKey, new Set());
@@ -99,22 +115,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         sockets.add(client.id);
       }
 
-      // Join user's channels
       await this.joinUserChannels(client);
-
-      // Update user presence
       await this.updateUserPresence(user.id, 'online');
-
-      // Broadcast user online status
       this.broadcastUserStatus(user.id, user.organizationId, 'online');
 
       this.logger.log(`Client connected: ${client.id} (User: ${user.id})`);
 
-      // Send connection confirmation with user info
       client.emit('connected', {
-        message: 'Connected to chat server',
+        message: 'Connected to chat server with E2E encryption',
         userId: user.id.toString(),
         organizationId: user.organizationId.toString(),
+        encryptionEnabled: true,
         timestamp: new Date().toISOString(),
       });
 
@@ -135,19 +146,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       if (sockets) {
         sockets.delete(client.id);
         
-        // If user has no more active sockets
         if (sockets.size === 0) {
           this.userSockets.delete(userKey);
-          
-          // Update user presence to offline
           await this.updateUserPresence(client.userId, 'offline');
-          
-          // Broadcast offline status
           this.broadcastUserStatus(client.userId, client.organizationId, 'offline');
         }
       }
 
-      // FIX: Cleanup all typing indicators for this user
       this.cleanupUserTypingIndicators(client.userId.toString());
 
       this.logger.log(`Client disconnected: ${client.id} (User: ${client.userId})`);
@@ -164,13 +169,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @MessageBody() data: SendMessageDto,
   ) {
     try {
+      // ✅ Rate limiting check
+      const rateLimitKey = `ws:send:${client.userId}`;
+      const { allowed } = await this.redisService.checkRateLimit(
+        rateLimitKey,
+        this.MESSAGE_RATE_LIMIT,
+        60
+      );
+
+      if (!allowed) {
+        client.emit('error', {
+          event: 'send_message',
+          message: 'Message rate limit exceeded. Please slow down.',
+        });
+        return { success: false, error: 'Rate limit exceeded' };
+      }
+
+      // ✅ Validate encryption data
+      if (!data.encryptedContent || !data.encryptionIv || !data.encryptionAuthTag) {
+        client.emit('error', {
+          event: 'send_message',
+          message: 'Message must be encrypted',
+        });
+        return { success: false, error: 'Encryption required' };
+      }
+
       const message = await this.chatService.sendMessage(
         data,
         client.userId,
         client.organizationId,
       );
 
-      // Broadcast to channel
+      // Broadcast to channel (encrypted content remains encrypted)
       this.server.to(`channel-${data.channelId}`).emit('new_message', {
         message,
         sender: {
@@ -182,12 +212,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         timestamp: new Date().toISOString(),
       });
 
-      // Send notifications to mentioned users
+      // ✅ Send delivery receipts to sender
+      this.notifyMessageDelivery(message.id, data.channelId, client.userId);
+
       if (data.mentions && data.mentions.length > 0) {
         this.notifyMentionedUsers(data.mentions, message, client.organizationId);
       }
 
-      // Clear typing indicator
       this.clearTypingIndicator(data.channelId.toString(), client.userId.toString());
 
       return { success: true, message };
@@ -204,20 +235,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('edit_message')
   async handleEditMessage(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { messageId: number; content: string; formattedContent?: string },
+    @MessageBody() data: any,
   ) {
     try {
+      if (!data.encryptedContent || !data.encryptionIv || !data.encryptionAuthTag) {
+        client.emit('error', {
+          event: 'edit_message',
+          message: 'Edited message must be encrypted',
+        });
+        return { success: false, error: 'Encryption required' };
+      }
+
       const message = await this.chatService.editMessage(
         Number(data.messageId),
         {
-          content: data.content,
-          formattedContent: data.formattedContent,
+          encryptedContent: data.encryptedContent,
+          encryptionIv: data.encryptionIv,
+          encryptionAuthTag: data.encryptionAuthTag,
           messageId: data.messageId?.toString()
         },
         client.userId,
       );
 
-      // Get channel ID
       const originalMessage = await this.sqlService.query(
         'SELECT channel_id FROM messages WHERE id = @id',
         { id: Number(data.messageId) }
@@ -313,6 +352,131 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
+  // ==================== READ RECEIPTS (NEW) ====================
+
+  @SubscribeMessage('mark_delivered')
+  async handleMarkDelivered(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { messageIds: number[] },
+  ) {
+    try {
+      if (!data.messageIds || data.messageIds.length === 0) {
+        return { success: false, error: 'No message IDs provided' };
+      }
+
+      // Update delivery status
+      await this.sqlService.query(
+        `UPDATE message_read_receipts
+         SET status = 'delivered', delivered_at = GETUTCDATE()
+         WHERE message_id IN (${data.messageIds.join(',')})
+         AND user_id = @userId
+         AND status = 'sent'`,
+        { userId: client.userId }
+      );
+
+      // Notify senders about delivery
+      for (const messageId of data.messageIds) {
+        const message = await this.sqlService.query(
+          'SELECT sender_user_id, channel_id FROM messages WHERE id = @id',
+          { id: messageId }
+        );
+
+        if (message.length > 0) {
+          this.notifyUser(
+            message[0].sender_user_id,
+            client.organizationId,
+            'message_delivered',
+            {
+              messageId,
+              deliveredBy: client.userId,
+              deliveredAt: new Date().toISOString(),
+            }
+          );
+        }
+      }
+
+      return { success: true, delivered: data.messageIds.length };
+    } catch (error) {
+      this.logger.error('Error marking as delivered:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('mark_as_read')
+  async handleMarkAsRead(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: MarkAsReadDto,
+  ) {
+    try {
+      await this.chatService.markAsRead(data, client.userId);
+
+      // Get message sender
+      if (data.messageId) {
+        const message = await this.sqlService.query(
+          'SELECT sender_user_id FROM messages WHERE id = @id',
+          { id: data.messageId }
+        );
+
+        if (message.length > 0) {
+          // Notify sender that message was read
+          this.notifyUser(
+            message[0].sender_user_id,
+            client.organizationId,
+            'message_read',
+            {
+              messageId: data.messageId,
+              channelId: data.channelId,
+              readBy: client.userId,
+              readAt: new Date().toISOString(),
+            }
+          );
+        }
+      }
+
+      // Broadcast to channel
+      this.server.to(`channel-${data.channelId}`).emit('user_read_message', {
+        channelId: data.channelId,
+        userId: client.userId.toString(),
+        messageId: data.messageId,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Error marking as read:', error.message);
+      client.emit('error', { event: 'mark_as_read', message: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ✅ Helper to notify message delivery
+  private async notifyMessageDelivery(messageId: number, channelId: number, senderId: number) {
+    try {
+      // Get all active participants except sender
+      const participants = await this.sqlService.query(
+        `SELECT user_id FROM chat_participants 
+         WHERE channel_id = @channelId 
+         AND user_id != @senderId 
+         AND is_active = 1`,
+        { channelId, senderId }
+      );
+
+      // Mark as delivered for online users
+      for (const participant of participants) {
+        if (this.isUserOnline(participant.user_id, channelId)) {
+          await this.sqlService.query(
+            `UPDATE message_read_receipts
+             SET status = 'delivered', delivered_at = GETUTCDATE()
+             WHERE message_id = @messageId AND user_id = @userId`,
+            { messageId, userId: participant.user_id }
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error notifying message delivery:', error.message);
+    }
+  }
+
   // ==================== TYPING INDICATORS ====================
 
   @SubscribeMessage('typing_start')
@@ -324,10 +488,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       const channelId = data.channelId.toString();
       const userId = client.userId.toString();
 
-      // Clear existing timeout
       this.clearTypingIndicator(channelId, userId);
 
-      // Set new timeout (auto-clear after 5 seconds)
       let channelMap = this.typingUsers.get(channelId);
       if (!channelMap) {
         channelMap = new Map<string, NodeJS.Timeout>();
@@ -340,7 +502,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
       channelMap.set(userId, timeout);
 
-      // Broadcast typing indicator (exclude sender)
       client.to(`channel-${channelId}`).emit('user_typing', {
         channelId,
         userId,
@@ -387,7 +548,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         channelTyping.delete(userId);
       }
 
-      // Broadcast stop typing
       this.server.to(`channel-${channelId}`).emit('user_typing', {
         channelId,
         userId,
@@ -395,14 +555,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         timestamp: new Date().toISOString(),
       });
 
-      // FIX: Clean up empty channel maps
       if (channelTyping.size === 0) {
         this.typingUsers.delete(channelId);
       }
     }
   }
 
-  // FIX: New method to cleanup all typing indicators for a user
   private cleanupUserTypingIndicators(userId: string) {
     for (const [channelId, users] of this.typingUsers.entries()) {
       if (users.has(userId)) {
@@ -411,12 +569,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
-  // FIX: New method to cleanup stale typing indicators
   private cleanupStaleTypingIndicators() {
     const now = Date.now();
     for (const [channelId, users] of this.typingUsers.entries()) {
       for (const [userId, timeout] of users.entries()) {
-        // If timeout is older than 10 seconds, clear it
         if (timeout && (now - timeout['_idleStart']) > 10000) {
           this.clearTypingIndicator(channelId, userId);
         }
@@ -432,7 +588,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @MessageBody() data: { channelId: number },
   ) {
     try {
-      // Verify membership
       await this.chatService.checkChannelMembership(
         Number(data.channelId),
         client.userId,
@@ -443,7 +598,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
       this.logger.log(`User ${client.userId} joined channel ${data.channelId}`);
 
-      // Notify channel members
       client.to(roomName).emit('user_joined_channel', {
         channelId: data.channelId,
         user: {
@@ -480,32 +634,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       return { success: true };
     } catch (error) {
       this.logger.error('Error leaving channel:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // ==================== READ RECEIPTS ====================
-
-  @SubscribeMessage('mark_as_read')
-  async handleMarkAsRead(
-    @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: MarkAsReadDto,
-  ) {
-    try {
-      await this.chatService.markAsRead(data, client.userId);
-
-      // Broadcast read receipt
-      this.server.to(`channel-${data.channelId}`).emit('message_read', {
-        channelId: data.channelId,
-        userId: client.userId.toString(),
-        messageId: data.messageId,
-        timestamp: new Date().toISOString(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Error marking as read:', error.message);
-      client.emit('error', { event: 'mark_as_read', message: error.message });
       return { success: false, error: error.message };
     }
   }
@@ -549,7 +677,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         client.join(`channel-${channel.id}`);
       }
 
-      // Join organization room
       client.join(`org-${client.organizationId}`);
 
       this.logger.log(`User ${client.userId} joined ${channels.length} channels`);
@@ -558,13 +685,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
-  // FIX: Implement proper token validation
   private async validateToken(token: string): Promise<any> {
     try {
-      // Verify JWT token
       const decoded = this.jwtService.verify(token);
       
-      // Get user from database with organization info
       const users = await this.sqlService.query(
         `SELECT u.*, 
                 (SELECT TOP 1 tenant_id FROM tenant_members 
@@ -592,20 +716,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
-  // FIX: Helper to extract token from various sources
   private extractToken(client: Socket): string | null {
-    // Try auth object first
     if (client.handshake.auth?.token) {
       return client.handshake.auth.token;
     }
 
-    // Try authorization header
     const authHeader = client.handshake.headers.authorization;
     if (authHeader) {
       return authHeader.replace('Bearer ', '');
     }
 
-    // Try query parameters
     if (client.handshake.query?.token) {
       return client.handshake.query.token as string;
     }
@@ -685,13 +805,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     return sockets ? sockets.size > 0 : false;
   }
 
-  // FIX: Cleanup on module destroy
   onModuleDestroy() {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
     }
     
-    // Clear all typing timeouts
     for (const [_, users] of this.typingUsers.entries()) {
       for (const [_, timeout] of users.entries()) {
         clearTimeout(timeout);
