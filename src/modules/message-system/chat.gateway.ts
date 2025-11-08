@@ -1,5 +1,5 @@
 // ============================================
-// modules/chat/chat.gateway.ts
+// modules/chat/chat.gateway.ts - FIXED & OPTIMIZED
 // ============================================
 import {
   WebSocketGateway,
@@ -9,12 +9,14 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { UseGuards, Logger } from '@nestjs/common';
+import { UseGuards, Logger, UnauthorizedException } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { SendMessageDto, TypingIndicatorDto, MarkAsReadDto } from './dto/chat.dto';
 import { SqlServerService } from 'src/core/database/sql-server.service';
+import { JwtService } from '@nestjs/jwt';
 
 interface AuthenticatedSocket extends Socket {
   userId: number;
@@ -24,40 +26,61 @@ interface AuthenticatedSocket extends Socket {
 
 @WebSocketGateway({
   cors: {
-    origin: '*', // Configure based on your needs
+    origin: process.env.ALLOWED_ORIGINS || '*',
     credentials: true,
   },
   namespace: '/chat',
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
-  private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set of socketIds
-  private typingUsers: Map<string, Map<string, NodeJS.Timeout>> = new Map(); // channelId -> userId -> timeout
+  private userSockets: Map<string, Set<string>> = new Map();
+  private typingUsers: Map<string, Map<string, NodeJS.Timeout>> = new Map();
+  
+  // FIX: Add cleanup interval to prevent memory leaks
+  private cleanupInterval: NodeJS.Timeout;
 
-  constructor(private chatService: ChatService,    private sqlService: SqlServerService,
+  constructor(
+    private chatService: ChatService,
+    private sqlService: SqlServerService,
+    private jwtService: JwtService, // FIX: Inject JwtService for token validation
   ) {}
+
+  // ==================== LIFECYCLE HOOKS ====================
+
+  afterInit(server: Server) {
+    this.logger.log('Chat Gateway initialized');
+    
+    // FIX: Setup periodic cleanup of stale typing indicators
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupStaleTypingIndicators();
+    }, 30000); // Every 30 seconds
+  }
 
   // ==================== CONNECTION MANAGEMENT ====================
 
   async handleConnection(client: AuthenticatedSocket) {
     try {
-      // Extract user info from token (implement your auth logic)
-      const token = client.handshake.auth.token || client.handshake.headers.authorization;
+      const token = this.extractToken(client);
       
       if (!token) {
         this.logger.warn(`Client ${client.id} connecting without token`);
+        client.emit('error', { message: 'Authentication required' });
         client.disconnect();
         return;
       }
 
-      // Validate token and extract user info
+      // FIX: Implement proper token validation
       const user = await this.validateToken(token);
       
       if (!user) {
         this.logger.warn(`Invalid token for client ${client.id}`);
+        client.emit('error', { message: 'Invalid authentication token' });
         client.disconnect();
         return;
       }
@@ -71,48 +94,66 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!this.userSockets.has(userKey)) {
         this.userSockets.set(userKey, new Set());
       }
-//@ts-ignore
-
-      this.userSockets.get(userKey).add(client.id);
+      const sockets = this.userSockets.get(userKey);
+      if (sockets) {
+        sockets.add(client.id);
+      }
 
       // Join user's channels
       await this.joinUserChannels(client);
+
+      // Update user presence
+      await this.updateUserPresence(user.id, 'online');
 
       // Broadcast user online status
       this.broadcastUserStatus(user.id, user.organizationId, 'online');
 
       this.logger.log(`Client connected: ${client.id} (User: ${user.id})`);
 
-      // Send connection confirmation
+      // Send connection confirmation with user info
       client.emit('connected', {
         message: 'Connected to chat server',
         userId: user.id.toString(),
         organizationId: user.organizationId.toString(),
+        timestamp: new Date().toISOString(),
       });
 
     } catch (error) {
-      this.logger.error(`Connection error for client ${client.id}:`, error);
+      this.logger.error(`Connection error for client ${client.id}:`, error.message);
+      client.emit('error', { message: 'Connection failed' });
       client.disconnect();
     }
   }
 
   async handleDisconnect(client: AuthenticatedSocket) {
-    if (!client.userId) return;
+    try {
+      if (!client.userId) return;
 
-    const userKey = `${client.organizationId}-${client.userId}`;
-    const sockets = this.userSockets.get(userKey);
+      const userKey = `${client.organizationId}-${client.userId}`;
+      const sockets = this.userSockets.get(userKey);
 
-    if (sockets) {
-      sockets.delete(client.id);
-      
-      // If user has no more active sockets, broadcast offline status
-      if (sockets.size === 0) {
-        this.userSockets.delete(userKey);
-        this.broadcastUserStatus(client.userId, client.organizationId, 'offline');
+      if (sockets) {
+        sockets.delete(client.id);
+        
+        // If user has no more active sockets
+        if (sockets.size === 0) {
+          this.userSockets.delete(userKey);
+          
+          // Update user presence to offline
+          await this.updateUserPresence(client.userId, 'offline');
+          
+          // Broadcast offline status
+          this.broadcastUserStatus(client.userId, client.organizationId, 'offline');
+        }
       }
-    }
 
-    this.logger.log(`Client disconnected: ${client.id} (User: ${client.userId})`);
+      // FIX: Cleanup all typing indicators for this user
+      this.cleanupUserTypingIndicators(client.userId.toString());
+
+      this.logger.log(`Client disconnected: ${client.id} (User: ${client.userId})`);
+    } catch (error) {
+      this.logger.error(`Disconnect error for client ${client.id}:`, error.message);
+    }
   }
 
   // ==================== MESSAGE HANDLERS ====================
@@ -138,6 +179,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           lastName: client.user.lastName,
           avatarUrl: client.user.avatarUrl,
         },
+        timestamp: new Date().toISOString(),
       });
 
       // Send notifications to mentioned users
@@ -150,7 +192,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       return { success: true, message };
     } catch (error) {
-      this.logger.error('Error sending message:', error);
+      this.logger.error('Error sending message:', error.message);
       client.emit('error', {
         event: 'send_message',
         message: error.message,
@@ -168,7 +210,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const message = await this.chatService.editMessage(
         Number(data.messageId),
         {
-          content: data.content, formattedContent: data.formattedContent,
+          content: data.content,
+          formattedContent: data.formattedContent,
           messageId: data.messageId?.toString()
         },
         client.userId,
@@ -184,11 +227,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.server.to(`channel-${originalMessage[0].channel_id}`).emit('message_edited', {
           messageId: data.messageId,
           message,
+          timestamp: new Date().toISOString(),
         });
       }
 
       return { success: true, message };
     } catch (error) {
+      this.logger.error('Error editing message:', error.message);
       client.emit('error', { event: 'edit_message', message: error.message });
       return { success: false, error: error.message };
     }
@@ -215,11 +260,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.server.to(`channel-${originalMessage[0].channel_id}`).emit('message_deleted', {
           messageId: data.messageId,
           hardDelete: data.hardDelete,
+          timestamp: new Date().toISOString(),
         });
       }
 
       return { success: true };
     } catch (error) {
+      this.logger.error('Error deleting message:', error.message);
       client.emit('error', { event: 'delete_message', message: error.message });
       return { success: false, error: error.message };
     }
@@ -254,11 +301,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             firstName: client.user.firstName,
             lastName: client.user.lastName,
           },
+          timestamp: new Date().toISOString(),
         });
       }
 
       return { success: true, ...result };
     } catch (error) {
+      this.logger.error('Error reacting to message:', error.message);
       client.emit('error', { event: 'react_to_message', message: error.message });
       return { success: false, error: error.message };
     }
@@ -271,36 +320,44 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: TypingIndicatorDto,
   ) {
-    const channelId = data.channelId.toString();
-    const userId = client.userId.toString();
+    try {
+      const channelId = data.channelId.toString();
+      const userId = client.userId.toString();
 
-    // Clear existing timeout
-    this.clearTypingIndicator(channelId, userId);
-
-    // Set new timeout (auto-clear after 5 seconds)
-    if (!this.typingUsers.has(channelId)) {
-      this.typingUsers.set(channelId, new Map());
-    }
-
-    const timeout = setTimeout(() => {
+      // Clear existing timeout
       this.clearTypingIndicator(channelId, userId);
-    }, 5000);
-//@ts-ignore
-    this.typingUsers.get(channelId).set(userId, timeout);
 
-    // Broadcast typing indicator (exclude sender)
-    client.to(`channel-${channelId}`).emit('user_typing', {
-      channelId,
-      userId,
-      user: {
-        id: client.user.id,
-        firstName: client.user.firstName,
-        lastName: client.user.lastName,
-      },
-      isTyping: true,
-    });
+      // Set new timeout (auto-clear after 5 seconds)
+      let channelMap = this.typingUsers.get(channelId);
+      if (!channelMap) {
+        channelMap = new Map<string, NodeJS.Timeout>();
+        this.typingUsers.set(channelId, channelMap);
+      }
 
-    return { success: true };
+      const timeout = setTimeout(() => {
+        this.clearTypingIndicator(channelId, userId);
+      }, 5000);
+
+      channelMap.set(userId, timeout);
+
+      // Broadcast typing indicator (exclude sender)
+      client.to(`channel-${channelId}`).emit('user_typing', {
+        channelId,
+        userId,
+        user: {
+          id: client.user.id,
+          firstName: client.user.firstName,
+          lastName: client.user.lastName,
+        },
+        isTyping: true,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Error handling typing start:', error.message);
+      return { success: false, error: error.message };
+    }
   }
 
   @SubscribeMessage('typing_stop')
@@ -308,12 +365,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: TypingIndicatorDto,
   ) {
-    const channelId = data.channelId.toString();
-    const userId = client.userId.toString();
+    try {
+      const channelId = data.channelId.toString();
+      const userId = client.userId.toString();
 
-    this.clearTypingIndicator(channelId, userId);
+      this.clearTypingIndicator(channelId, userId);
 
-    return { success: true };
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Error handling typing stop:', error.message);
+      return { success: false, error: error.message };
+    }
   }
 
   private clearTypingIndicator(channelId: string, userId: string) {
@@ -330,7 +392,35 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         channelId,
         userId,
         isTyping: false,
+        timestamp: new Date().toISOString(),
       });
+
+      // FIX: Clean up empty channel maps
+      if (channelTyping.size === 0) {
+        this.typingUsers.delete(channelId);
+      }
+    }
+  }
+
+  // FIX: New method to cleanup all typing indicators for a user
+  private cleanupUserTypingIndicators(userId: string) {
+    for (const [channelId, users] of this.typingUsers.entries()) {
+      if (users.has(userId)) {
+        this.clearTypingIndicator(channelId, userId);
+      }
+    }
+  }
+
+  // FIX: New method to cleanup stale typing indicators
+  private cleanupStaleTypingIndicators() {
+    const now = Date.now();
+    for (const [channelId, users] of this.typingUsers.entries()) {
+      for (const [userId, timeout] of users.entries()) {
+        // If timeout is older than 10 seconds, clear it
+        if (timeout && (now - timeout['_idleStart']) > 10000) {
+          this.clearTypingIndicator(channelId, userId);
+        }
+      }
     }
   }
 
@@ -361,10 +451,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           firstName: client.user.firstName,
           lastName: client.user.lastName,
         },
+        timestamp: new Date().toISOString(),
       });
 
       return { success: true, channelId: data.channelId };
     } catch (error) {
+      this.logger.error('Error joining channel:', error.message);
       client.emit('error', { event: 'join_channel', message: error.message });
       return { success: false, error: error.message };
     }
@@ -375,15 +467,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: { channelId: number },
   ) {
-    const roomName = `channel-${data.channelId}`;
-    client.leave(roomName);
+    try {
+      const roomName = `channel-${data.channelId}`;
+      client.leave(roomName);
 
-    client.to(roomName).emit('user_left_channel', {
-      channelId: data.channelId,
-      userId: client.userId.toString(),
-    });
+      client.to(roomName).emit('user_left_channel', {
+        channelId: data.channelId,
+        userId: client.userId.toString(),
+        timestamp: new Date().toISOString(),
+      });
 
-    return { success: true };
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Error leaving channel:', error.message);
+      return { success: false, error: error.message };
+    }
   }
 
   // ==================== READ RECEIPTS ====================
@@ -401,10 +499,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         channelId: data.channelId,
         userId: client.userId.toString(),
         messageId: data.messageId,
+        timestamp: new Date().toISOString(),
       });
 
       return { success: true };
     } catch (error) {
+      this.logger.error('Error marking as read:', error.message);
       client.emit('error', { event: 'mark_as_read', message: error.message });
       return { success: false, error: error.message };
     }
@@ -413,12 +513,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ==================== PRESENCE & STATUS ====================
 
   @SubscribeMessage('update_status')
-  handleUpdateStatus(
+  async handleUpdateStatus(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { status: string },
+    @MessageBody() data: { status: 'online' | 'away' | 'offline' },
   ) {
-    this.broadcastUserStatus(client.userId, client.organizationId, data.status);
-    return { success: true };
+    try {
+      await this.updateUserPresence(client.userId, data.status);
+      this.broadcastUserStatus(client.userId, client.organizationId, data.status);
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Error updating status:', error.message);
+      return { success: false, error: error.message };
+    }
   }
 
   private broadcastUserStatus(userId: number, organizationId: number, status: string) {
@@ -448,25 +554,63 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       this.logger.log(`User ${client.userId} joined ${channels.length} channels`);
     } catch (error) {
-      this.logger.error('Error joining user channels:', error);
+      this.logger.error('Error joining user channels:', error.message);
     }
   }
 
+  // FIX: Implement proper token validation
   private async validateToken(token: string): Promise<any> {
-    // Implement your JWT validation logic here
-    // This is a placeholder - integrate with your auth service
     try {
-      // Example: 
-      // const decoded = this.jwtService.verify(token);
-      // const user = await this.userService.findById(decoded.userId);
-      // return user;
+      // Verify JWT token
+      const decoded = this.jwtService.verify(token);
       
-      // For now, return null - implement your actual token validation
-      // You should inject your AuthService or JwtService here
-      return null;
+      // Get user from database with organization info
+      const users = await this.sqlService.query(
+        `SELECT u.*, 
+                (SELECT TOP 1 tenant_id FROM tenant_members 
+                 WHERE user_id = u.id AND is_active = 1) as organizationId
+         FROM users u 
+         WHERE u.id = @userId AND u.status = 'active'`,
+        { userId: decoded.sub || decoded.id }
+      );
+
+      if (users.length === 0) {
+        return null;
+      }
+
+      return {
+        id: users[0].id,
+        email: users[0].email,
+        firstName: users[0].first_name,
+        lastName: users[0].last_name,
+        avatarUrl: users[0].avatar_url,
+        organizationId: users[0].organizationId || decoded.organizationId,
+      };
     } catch (error) {
+      this.logger.error('Token validation error:', error.message);
       return null;
     }
+  }
+
+  // FIX: Helper to extract token from various sources
+  private extractToken(client: Socket): string | null {
+    // Try auth object first
+    if (client.handshake.auth?.token) {
+      return client.handshake.auth.token;
+    }
+
+    // Try authorization header
+    const authHeader = client.handshake.headers.authorization;
+    if (authHeader) {
+      return authHeader.replace('Bearer ', '');
+    }
+
+    // Try query parameters
+    if (client.handshake.query?.token) {
+      return client.handshake.query.token as string;
+    }
+
+    return null;
   }
 
   private notifyMentionedUsers(userIds: number[], message: any, organizationId: number) {
@@ -478,17 +622,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         sockets.forEach((socketId) => {
           this.server.to(socketId).emit('mentioned', {
             message,
-            mentionedBy: message.sender_id,
+            mentionedBy: message.sender_user_id,
+            timestamp: new Date().toISOString(),
           });
         });
       }
     }
   }
 
+  private async updateUserPresence(userId: number, status: 'online' | 'away' | 'offline') {
+    try {
+      await this.chatService.updateUserPresence(userId, status);
+    } catch (error) {
+      this.logger.error('Error updating user presence:', error.message);
+    }
+  }
+
   // ==================== PUBLIC METHODS FOR EXTERNAL USE ====================
 
   public broadcastToChannel(channelId: number, event: string, data: any) {
-    this.server.to(`channel-${channelId}`).emit(event, data);
+    this.server.to(`channel-${channelId}`).emit(event, {
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   public notifyUser(userId: number, organizationId: number, event: string, data: any) {
@@ -497,13 +653,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     if (sockets) {
       sockets.forEach((socketId) => {
-        this.server.to(socketId).emit(event, data);
+        this.server.to(socketId).emit(event, {
+          ...data,
+          timestamp: new Date().toISOString(),
+        });
       });
     }
   }
 
   public broadcastToOrganization(organizationId: number, event: string, data: any) {
-    this.server.to(`org-${organizationId}`).emit(event, data);
+    this.server.to(`org-${organizationId}`).emit(event, {
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   public getOnlineUsers(organizationId: number): string[] {
@@ -521,5 +683,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userKey = `${organizationId}-${userId}`;
     const sockets = this.userSockets.get(userKey);
     return sockets ? sockets.size > 0 : false;
+  }
+
+  // FIX: Cleanup on module destroy
+  onModuleDestroy() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    
+    // Clear all typing timeouts
+    for (const [_, users] of this.typingUsers.entries()) {
+      for (const [_, timeout] of users.entries()) {
+        clearTimeout(timeout);
+      }
+    }
   }
 }
