@@ -1,5 +1,5 @@
 // ============================================
-// modules/chat/chat.service.ts - PRODUCTION READY v2.1
+// modules/chat/chat.service.ts - PRODUCTION READY v3.0
 // ============================================
 import {
   Injectable,
@@ -56,14 +56,14 @@ export class ChatService {
           created_by_tenant_id, name, description, channel_type, 
           related_type, related_id, is_private, member_count,
           is_encrypted, encryption_version, encryption_algorithm,
-          encrypted_channel_key, last_activity_at, created_by, created_at
+          last_activity_at, created_by, created_at
         )
         OUTPUT INSERTED.*
         VALUES (
           @organizationId, @name, @description, @channelType, 
           @relatedType, @relatedId, @isPrivate, 1,
           1, 'v1', 'AES-256-GCM',
-          @encryptedChannelKey, GETUTCDATE(), @userId, GETUTCDATE()
+          GETUTCDATE(), @userId, GETUTCDATE()
         )`,
         {
           organizationId,
@@ -73,21 +73,23 @@ export class ChatService {
           relatedType: dto.relatedType || null,
           relatedId: dto.relatedId ? Number(dto.relatedId) : null,
           isPrivate: dto.isPrivate || false,
-          encryptedChannelKey,
           userId,
         },
       );
 
       const channel = result[0];
 
+      // Add creator with encrypted channel key
       await this.addChannelParticipant(
         Number(channel.id),
         userId,
         organizationId,
         userId,
         MemberRole.OWNER,
+        encryptedChannelKey,
       );
 
+      // Add additional members
       if (dto.memberIds && dto.memberIds.length > 0) {
         for (const memberId of dto.memberIds) {
           if (Number(memberId) !== userId) {
@@ -97,6 +99,7 @@ export class ChatService {
               organizationId,
               userId,
               MemberRole.MEMBER,
+              encryptedChannelKey,
             );
           }
         }
@@ -107,6 +110,7 @@ export class ChatService {
         channelKey, // Return unencrypted key to creator for client-side storage
       };
     } catch (error) {
+      this.logger.error('Failed to create channel:', error);
       throw new BadRequestException(
         `Failed to create channel: ${error.message}`,
       );
@@ -116,7 +120,7 @@ export class ChatService {
   async getChannelById(channelId: number, userId: number) {
     try {
       const participation = await this.sqlService.query(
-        `SELECT * FROM chat_participants 
+        `SELECT encrypted_channel_key FROM chat_participants 
          WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
         { channelId, userId },
       );
@@ -134,7 +138,8 @@ export class ChatService {
                 cp.role as user_role,
                 cp.is_muted as is_muted,
                 cp.last_read_message_id,
-                cp.last_read_at
+                cp.last_read_at,
+                cp.encrypted_channel_key
          FROM chat_channels c
          LEFT JOIN chat_participants cp ON c.id = cp.channel_id AND cp.user_id = @userId
          WHERE c.id = @channelId`,
@@ -176,6 +181,7 @@ export class ChatService {
                cp.last_read_message_id,
                cp.last_read_at,
                cp.is_muted,
+               cp.encrypted_channel_key,
                (SELECT COUNT(*) FROM messages m 
                 WHERE m.channel_id = c.id 
                 AND m.is_deleted = 0 
@@ -346,8 +352,11 @@ export class ChatService {
       ]);
 
       const channel = await this.sqlService.query(
-        `SELECT created_by_tenant_id FROM chat_channels WHERE id = @channelId`,
-        { channelId },
+        `SELECT created_by_tenant_id, cp.encrypted_channel_key 
+         FROM chat_channels c
+         LEFT JOIN chat_participants cp ON c.id = cp.channel_id AND cp.user_id = @userId
+         WHERE c.id = @channelId`,
+        { channelId, userId },
       );
 
       if (channel.length === 0) {
@@ -355,6 +364,7 @@ export class ChatService {
       }
 
       const organizationId = channel[0].created_by_tenant_id;
+      const encryptedChannelKey = channel[0].encrypted_channel_key;
       const addedMembers: any = [];
 
       for (const memberId of dto.userIds) {
@@ -365,6 +375,7 @@ export class ChatService {
             organizationId,
             userId,
             dto.role || MemberRole.MEMBER,
+            encryptedChannelKey,
           );
           addedMembers.push(member);
         } catch (error) {
@@ -400,19 +411,22 @@ export class ChatService {
     tenantId: number,
     addedBy: number,
     role: MemberRole = MemberRole.MEMBER,
+    encryptedChannelKey: string,
   ) {
     try {
       const result = await this.sqlService.query(
         `INSERT INTO chat_participants (
           channel_id, tenant_id, user_id, role, 
+          encrypted_channel_key,
           is_active, joined_at, created_by, created_at
         )
         OUTPUT INSERTED.*
         VALUES (
           @channelId, @tenantId, @memberId, @role, 
+          @encryptedChannelKey,
           1, GETUTCDATE(), @addedBy, GETUTCDATE()
         )`,
-        { channelId, tenantId, memberId, role, addedBy },
+        { channelId, tenantId, memberId, role, encryptedChannelKey, addedBy },
       );
 
       return result[0];
@@ -550,7 +564,7 @@ export class ChatService {
     try {
       await this.checkChannelMembership(Number(dto.channelId), userId);
 
-      // ✅ Validate encryption data (already encrypted on client)
+      // ✅ Validate encryption data
       if (
         !dto.encryptedContent ||
         !dto.encryptionIv ||
@@ -561,7 +575,7 @@ export class ChatService {
         );
       }
 
-      // ✅ Generate HMAC for content integrity verification
+      // ✅ Generate HMAC for content integrity
       const contentHash = this.encryptionService.generateHMAC(
         dto.encryptedContent,
       );
@@ -600,7 +614,7 @@ export class ChatService {
 
       const messageId = result[0].id;
 
-      // ✅ Create delivery receipts for all channel members
+      // ✅ Create delivery receipts
       await this.createDeliveryReceipts(
         Number(dto.channelId),
         messageId,
@@ -627,11 +641,12 @@ export class ChatService {
       ) {
         throw error;
       }
+      this.logger.error('Failed to send message:', error);
       throw new BadRequestException(`Failed to send message: ${error.message}`);
     }
   }
 
-  // ✅ Create delivery receipts for channel members
+  // ✅ FIXED: Corrected SQL syntax
   private async createDeliveryReceipts(
     channelId: number,
     messageId: number,
@@ -718,7 +733,6 @@ export class ChatService {
         throw new BadRequestException('Edited message must be encrypted');
       }
 
-      // ✅ Generate new HMAC for edited content
       const contentHash = this.encryptionService.generateHMAC(
         dto.encryptedContent,
       );
@@ -882,6 +896,128 @@ export class ChatService {
 
   // ==================== READ RECEIPTS ====================
 
+  // ✅ NEW: Missing bulk mark as read implementation
+  async bulkMarkAsRead(
+    channelId: number,
+    messageIds: number[],
+    userId: number,
+  ) {
+    try {
+      await this.checkChannelMembership(channelId, userId);
+
+      if (!messageIds || messageIds.length === 0) {
+        return { message: 'No messages to mark as read' };
+      }
+
+      await this.sqlService.query(
+        `UPDATE message_read_receipts
+         SET status = 'read', read_at = GETUTCDATE()
+         WHERE message_id IN (${messageIds.join(',')})
+         AND user_id = @userId
+         AND status != 'read'`,
+        { userId },
+      );
+
+      // Update last read message
+      const maxMessageId = Math.max(...messageIds);
+      await this.sqlService.query(
+        `UPDATE chat_participants 
+         SET last_read_message_id = @messageId,
+             last_read_at = GETUTCDATE(),
+             updated_by = @userId,
+             updated_at = GETUTCDATE()
+         WHERE channel_id = @channelId AND user_id = @userId`,
+        { channelId, messageId: maxMessageId, userId },
+      );
+
+      await this.redisService.del(`user:*:channels:*`);
+
+      return {
+        message: 'Messages marked as read',
+        count: messageIds.length,
+      };
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to bulk mark as read: ${error.message}`,
+      );
+    }
+  }
+
+  async markAsRead(dto: MarkAsReadDto, userId: number) {
+    try {
+      const messageId = dto.messageId
+        ? Number(dto.messageId)
+        : await this.getLastMessageId(Number(dto.channelId));
+
+      if (!messageId) {
+        return { message: 'No messages to mark as read' };
+      }
+
+      // Update read receipt
+      await this.sqlService.query(
+        `UPDATE message_read_receipts
+         SET status = 'read', read_at = GETUTCDATE()
+         WHERE message_id = @messageId AND user_id = @userId`,
+        { messageId, userId },
+      );
+
+      // Update participant's last read
+      await this.sqlService.query(
+        `UPDATE chat_participants 
+         SET last_read_message_id = @messageId,
+             last_read_at = GETUTCDATE(),
+             updated_by = @userId,
+             updated_at = GETUTCDATE()
+         WHERE channel_id = @channelId AND user_id = @userId`,
+        { channelId: Number(dto.channelId), messageId, userId },
+      );
+
+      await this.redisService.del(`user:*:channels:*`);
+
+      return { message: 'Marked as read' };
+    } catch (error) {
+      throw new BadRequestException(`Failed to mark as read: ${error.message}`);
+    }
+  }
+
+  async getUnreadCount(userId: number, organizationId: number) {
+    try {
+      const cacheKey = `user:${userId}:unread_count`;
+      const cached = await this.redisService.get(cacheKey);
+
+      if (cached) {
+        return JSON.parse(cached);
+      }
+
+      const result = await this.sqlService.query(
+        `SELECT 
+           COUNT(*) as total_unread,
+           COUNT(DISTINCT m.channel_id) as unread_channels
+         FROM messages m
+         INNER JOIN chat_channels c ON m.channel_id = c.id
+         INNER JOIN chat_participants cp ON c.id = cp.channel_id
+         WHERE cp.user_id = @userId
+         AND cp.is_active = 1
+         AND c.created_by_tenant_id = @organizationId
+         AND m.is_deleted = 0
+         AND m.sender_user_id != @userId
+         AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)`,
+        { userId, organizationId },
+      );
+
+      await this.redisService.set(cacheKey, JSON.stringify(result[0]), 30);
+
+      return result[0];
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to get unread count: ${error.message}`,
+      );
+    }
+  }
+
   async getMessageStatus(messageId: number, userId: number) {
     try {
       const message = await this.sqlService.query(
@@ -993,55 +1129,6 @@ export class ChatService {
     }
   }
 
-  async bulkMarkAsRead(
-    channelId: number,
-    messageIds: number[],
-    userId: number,
-  ) {
-    try {
-      await this.checkChannelMembership(channelId, userId);
-
-      if (!messageIds || messageIds.length === 0) {
-        return { message: 'No messages to mark as read' };
-      }
-
-      await this.sqlService.query(
-        `UPDATE message_read_receipts
-         SET status = 'read', read_at = GETUTCDATE()
-         WHERE message_id IN (${messageIds.join(',')})
-         AND user_id = @userId
-         AND status != 'read'`,
-        { userId },
-      );
-
-      // Update last read message
-      const maxMessageId = Math.max(...messageIds);
-      await this.sqlService.query(
-        `UPDATE chat_participants 
-         SET last_read_message_id = @messageId,
-             last_read_at = GETUTCDATE(),
-             updated_by = @userId,
-             updated_at = GETUTCDATE()
-         WHERE channel_id = @channelId AND user_id = @userId`,
-        { channelId, messageId: maxMessageId, userId },
-      );
-
-      await this.redisService.del(`user:*:channels:*`);
-
-      return {
-        message: 'Messages marked as read',
-        count: messageIds.length,
-      };
-    } catch (error) {
-      if (error instanceof ForbiddenException) {
-        throw error;
-      }
-      throw new BadRequestException(
-        `Failed to bulk mark as read: ${error.message}`,
-      );
-    }
-  }
-
   // ==================== SEARCH ====================
 
   async searchMessages(
@@ -1131,6 +1218,9 @@ export class ChatService {
       let channelId: number;
 
       if (channel.length === 0) {
+        const channelKey = this.encryptionService.generateChannelKey();
+        const encryptedChannelKey = this.encryptionService.encrypt(channelKey);
+
         const newChannel = await this.sqlService.query(
           `INSERT INTO chat_channels (
             created_by_tenant_id, name, channel_type, is_private, 
@@ -1149,6 +1239,7 @@ export class ChatService {
           organizationId,
           userId,
           MemberRole.MEMBER,
+          encryptedChannelKey,
         );
         await this.addChannelParticipant(
           channelId,
@@ -1156,6 +1247,7 @@ export class ChatService {
           organizationId,
           userId,
           MemberRole.MEMBER,
+          encryptedChannelKey,
         );
       } else {
         channelId = channel[0].id;
@@ -1187,80 +1279,6 @@ export class ChatService {
       }
       throw new BadRequestException(
         `Failed to create direct message: ${error.message}`,
-      );
-    }
-  }
-
-  // ==================== MARK AS READ ====================
-
-  async markAsRead(dto: MarkAsReadDto, userId: number) {
-    try {
-      const messageId = dto.messageId
-        ? Number(dto.messageId)
-        : await this.getLastMessageId(Number(dto.channelId));
-
-      if (!messageId) {
-        return { message: 'No messages to mark as read' };
-      }
-
-      // Update read receipt
-      await this.sqlService.query(
-        `UPDATE message_read_receipts
-         SET status = 'read', read_at = GETUTCDATE()
-         WHERE message_id = @messageId AND user_id = @userId`,
-        { messageId, userId },
-      );
-
-      // Update participant's last read
-      await this.sqlService.query(
-        `UPDATE chat_participants 
-         SET last_read_message_id = @messageId,
-             last_read_at = GETUTCDATE(),
-             updated_by = @userId,
-             updated_at = GETUTCDATE()
-         WHERE channel_id = @channelId AND user_id = @userId`,
-        { channelId: Number(dto.channelId), messageId, userId },
-      );
-
-      await this.redisService.del(`user:*:channels:*`);
-
-      return { message: 'Marked as read' };
-    } catch (error) {
-      throw new BadRequestException(`Failed to mark as read: ${error.message}`);
-    }
-  }
-
-  async getUnreadCount(userId: number, organizationId: number) {
-    try {
-      const cacheKey = `user:${userId}:unread_count`;
-      const cached = await this.redisService.get(cacheKey);
-
-      if (cached) {
-        return JSON.parse(cached);
-      }
-
-      const result = await this.sqlService.query(
-        `SELECT 
-           COUNT(*) as total_unread,
-           COUNT(DISTINCT m.channel_id) as unread_channels
-         FROM messages m
-         INNER JOIN chat_channels c ON m.channel_id = c.id
-         INNER JOIN chat_participants cp ON c.id = cp.channel_id
-         WHERE cp.user_id = @userId
-         AND cp.is_active = 1
-         AND c.created_by_tenant_id = @organizationId
-         AND m.is_deleted = 0
-         AND m.sender_user_id != @userId
-         AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)`,
-        { userId, organizationId },
-      );
-
-      await this.redisService.set(cacheKey, JSON.stringify(result[0]), 30);
-
-      return result[0];
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to get unread count: ${error.message}`,
       );
     }
   }
@@ -1345,59 +1363,6 @@ export class ChatService {
         `Failed to get channel files: ${error.message}`,
       );
     }
-  }
-
-  // ==================== HELPER METHODS ====================
-
-  async checkChannelMembership(channelId: number, userId: number) {
-    const result = await this.sqlService.query(
-      `SELECT * FROM chat_participants 
-       WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
-      { channelId, userId },
-    );
-
-    if (result.length === 0) {
-      throw new ForbiddenException('You are not a participant of this channel');
-    }
-
-    return result[0];
-  }
-
-  async checkChannelPermission(
-    channelId: number,
-    userId: number,
-    allowedRoles: MemberRole[],
-  ) {
-    const member = await this.checkChannelMembership(channelId, userId);
-
-    if (!allowedRoles.includes(member.role)) {
-      throw new ForbiddenException(
-        'You do not have permission to perform this action',
-      );
-    }
-
-    return member;
-  }
-
-  async updateChannelMemberCount(channelId: number) {
-    await this.sqlService.query(
-      `UPDATE chat_channels 
-       SET member_count = (SELECT COUNT(*) FROM chat_participants 
-                           WHERE channel_id = @channelId AND is_active = 1)
-       WHERE id = @channelId`,
-      { channelId },
-    );
-  }
-
-  async getLastMessageId(channelId: number): Promise<number | null> {
-    const result = await this.sqlService.query(
-      `SELECT TOP 1 id FROM messages 
-       WHERE channel_id = @channelId AND is_deleted = 0 
-       ORDER BY sent_at DESC`,
-      { channelId },
-    );
-
-    return result.length > 0 ? result[0].id : null;
   }
 
   // ==================== PINNED MESSAGES ====================
@@ -1629,6 +1594,283 @@ export class ChatService {
       }
       throw new BadRequestException(
         `Failed to update channel settings: ${error.message}`,
+      );
+    }
+  }
+
+  // ==================== HELPER METHODS ====================
+
+  async checkChannelMembership(channelId: number, userId: number) {
+    const result = await this.sqlService.query(
+      `SELECT * FROM chat_participants 
+       WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
+      { channelId, userId },
+    );
+
+    if (result.length === 0) {
+      throw new ForbiddenException('You are not a participant of this channel');
+    }
+
+    return result[0];
+  }
+
+  async checkChannelPermission(
+    channelId: number,
+    userId: number,
+    allowedRoles: MemberRole[],
+  ) {
+    const member = await this.checkChannelMembership(channelId, userId);
+
+    if (!allowedRoles.includes(member.role)) {
+      throw new ForbiddenException(
+        'You do not have permission to perform this action',
+      );
+    }
+
+    return member;
+  }
+
+  async updateChannelMemberCount(channelId: number) {
+    await this.sqlService.query(
+      `UPDATE chat_channels 
+       SET member_count = (SELECT COUNT(*) FROM chat_participants 
+                           WHERE channel_id = @channelId AND is_active = 1)
+       WHERE id = @channelId`,
+      { channelId },
+    );
+  }
+
+  async getLastMessageId(channelId: number): Promise<number | null> {
+    const result = await this.sqlService.query(
+      `SELECT TOP 1 id FROM messages 
+       WHERE channel_id = @channelId AND is_deleted = 0 
+       ORDER BY sent_at DESC`,
+      { channelId },
+    );
+
+    return result.length > 0 ? result[0].id : null;
+  }
+
+  // ============================================
+  // Additional methods to add to chat.service.ts
+  // ============================================
+
+  // ==================== MESSAGE FORWARDING (NEW) ====================
+
+  async forwardMessage(
+    messageId: number,
+    targetChannelIds: number[],
+    userId: number,
+    organizationId: number,
+  ) {
+    try {
+      // Get original message
+      const message = await this.sqlService.query(
+        `SELECT * FROM messages WHERE id = @messageId AND is_deleted = 0`,
+        { messageId },
+      );
+
+      if (message.length === 0) {
+        throw new NotFoundException('Message not found');
+      }
+
+      // Check if user has access to source channel
+      await this.checkChannelMembership(message[0].channel_id, userId);
+
+      const forwardedMessages: any[] = [];
+
+      for (const targetChannelId of targetChannelIds) {
+        try {
+          // Check if user has access to target channel
+          await this.checkChannelMembership(targetChannelId, userId);
+
+          // Forward the message (encrypted content remains same)
+          const result = await this.sqlService.query(
+            `INSERT INTO messages (
+              channel_id, sender_tenant_id, sender_user_id, message_type,
+              encrypted_content, encryption_iv, encryption_auth_tag, content_hash,
+              has_attachments, reply_to_message_id,
+              sent_at, created_by, created_at
+            )
+            OUTPUT INSERTED.*
+            VALUES (
+              @channelId, @organizationId, @userId, @messageType,
+              @encryptedContent, @encryptionIv, @encryptionAuthTag, @contentHash,
+              @hasAttachments, @originalMessageId,
+              GETUTCDATE(), @userId, GETUTCDATE()
+            )`,
+            {
+              channelId: targetChannelId,
+              organizationId,
+              userId,
+              messageType: message[0].message_type,
+              encryptedContent: message[0].encrypted_content,
+              encryptionIv: message[0].encryption_iv,
+              encryptionAuthTag: message[0].encryption_auth_tag,
+              contentHash: message[0].content_hash,
+              hasAttachments: message[0].has_attachments,
+              originalMessageId: messageId,
+            },
+          );
+
+          const newMessageId = result[0].id;
+
+          // Create delivery receipts
+          await this.createDeliveryReceipts(
+            targetChannelId,
+            newMessageId,
+            userId,
+          );
+
+          // Update channel activity
+          await this.sqlService.query(
+            `UPDATE chat_channels 
+             SET message_count = message_count + 1,
+                 last_message_at = GETUTCDATE(),
+                 last_activity_at = GETUTCDATE()
+             WHERE id = @channelId`,
+            { channelId: targetChannelId },
+          );
+
+          forwardedMessages.push(result[0]);
+        } catch (error) {
+          this.logger.warn(
+            `Failed to forward to channel ${targetChannelId}:`,
+            error.message,
+          );
+        }
+      }
+
+      await this.redisService.del(`user:*:channels:*`);
+
+      return {
+        message: 'Message forwarded',
+        forwarded: forwardedMessages.length,
+        total: targetChannelIds.length,
+        messages: forwardedMessages,
+      };
+    } catch (error) {
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to forward message: ${error.message}`,
+      );
+    }
+  }
+
+  // ==================== CHANNEL KEY ROTATION (NEW) ====================
+
+  async rotateChannelKey(channelId: number, reason: string, userId: number) {
+    try {
+      // Check if user is owner
+      await this.checkChannelPermission(channelId, userId, [MemberRole.OWNER]);
+
+      // Generate new channel key
+      const newChannelKey = this.encryptionService.generateChannelKey();
+      const newEncryptedChannelKey =
+        this.encryptionService.encrypt(newChannelKey);
+
+      // Get current key version
+      const channel = await this.sqlService.query(
+        `SELECT encryption_version FROM chat_channels WHERE id = @channelId`,
+        { channelId },
+      );
+
+      const currentVersion = channel[0].encryption_version || 'v1';
+      const newVersion = `v${parseInt(currentVersion.substring(1)) + 1}`;
+
+      // Update channel encryption version
+      await this.sqlService.query(
+        `UPDATE chat_channels 
+         SET encryption_version = @newVersion,
+             updated_by = @userId,
+             updated_at = GETUTCDATE()
+         WHERE id = @channelId`,
+        { channelId, newVersion, userId },
+      );
+
+      // Get all channel participants
+      const participants = await this.sqlService.query(
+        `SELECT user_id FROM chat_participants 
+         WHERE channel_id = @channelId AND is_active = 1`,
+        { channelId },
+      );
+
+      // Update encrypted keys for all participants
+      for (const participant of participants) {
+        await this.sqlService.query(
+          `UPDATE chat_participants
+           SET encrypted_channel_key = @newEncryptedChannelKey,
+               key_version = @newVersion,
+               updated_at = GETUTCDATE()
+           WHERE channel_id = @channelId AND user_id = @userId`,
+          {
+            channelId,
+            userId: participant.user_id,
+            newEncryptedChannelKey,
+            newVersion,
+          },
+        );
+      }
+
+      // Log key rotation in channel_key_rotations table
+      await this.sqlService.query(
+        `INSERT INTO channel_key_rotations (
+          channel_id, old_key_version, new_key_version,
+          rotated_by, rotation_reason, affected_participants,
+          rotated_at, created_at, created_by
+        )
+        VALUES (
+          @channelId, @oldVersion, @newVersion,
+          @userId, @reason, @participantCount,
+          GETUTCDATE(), GETUTCDATE(), @userId
+        )`,
+        {
+          channelId,
+          oldVersion: currentVersion,
+          newVersion,
+          userId,
+          reason,
+          participantCount: participants.length,
+        },
+      );
+
+      // Log audit event
+      await this.sqlService.query(
+        `INSERT INTO audit_logs (
+          tenant_id, user_id, entity_type, entity_id, action_type,
+          old_values, new_values, created_at
+        )
+        SELECT 
+          created_by_tenant_id, @userId, 'chat_channels', @channelId, 'KEY_ROTATION',
+          JSON_QUERY('{"version": "' + @oldVersion + '"}'),
+          JSON_QUERY('{"version": "' + @newVersion + '", "reason": "' + @reason + '"}'),
+          GETUTCDATE()
+        FROM chat_channels WHERE id = @channelId`,
+        { userId, channelId, oldVersion: currentVersion, newVersion, reason },
+      );
+
+      await this.redisService.del(`user:*:channels:*`);
+
+      return {
+        message: 'Channel key rotated successfully',
+        channelId,
+        oldVersion: currentVersion,
+        newVersion,
+        participantsUpdated: participants.length,
+        newChannelKey, // Return new key to owner for distribution
+      };
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      this.logger.error('Failed to rotate channel key:', error);
+      throw new BadRequestException(
+        `Failed to rotate channel key: ${error.message}`,
       );
     }
   }

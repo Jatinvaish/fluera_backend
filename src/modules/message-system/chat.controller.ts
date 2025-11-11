@@ -1,5 +1,5 @@
 // ============================================
-// modules/chat/chat.controller.ts - FIXED & OPTIMIZED
+// modules/chat/chat.controller.ts - PRODUCTION v3.0
 // ============================================
 import {
   Controller,
@@ -9,17 +9,16 @@ import {
   Param,
   ParseIntPipe,
   UseGuards,
-  UploadedFile,
-  UseInterceptors,
-  Query,
-  Delete,
-  Put,
   HttpCode,
   HttpStatus,
+  Delete,
+  Put,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { ChatService } from './chat.service';
 import { CurrentUser } from 'src/core/decorators';
+import { JwtAuthGuard } from 'src/core/guards/jwt-auth.guard';
+import { EncryptionGuard, RequireEncryption } from 'src/core/guards/encryption.guard';
+import { RateLimit, RateLimitGuard } from 'src/core/guards/rate-limit.guard';
 import {
   CreateChannelDto,
   UpdateChannelDto,
@@ -35,12 +34,15 @@ import {
   MarkAsReadDto,
   ReactToMessageDto,
   PinMessageDto,
-  RemoveChannelMemberDto,
   ArchiveChannelDto,
   GetThreadMessagesDto,
+  BulkMarkAsReadDto,
+  ForwardMessageDto,
+  RotateChannelKeyDto,
 } from './dto/chat.dto';
 
 @Controller('chat')
+@UseGuards(JwtAuthGuard)
 export class ChatController {
   constructor(private chatService: ChatService) {}
 
@@ -62,14 +64,19 @@ export class ChatController {
 
   @Post('channels/get-by-id')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(EncryptionGuard)
+  @RequireEncryption()
   async getChannelById(
     @Body('channelId', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getChannelById(Number(id), userId);
+    return this.chatService.getChannelById(id, userId);
   }
 
   @Post('channels/create')
+  @UseGuards(EncryptionGuard, RateLimitGuard)
+  @RequireEncryption()
+  @RateLimit(10, 60) // 10 channels per minute
   async createChannel(
     @Body() dto: CreateChannelDto,
     @CurrentUser('id') userId: number,
@@ -89,7 +96,7 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.updateChannel(
-      Number(dto.channelId),
+      dto.channelId,
       dto,
       userId
     );
@@ -102,29 +109,31 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.archiveChannel(
-      Number(dto.channelId),
+      dto.channelId,
       dto.isArchived,
       userId
     );
   }
 
-  @Delete('channels/:channelId')
-  @HttpCode(HttpStatus.OK)
-  async deleteChannel(
-    @Param('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.deleteChannel(Number(id), userId);
-  }
-
-  // FIX: Add POST alternative for delete (compatibility)
   @Post('channels/delete')
   @HttpCode(HttpStatus.OK)
-  async deleteChannelPost(
+  async deleteChannel(
     @Body('channelId', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.deleteChannel(Number(id), userId);
+    return this.chatService.deleteChannel(id, userId);
+  }
+
+  // ✅ NEW: Channel key rotation
+  @Post('channels/rotate-key')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(EncryptionGuard)
+  @RequireEncryption()
+  async rotateChannelKey(
+    @Body() dto: RotateChannelKeyDto,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.rotateChannelKey(dto.channelId, dto.reason, userId);
   }
 
   // ==================== CHANNEL MEMBERS ====================
@@ -135,16 +144,18 @@ export class ChatController {
     @Body('channelId', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getChannelMembers(Number(id), userId);
+    return this.chatService.getChannelMembers(id, userId);
   }
 
   @Post('channels/members/add')
+  @UseGuards(RateLimitGuard)
+  @RateLimit(20, 60) // 20 add operations per minute
   async addChannelMembers(
     @Body() dto: AddChannelMembersDto,
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.addChannelMembers(
-      Number(dto.channelId),
+      dto.channelId,
       dto,
       userId
     );
@@ -158,8 +169,8 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.removeChannelMember(
-      Number(channelId),
-      Number(memberId),
+      channelId,
+      memberId,
       userId
     );
   }
@@ -171,7 +182,7 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.updateMemberRole(
-      Number(dto.channelId),
+      dto.channelId,
       dto,
       userId
     );
@@ -184,7 +195,7 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.updateMemberNotification(
-      Number(dto.channelId),
+      dto.channelId,
       dto,
       userId
     );
@@ -197,7 +208,7 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.removeChannelMember(
-      Number(id),
+      id,
       userId,
       userId
     );
@@ -207,18 +218,23 @@ export class ChatController {
 
   @Post('messages/list')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(EncryptionGuard)
+  @RequireEncryption()
   async getMessages(
     @CurrentUser('id') userId: number,
     @Body() dto: GetMessagesDto,
   ) {
     return this.chatService.getMessages(
-      Number(dto.channelId),
+      dto.channelId,
       userId,
       dto
     );
   }
 
   @Post('messages/send')
+  @UseGuards(EncryptionGuard, RateLimitGuard)
+  @RequireEncryption()
+  @RateLimit(60, 60) // 60 messages per minute
   async sendMessage(
     @Body() dto: SendMessageDto,
     @CurrentUser('id') userId: number,
@@ -233,49 +249,37 @@ export class ChatController {
 
   @Post('messages/edit')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(EncryptionGuard)
+  @RequireEncryption()
   async editMessage(
     @Body() dto: EditMessageDto,
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.editMessage(
-      Number(dto.messageId),
+      dto.messageId,
       dto,
       userId
     );
   }
 
-  @Delete('messages/:messageId')
-  @HttpCode(HttpStatus.OK)
-  async deleteMessage(
-    @Param('messageId', ParseIntPipe) id: number,
-    @Query('hardDelete') hardDelete: string,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.deleteMessage(
-      Number(id),
-      userId,
-      hardDelete === 'true'
-    );
-  }
-
-  // FIX: Add POST alternative for delete
   @Post('messages/delete')
   @HttpCode(HttpStatus.OK)
-  async deleteMessagePost(
+  async deleteMessage(
     @Body('messageId', ParseIntPipe) id: number,
     @Body('hardDelete') hardDelete: boolean,
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.deleteMessage(
-      Number(id),
+      id,
       userId,
       hardDelete
     );
   }
 
-  // NEW: Bulk delete messages
   @Post('messages/bulk-delete')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @RateLimit(10, 60) // 10 bulk operations per minute
   async bulkDeleteMessages(
     @Body('messageIds') messageIds: number[],
     @CurrentUser('id') userId: number,
@@ -283,14 +287,35 @@ export class ChatController {
     return this.chatService.bulkDeleteMessages(messageIds, userId);
   }
 
+  // ✅ NEW: Forward message
+  @Post('messages/forward')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(EncryptionGuard, RateLimitGuard)
+  @RequireEncryption()
+  @RateLimit(30, 60) // 30 forwards per minute
+  async forwardMessage(
+    @Body() dto: ForwardMessageDto,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
+  ) {
+    return this.chatService.forwardMessage(
+      dto.messageId,
+      dto.targetChannelIds,
+      userId,
+      organizationId ?? 30008
+    );
+  }
+
   @Post('messages/reactions/add')
+  @UseGuards(RateLimitGuard)
+  @RateLimit(100, 60) // 100 reactions per minute
   async reactToMessage(
     @Body() dto: ReactToMessageDto,
     @CurrentUser('id') userId: number,
     @CurrentUser('organizationId') organizationId: number,
   ) {
     return this.chatService.reactToMessage(
-      Number(dto.messageId),
+      dto.messageId,
       dto.emoji,
       userId,
       organizationId ?? 30008
@@ -303,7 +328,7 @@ export class ChatController {
     @Body('messageId', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getMessageReactions(Number(id), userId);
+    return this.chatService.getMessageReactions(id, userId);
   }
 
   @Post('messages/pin')
@@ -313,7 +338,7 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.pinMessage(
-      Number(dto.messageId),
+      dto.messageId,
       dto.isPinned,
       userId
     );
@@ -325,28 +350,32 @@ export class ChatController {
     @Body('channelId', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getPinnedMessages(Number(id), userId);
+    return this.chatService.getPinnedMessages(id, userId);
   }
 
   // ==================== THREADS ====================
 
   @Post('threads/messages')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(EncryptionGuard)
+  @RequireEncryption()
   async getThreadMessages(
     @Body('threadId', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number,
     @Body() dto: GetThreadMessagesDto,
   ) {
     return this.chatService.getThreadMessages(
-      Number(id),
+      id,
       userId,
       dto.limit,
       dto.offset
     );
   }
 
-  // NEW: Reply to thread
   @Post('threads/reply')
+  @UseGuards(EncryptionGuard, RateLimitGuard)
+  @RequireEncryption()
+  @RateLimit(60, 60)
   async replyToThread(
     @Body() dto: SendMessageDto,
     @CurrentUser('id') userId: number,
@@ -378,6 +407,9 @@ export class ChatController {
   // ==================== DIRECT MESSAGES ====================
 
   @Post('direct/send')
+  @UseGuards(EncryptionGuard, RateLimitGuard)
+  @RequireEncryption()
+  @RateLimit(60, 60)
   async createDirectMessage(
     @Body() dto: CreateDirectMessageDto,
     @CurrentUser('id') userId: number,
@@ -401,7 +433,23 @@ export class ChatController {
     return this.chatService.markAsRead(dto, userId);
   }
 
-  @Get('unread/count')
+  @Post('mark-read/bulk')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @RateLimit(30, 60)
+  async bulkMarkAsRead(
+    @Body() dto: BulkMarkAsReadDto,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.bulkMarkAsRead(
+      dto.channelId,
+      dto.messageIds,
+      userId
+    );
+  }
+
+  @Post('unread/count')
+  @HttpCode(HttpStatus.OK)
   async getUnreadCount(
     @CurrentUser('id') userId: number,
     @CurrentUser('organizationId') organizationId: number,
@@ -412,17 +460,24 @@ export class ChatController {
     );
   }
 
-  // FIX: Add POST alternative
-  @Post('unread/count')
+  // ✅ NEW: Get message delivery status
+  @Post('messages/status')
   @HttpCode(HttpStatus.OK)
-  async getUnreadCountPost(
+  async getMessageStatus(
+    @Body('messageId', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
   ) {
-    return this.chatService.getUnreadCount(
-      userId,
-      organizationId ?? 30008
-    );
+    return this.chatService.getMessageStatus(id, userId);
+  }
+
+  // ✅ NEW: Get bulk delivery status
+  @Post('messages/status/bulk')
+  @HttpCode(HttpStatus.OK)
+  async getBulkMessageStatus(
+    @Body('messageIds') messageIds: number[],
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.getMessagesDeliveryStatus(messageIds, userId);
   }
 
   // ==================== FILES ====================
@@ -436,32 +491,14 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.getChannelFiles(
-      Number(id),
+      id,
       userId,
       limit || 50,
       offset || 0
     );
   }
 
-  @Post('channels/files/upload')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadFile(
-    @Body('channelId', ParseIntPipe) id: number,
-    // @UploadedFile() file: Express.Multer.File,
-    @Body('caption') caption: string,
-    @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
-  ) {
-    // TODO: Implement file upload logic with your file service
-    return {
-      message: 'File upload endpoint - implement with your file service',
-      // file: file?.originalname,
-      channelId: id,
-      userId,
-    };
-  }
-
-  // ==================== NEW: USER PRESENCE ====================
+  // ==================== USER PRESENCE ====================
 
   @Post('presence/update')
   @HttpCode(HttpStatus.OK)
@@ -472,41 +509,19 @@ export class ChatController {
     return this.chatService.updateUserPresence(userId, status);
   }
 
-  @Get('presence/online')
+  @Post('presence/online')
+  @HttpCode(HttpStatus.OK)
   async getOnlineUsers(
     @CurrentUser('organizationId') organizationId: number,
   ) {
     return this.chatService.getOnlineUsers(organizationId ?? 30008);
   }
 
-  // ==================== NEW: CHANNEL SETTINGS ====================
+  // ==================== CHANNEL SETTINGS ====================
 
-  @Get('channels/:channelId/settings')
-  async getChannelSettings(
-    @Param('channelId', ParseIntPipe) channelId: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.getChannelSettings(channelId, userId);
-  }
-
-  @Put('channels/:channelId/settings')
-  @HttpCode(HttpStatus.OK)
-  async updateChannelSettings(
-    @Param('channelId', ParseIntPipe) channelId: number,
-    @Body('settings') settings: any,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.updateChannelSettings(
-      channelId,
-      settings,
-      userId
-    );
-  }
-
-  // FIX: Add POST alternative
   @Post('channels/settings/get')
   @HttpCode(HttpStatus.OK)
-  async getChannelSettingsPost(
+  async getChannelSettings(
     @Body('channelId', ParseIntPipe) channelId: number,
     @CurrentUser('id') userId: number,
   ) {
@@ -515,7 +530,7 @@ export class ChatController {
 
   @Post('channels/settings/update')
   @HttpCode(HttpStatus.OK)
-  async updateChannelSettingsPost(
+  async updateChannelSettings(
     @Body('channelId', ParseIntPipe) channelId: number,
     @Body('settings') settings: any,
     @CurrentUser('id') userId: number,

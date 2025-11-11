@@ -1,5 +1,5 @@
 // ============================================
-// modules/chat/dto/chat.dto.ts - PRODUCTION READY v2.0
+// modules/chat/dto/chat.dto.ts - FIXED v3.0
 // ============================================
 import { 
   IsString, 
@@ -67,8 +67,8 @@ export class UpdateChannelDto {
   @MaxLength(255)
   name?: string;
 
-  @IsString()
-  channelId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  channelId: number;
 
   @IsString()
   @IsOptional()
@@ -88,8 +88,8 @@ export class ArchiveChannelDto {
   @IsBoolean()
   isArchived: boolean;
 
-  @IsString()
-  channelId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  channelId: number;
 }
 
 // ==================== CHANNEL MEMBER DTOs ====================
@@ -107,8 +107,8 @@ export class AddChannelMembersDto {
   @IsNotEmpty()
   userIds: number[];
 
-  @IsString()
-  channelId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  channelId: number;
 
   @IsEnum(MemberRole)
   @IsOptional()
@@ -118,6 +118,9 @@ export class AddChannelMembersDto {
 export class RemoveChannelMemberDto {
   @IsNumber()
   userId: number;
+
+  @IsNumber()
+  channelId: number;
 }
 
 export class UpdateMemberRoleDto {
@@ -127,8 +130,8 @@ export class UpdateMemberRoleDto {
   @IsEnum(MemberRole)
   role: MemberRole;
 
-  @IsString()
-  channelId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  channelId: number;
 }
 
 export class UpdateMemberNotificationDto {
@@ -140,8 +143,8 @@ export class UpdateMemberNotificationDto {
   @IsOptional()
   notificationSettings?: any;
   
-  @IsString()
-  channelId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  channelId: number;
 }
 
 // ==================== MESSAGE DTOs ====================
@@ -162,7 +165,8 @@ export class SendMessageDto {
   channelId: number;
 
   @IsEnum(MessageType)
-  messageType: MessageType = MessageType.TEXT;
+  @IsOptional()
+  messageType?: MessageType = MessageType.TEXT;
 
   // ✅ E2E Encryption fields (client must encrypt before sending)
   @IsString()
@@ -233,14 +237,17 @@ export class EditMessageDto {
   @IsNotEmpty()
   encryptionAuthTag: string;
 
-  @IsString()
-  messageId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  messageId: number;
 }
 
 export class DeleteMessageDto {
   @IsBoolean()
   @IsOptional()
   hardDelete?: boolean = false;
+
+  @IsNumber()
+  messageId: number;
 }
 
 export class ReactToMessageDto {
@@ -249,30 +256,30 @@ export class ReactToMessageDto {
   @MaxLength(50)
   emoji: string;
 
-  @IsString()
-  messageId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  messageId: number;
 }
 
 export class PinMessageDto {
   @IsBoolean()
   isPinned: boolean;
 
-  @IsString()
-  messageId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  messageId: number;
 }
 
-// ==================== READ RECEIPTS DTOs (NEW) ====================
+// ==================== READ RECEIPTS DTOs ====================
 
 export class GetMessageStatusDto {
-  @IsString()
+  @IsNumber() // ✅ FIXED: Changed from string to number
   @IsNotEmpty()
-  messageId: string;
+  messageId: number;
 }
 
 export class BulkMarkAsReadDto {
-  @IsString()
+  @IsNumber() // ✅ FIXED: Changed from string to number
   @IsNotEmpty()
-  channelId: string;
+  channelId: number;
 
   @IsArray()
   @IsNumber({}, { each: true })
@@ -310,8 +317,8 @@ export class GetMessagesDto {
   @IsOptional()
   includeDeleted?: boolean = false;
 
-  @IsString()
-  channelId: string;
+  @IsNumber() // ✅ FIXED: Changed from string to number
+  channelId: number;
 }
 
 export class SearchMessagesDto {
@@ -446,4 +453,29 @@ export class UploadFileDto {
   @IsString()
   @IsOptional()
   caption?: string;
+}
+
+// ==================== MESSAGE FORWARDING DTO (NEW) ====================
+
+export class ForwardMessageDto {
+  @IsNumber()
+  @IsNotEmpty()
+  messageId: number;
+
+  @IsArray()
+  @IsNumber({}, { each: true })
+  @IsNotEmpty()
+  targetChannelIds: number[];
+}
+
+// ==================== CHANNEL KEY ROTATION DTO (NEW) ====================
+
+export class RotateChannelKeyDto {
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
+
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
 }
