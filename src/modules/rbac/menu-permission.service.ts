@@ -8,9 +8,9 @@ export class MenuPermissionsService {
 
   async linkMenuPermission(
     menuKey: string,
-    permissionId: bigint,
+    permissionId: number,
     isRequired: boolean,
-    createdBy: bigint,
+    createdBy: number,
     userType: string
   ) {
     if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
@@ -50,7 +50,7 @@ export class MenuPermissionsService {
     }
   }
 
-  async bulkLinkMenuPermissions(mappings: any[], createdBy: bigint, userType: string) {
+  async bulkLinkMenuPermissions(mappings: any[], createdBy: number, userType: string) {
     if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
       throw new ForbiddenException('Only super admins can manage menu permissions');
     }
@@ -76,7 +76,7 @@ export class MenuPermissionsService {
            VALUES (@menuKey, @permissionId, @isRequired, @createdBy, GETUTCDATE())`,
           {
             menuKey: mapping.menuKey,
-            permissionId: BigInt(mapping.permissionId),
+            permissionId: Number(mapping.permissionId),
             isRequired: mapping.isRequired ?? true,
             createdBy
           }
@@ -96,7 +96,7 @@ export class MenuPermissionsService {
     };
   }
 
-  async unlinkMenuPermission(menuKey: string, permissionId: bigint, userType: string) {
+  async unlinkMenuPermission(menuKey: string, permissionId: number, userType: string) {
     if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
       throw new ForbiddenException('Only super admins can manage menu permissions');
     }
@@ -233,7 +233,7 @@ export class MenuPermissionsService {
   /**
    * Get User's Accessible Menus
    */
-  async getUserAccessibleMenus(userId: bigint) {
+  async getUserAccessibleMenus(userId: number) {
     try {
       // Get user's permissions from their roles
       const userPermissions = await this.sqlService.query(
@@ -311,7 +311,7 @@ export class MenuPermissionsService {
   /**
    * Check if user can access specific menu
    */
-  async canUserAccessMenu(userId: bigint, menuKey: string): Promise<boolean> {
+  async canUserAccessMenu(userId: number, menuKey: string): Promise<boolean> {
     try {
       const result: any = await this.sqlService.query(
         `SELECT COUNT(*) as missingCount
@@ -337,9 +337,9 @@ export class MenuPermissionsService {
   }
 
   async updateMenuPermission(
-    id: bigint,
+    id: number,
     menuKey: string,
-    permissionId: bigint,
+    permissionId: number,
     isRequired: boolean,
     userType: string
   ) {
@@ -369,7 +369,7 @@ export class MenuPermissionsService {
     };
   }
 
-  async getMenuPermissionById(id: bigint) {
+  async getMenuPermissionById(id: number) {
     const result: any = await this.sqlService.query(
       `SELECT 
          mp.id, 

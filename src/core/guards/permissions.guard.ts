@@ -33,7 +33,7 @@ export class ResourcePermissionGuard implements CanActivate {
       user.id,
       tenantId,
       config.resourceType,
-      BigInt(resourceId),
+      Number(resourceId),
       config.permissionType,
     );
 

@@ -1,15 +1,21 @@
 // ============================================
-// modules/chat/chat.controller.ts
+// modules/chat/chat.controller.ts - FIXED & OPTIMIZED
 // ============================================
 import {
   Controller,
   Post,
+  Get,
   Body,
   Param,
   ParseIntPipe,
   UseGuards,
   UploadedFile,
   UseInterceptors,
+  Query,
+  Delete,
+  Put,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ChatService } from './chat.service';
@@ -41,221 +47,332 @@ export class ChatController {
   // ==================== CHANNELS ====================
 
   @Post('channels/list')
+  @HttpCode(HttpStatus.OK)
   async getUserChannels(
-    @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
     @Body() dto: GetChannelsDto,
   ) {
-    return this.chatService.getUserChannels(userId, organizationId ?? 30008, dto);
+    return this.chatService.getUserChannels(
+      userId,
+      organizationId ?? 30008,
+      dto
+    );
   }
 
   @Post('channels/get-by-id')
+  @HttpCode(HttpStatus.OK)
   async getChannelById(
     @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getChannelById(BigInt(id), userId);
+    return this.chatService.getChannelById(Number(id), userId);
   }
 
   @Post('channels/create')
   async createChannel(
     @Body() dto: CreateChannelDto,
-    @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
   ) {
-    console.log('CreateChannelDto:', dto);
-    console.log(userId,organizationId);
-    
-    return this.chatService.createChannel(dto, userId, organizationId ?? 30008);
+    return this.chatService.createChannel(
+      dto,
+      userId,
+      organizationId ?? 30008
+    );
   }
 
   @Post('channels/update')
+  @HttpCode(HttpStatus.OK)
   async updateChannel(
-    // @Body('channelId', ParseIntPipe) id: number,
     @Body() dto: UpdateChannelDto,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.updateChannel(BigInt(dto.channelId), dto, userId);
+    return this.chatService.updateChannel(
+      Number(dto.channelId),
+      dto,
+      userId
+    );
   }
 
   @Post('channels/archive')
+  @HttpCode(HttpStatus.OK)
   async archiveChannel(
-    // @Body('channelId', ParseIntPipe) id: number,
     @Body() dto: ArchiveChannelDto,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.archiveChannel(BigInt(dto.channelId), dto.isArchived, userId);
+    return this.chatService.archiveChannel(
+      Number(dto.channelId),
+      dto.isArchived,
+      userId
+    );
   }
 
-  @Post('channels/delete')
+  @Delete('channels/:channelId')
+  @HttpCode(HttpStatus.OK)
   async deleteChannel(
-    @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: bigint,
+    @Param('channelId', ParseIntPipe) id: number,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.deleteChannel(BigInt(id), userId);
+    return this.chatService.deleteChannel(Number(id), userId);
+  }
+
+  // FIX: Add POST alternative for delete (compatibility)
+  @Post('channels/delete')
+  @HttpCode(HttpStatus.OK)
+  async deleteChannelPost(
+    @Body('channelId', ParseIntPipe) id: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.deleteChannel(Number(id), userId);
   }
 
   // ==================== CHANNEL MEMBERS ====================
 
   @Post('channels/members/list')
+  @HttpCode(HttpStatus.OK)
   async getChannelMembers(
     @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getChannelMembers(BigInt(id), userId);
+    return this.chatService.getChannelMembers(Number(id), userId);
   }
 
   @Post('channels/members/add')
   async addChannelMembers(
-    // @Body('channelId', ParseIntPipe) id: number,
     @Body() dto: AddChannelMembersDto,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.addChannelMembers(BigInt(dto.channelId), dto, userId);
+    return this.chatService.addChannelMembers(
+      Number(dto.channelId),
+      dto,
+      userId
+    );
   }
 
   @Post('channels/members/remove')
+  @HttpCode(HttpStatus.OK)
   async removeChannelMember(
     @Body('channelId', ParseIntPipe) channelId: number,
     @Body('userId', ParseIntPipe) memberId: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
     return this.chatService.removeChannelMember(
-      BigInt(channelId),
-      BigInt(memberId),
-      userId,
+      Number(channelId),
+      Number(memberId),
+      userId
     );
   }
 
   @Post('channels/members/update-role')
+  @HttpCode(HttpStatus.OK)
   async updateMemberRole(
-    // @Body('channelId', ParseIntPipe) id: number,
     @Body() dto: UpdateMemberRoleDto,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.updateMemberRole(BigInt(dto.channelId), dto, userId);
+    return this.chatService.updateMemberRole(
+      Number(dto.channelId),
+      dto,
+      userId
+    );
   }
 
   @Post('channels/notifications/update')
+  @HttpCode(HttpStatus.OK)
   async updateMemberNotification(
-    // @Body('channelId', ParseIntPipe) id: number,
     @Body() dto: UpdateMemberNotificationDto,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.updateMemberNotification(BigInt(dto.channelId), dto, userId);
+    return this.chatService.updateMemberNotification(
+      Number(dto.channelId),
+      dto,
+      userId
+    );
   }
 
   @Post('channels/leave')
+  @HttpCode(HttpStatus.OK)
   async leaveChannel(
     @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.removeChannelMember(BigInt(id), userId, userId);
+    return this.chatService.removeChannelMember(
+      Number(id),
+      userId,
+      userId
+    );
   }
 
   // ==================== MESSAGES ====================
 
   @Post('messages/list')
+  @HttpCode(HttpStatus.OK)
   async getMessages(
-    // @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
     @Body() dto: GetMessagesDto,
   ) {
-    return this.chatService.getMessages(BigInt(dto.channelId), userId, dto);
+    return this.chatService.getMessages(
+      Number(dto.channelId),
+      userId,
+      dto
+    );
   }
 
   @Post('messages/send')
   async sendMessage(
     @Body() dto: SendMessageDto,
-    @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
   ) {
-    return this.chatService.sendMessage(dto, userId, organizationId ?? 30008);
+    return this.chatService.sendMessage(
+      dto,
+      userId,
+      organizationId ?? 30008
+    );
   }
 
   @Post('messages/edit')
+  @HttpCode(HttpStatus.OK)
   async editMessage(
-    // @Body('messageId', ParseIntPipe) id: number,
     @Body() dto: EditMessageDto,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.editMessage(BigInt(dto.messageId), dto, userId);
+    return this.chatService.editMessage(
+      Number(dto.messageId),
+      dto,
+      userId
+    );
   }
 
-  @Post('messages/delete')
+  @Delete('messages/:messageId')
+  @HttpCode(HttpStatus.OK)
   async deleteMessage(
+    @Param('messageId', ParseIntPipe) id: number,
+    @Query('hardDelete') hardDelete: string,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.deleteMessage(
+      Number(id),
+      userId,
+      hardDelete === 'true'
+    );
+  }
+
+  // FIX: Add POST alternative for delete
+  @Post('messages/delete')
+  @HttpCode(HttpStatus.OK)
+  async deleteMessagePost(
     @Body('messageId', ParseIntPipe) id: number,
     @Body('hardDelete') hardDelete: boolean,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.deleteMessage(BigInt(id), userId, hardDelete);
+    return this.chatService.deleteMessage(
+      Number(id),
+      userId,
+      hardDelete
+    );
+  }
+
+  // NEW: Bulk delete messages
+  @Post('messages/bulk-delete')
+  @HttpCode(HttpStatus.OK)
+  async bulkDeleteMessages(
+    @Body('messageIds') messageIds: number[],
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.bulkDeleteMessages(messageIds, userId);
   }
 
   @Post('messages/reactions/add')
   async reactToMessage(
-    // @Body('messageId', ParseIntPipe) id: number,
     @Body() dto: ReactToMessageDto,
-    @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
   ) {
     return this.chatService.reactToMessage(
-      BigInt(dto.messageId),
+      Number(dto.messageId),
       dto.emoji,
       userId,
-      organizationId ?? 30008,
+      organizationId ?? 30008
     );
   }
 
   @Post('messages/reactions/list')
+  @HttpCode(HttpStatus.OK)
   async getMessageReactions(
     @Body('messageId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getMessageReactions(BigInt(id), userId);
+    return this.chatService.getMessageReactions(Number(id), userId);
   }
 
   @Post('messages/pin')
+  @HttpCode(HttpStatus.OK)
   async pinMessage(
-    // @Body('messageId', ParseIntPipe) id: number,
     @Body() dto: PinMessageDto,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.pinMessage(BigInt(dto.messageId), dto.isPinned, userId);
+    return this.chatService.pinMessage(
+      Number(dto.messageId),
+      dto.isPinned,
+      userId
+    );
   }
 
   @Post('channels/pinned-messages')
+  @HttpCode(HttpStatus.OK)
   async getPinnedMessages(
     @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getPinnedMessages(BigInt(id), userId);
+    return this.chatService.getPinnedMessages(Number(id), userId);
   }
 
   // ==================== THREADS ====================
 
   @Post('threads/messages')
+  @HttpCode(HttpStatus.OK)
   async getThreadMessages(
     @Body('threadId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
     @Body() dto: GetThreadMessagesDto,
   ) {
     return this.chatService.getThreadMessages(
-      BigInt(id),
+      Number(id),
       userId,
       dto.limit,
-      dto.offset,
+      dto.offset
+    );
+  }
+
+  // NEW: Reply to thread
+  @Post('threads/reply')
+  async replyToThread(
+    @Body() dto: SendMessageDto,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
+  ) {
+    return this.chatService.sendMessage(
+      dto,
+      userId,
+      organizationId ?? 30008
     );
   }
 
   // ==================== SEARCH ====================
 
   @Post('search')
+  @HttpCode(HttpStatus.OK)
   async searchMessages(
     @Body() dto: SearchMessagesDto,
-    @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
   ) {
-    return this.chatService.searchMessages(userId, organizationId ?? 30008, dto);
+    return this.chatService.searchMessages(
+      userId,
+      organizationId ?? 30008,
+      dto
+    );
   }
 
   // ==================== DIRECT MESSAGES ====================
@@ -263,44 +380,66 @@ export class ChatController {
   @Post('direct/send')
   async createDirectMessage(
     @Body() dto: CreateDirectMessageDto,
-    @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
   ) {
-    return this.chatService.createDirectMessage(dto, userId, organizationId ?? 30008);
+    return this.chatService.createDirectMessage(
+      dto,
+      userId,
+      organizationId ?? 30008
+    );
   }
 
   // ==================== READ RECEIPTS ====================
 
   @Post('mark-read')
+  @HttpCode(HttpStatus.OK)
   async markAsRead(
     @Body() dto: MarkAsReadDto,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
     return this.chatService.markAsRead(dto, userId);
   }
 
-  @Post('unread/count')
+  @Get('unread/count')
   async getUnreadCount(
-    @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
   ) {
-    return this.chatService.getUnreadCount(userId, organizationId ?? 30008);
+    return this.chatService.getUnreadCount(
+      userId,
+      organizationId ?? 30008
+    );
+  }
+
+  // FIX: Add POST alternative
+  @Post('unread/count')
+  @HttpCode(HttpStatus.OK)
+  async getUnreadCountPost(
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
+  ) {
+    return this.chatService.getUnreadCount(
+      userId,
+      organizationId ?? 30008
+    );
   }
 
   // ==================== FILES ====================
 
   @Post('channels/files/list')
+  @HttpCode(HttpStatus.OK)
   async getChannelFiles(
     @Body('channelId', ParseIntPipe) id: number,
     @Body('limit') limit: number,
     @Body('offset') offset: number,
-    @CurrentUser('id') userId: bigint,
+    @CurrentUser('id') userId: number,
   ) {
     return this.chatService.getChannelFiles(
-      BigInt(id),
+      Number(id),
       userId,
       limit || 50,
-      offset || 0,
+      offset || 0
     );
   }
 
@@ -310,14 +449,81 @@ export class ChatController {
     @Body('channelId', ParseIntPipe) id: number,
     // @UploadedFile() file: Express.Multer.File,
     @Body('caption') caption: string,
-    @CurrentUser('id') userId: bigint,
-    @CurrentUser('organizationId') organizationId: bigint,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('organizationId') organizationId: number,
   ) {
-    // Implement file upload logic here
-    // This is a placeholder - integrate with your file service
+    // TODO: Implement file upload logic with your file service
     return {
       message: 'File upload endpoint - implement with your file service',
-    //   file: file.originalname,
+      // file: file?.originalname,
+      channelId: id,
+      userId,
     };
+  }
+
+  // ==================== NEW: USER PRESENCE ====================
+
+  @Post('presence/update')
+  @HttpCode(HttpStatus.OK)
+  async updatePresence(
+    @Body('status') status: 'online' | 'away' | 'offline',
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.updateUserPresence(userId, status);
+  }
+
+  @Get('presence/online')
+  async getOnlineUsers(
+    @CurrentUser('organizationId') organizationId: number,
+  ) {
+    return this.chatService.getOnlineUsers(organizationId ?? 30008);
+  }
+
+  // ==================== NEW: CHANNEL SETTINGS ====================
+
+  @Get('channels/:channelId/settings')
+  async getChannelSettings(
+    @Param('channelId', ParseIntPipe) channelId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.getChannelSettings(channelId, userId);
+  }
+
+  @Put('channels/:channelId/settings')
+  @HttpCode(HttpStatus.OK)
+  async updateChannelSettings(
+    @Param('channelId', ParseIntPipe) channelId: number,
+    @Body('settings') settings: any,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.updateChannelSettings(
+      channelId,
+      settings,
+      userId
+    );
+  }
+
+  // FIX: Add POST alternative
+  @Post('channels/settings/get')
+  @HttpCode(HttpStatus.OK)
+  async getChannelSettingsPost(
+    @Body('channelId', ParseIntPipe) channelId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.getChannelSettings(channelId, userId);
+  }
+
+  @Post('channels/settings/update')
+  @HttpCode(HttpStatus.OK)
+  async updateChannelSettingsPost(
+    @Body('channelId', ParseIntPipe) channelId: number,
+    @Body('settings') settings: any,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.updateChannelSettings(
+      channelId,
+      settings,
+      userId
+    );
   }
 }

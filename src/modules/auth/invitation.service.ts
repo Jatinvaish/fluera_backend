@@ -15,8 +15,8 @@ export class InvitationService {
   ) {}
 
   async sendInvitation(
-    tenantId: bigint, 
-    invitedBy: bigint, 
+    tenantId: number, 
+    invitedBy: number, 
     dto: any
   ) {
     // Get inviter's user type for role validation
@@ -41,7 +41,7 @@ export class InvitationService {
     // - Inviter has permission to assign this role
     // - Role belongs to inviter's tenant (or is a system role they can assign)
     await this.rbacService.validateRoleForInvitation(
-      BigInt(dto.roleId),
+      Number(dto.roleId),
       inviterType,
       tenantId
     );
@@ -62,7 +62,7 @@ export class InvitationService {
     // ✅ Step 4: Check role limits (if applicable)
     try {
       const canInvite = await this.rbacService.checkRoleLimit(
-        BigInt(dto.roleId),
+        Number(dto.roleId),
         'invitations'
       );
 
@@ -90,7 +90,7 @@ export class InvitationService {
         email: dto.inviteeEmail,
         name: dto.inviteeName || null,
         type: dto.inviteeType,
-        roleId: BigInt(dto.roleId),
+        roleId: Number(dto.roleId),
         token,
         message: dto.invitationMessage || null,
         expiresAt,
@@ -100,7 +100,7 @@ export class InvitationService {
     // ✅ Step 7: Increment role limit usage
     try {
       await this.rbacService.incrementRoleLimitUsage(
-        BigInt(dto.roleId),
+        Number(dto.roleId),
         'invitations'
       );
     } catch (error) {
@@ -140,9 +140,9 @@ export class InvitationService {
 
     try {
       await this.rbacService.getRoleById(
-        BigInt(invite.role_id),
+        Number(invite.role_id),
         'system', // System context for invitation acceptance
-        BigInt(invite.tenant_id)
+        Number(invite.tenant_id)
       );
     } catch (error) {
       throw new BadRequestException('The role assigned to this invitation is no longer valid');
@@ -261,7 +261,7 @@ export class InvitationService {
     return result[0];
   }
 
-  async listInvitations(tenantId: bigint, filters: any = {}) {
+  async listInvitations(tenantId: number, filters: any = {}) {
     const { status, page = 1, limit = 50 } = filters;
     const offset = (page - 1) * limit;
 
@@ -307,7 +307,7 @@ export class InvitationService {
     };
   }
 
-  async cancelInvitation(invitationId: bigint, cancelledBy: bigint, tenantId: bigint) {
+  async cancelInvitation(invitationId: number, cancelledBy: number, tenantId: number) {
     const result = await this.sqlService.query(
       `UPDATE invitations 
        SET status = 'cancelled', 
@@ -330,7 +330,7 @@ export class InvitationService {
     };
   }
 
-  async resendInvitation(invitationId: bigint, tenantId: bigint) {
+  async resendInvitation(invitationId: number, tenantId: number) {
     const invitation = await this.sqlService.query(
       `SELECT * FROM invitations 
        WHERE id = @invitationId 

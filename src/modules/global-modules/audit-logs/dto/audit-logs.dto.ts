@@ -6,7 +6,7 @@ export class CreateAuditLogDto {
 
   @IsNumber()
   @IsOptional()
-  entityId?: bigint | null;
+  entityId?: number | null;
 
   @IsString()
   actionType: string;
@@ -21,11 +21,11 @@ export class CreateAuditLogDto {
 
   @IsNumber()
   @IsOptional()
-  userId?: bigint | null;
+  userId?: number | null;
 
   @IsNumber()
   @IsOptional()
-  sessionId?: bigint | null;
+  sessionId?: number | null;
 
   @IsString()
   @IsOptional()
@@ -37,7 +37,7 @@ export class CreateAuditLogDto {
 
   @IsNumber()
   @IsOptional()
-  organizationId?: bigint | null;
+  organizationId?: number | null;
 
   @IsString()
   @IsOptional()
@@ -55,11 +55,11 @@ export class QueryAuditLogsDto {
 
   @IsNumber()
   @IsOptional()
-  userId?: bigint;
+  userId?: number;
 
   @IsNumber()
   @IsOptional()
-  organizationId?: bigint;
+  organizationId?: number;
 
   @IsNumber()
   @IsOptional()

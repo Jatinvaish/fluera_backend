@@ -59,7 +59,7 @@ export class PermissionsService {
     }
   }
 
-  async getPermissionById(id: bigint) {
+  async getPermissionById(id: number) {
     const result: any = await this.sqlService.query(
       `SELECT * FROM permissions WHERE id = @id`,
       { id }
@@ -68,7 +68,7 @@ export class PermissionsService {
     return { data: result[0] };
   }
 
-  async createPermission(dto: any, userId: bigint, userType: string) {
+  async createPermission(dto: any, userId: number, userType: string) {
     const isSystemPermission = userType === 'owner' || userType === 'superadmin';
 
     const result: any = await this.sqlService.query(
@@ -88,7 +88,7 @@ export class PermissionsService {
     return { data: result[0] };
   }
 
-  async deletePermission(id: bigint, userType: string) {
+  async deletePermission(id: number, userType: string) {
     const systemCheck = (userType === 'owner' || userType === 'superadmin') ? '' : 'AND is_system_permission = 0';
 
     const result: any = await this.sqlService.query(
@@ -102,12 +102,12 @@ export class PermissionsService {
   // ============================================
   // RESOURCE PERMISSIONS - USING SPs
   // ============================================
-  async grantResourcePermission(dto: any, grantedBy: bigint, userType?: string, tenantId?: bigint) {
+  async grantResourcePermission(dto: any, grantedBy: number, userType?: string, tenantId?: number) {
     // Validate granter has permission
     const canGrant = await this.checkAccess(
       grantedBy,
       dto.resourceType,
-      BigInt(dto.resourceId),
+      Number(dto.resourceId),
       'share',
       userType,
       tenantId
@@ -127,9 +127,9 @@ export class PermissionsService {
         VALUES (@resourceType, @resourceId, @entityType, @entityId, @permissionType, @grantedBy, @expiresAt)`,
         {
           resourceType: dto.resourceType,
-          resourceId: BigInt(dto.resourceId),
+          resourceId: Number(dto.resourceId),
           entityType: dto.entityType,
-          entityId: BigInt(dto.entityId),
+          entityId: Number(dto.entityId),
           permissionType: dto.permissionType,
           grantedBy,
           expiresAt: dto.expiresAt || null
@@ -137,7 +137,7 @@ export class PermissionsService {
       );
 
       // Log the access grant
-      await this.logResourceAccess(dto.resourceType, BigInt(dto.resourceId), grantedBy, 'grant_access',
+      await this.logResourceAccess(dto.resourceType, Number(dto.resourceId), grantedBy, 'grant_access',
         { entityType: dto.entityType, entityId: dto.entityId, permissionType: dto.permissionType }
       );
 
@@ -150,13 +150,13 @@ export class PermissionsService {
     }
   }
 
-  async revokeResourcePermission(dto: any, revokedBy?: bigint, userType?: string, tenantId?: bigint) {
+  async revokeResourcePermission(dto: any, revokedBy?: number, userType?: string, tenantId?: number) {
     // Validate revoker has permission
     if (revokedBy) {
       const canRevoke = await this.checkAccess(
         revokedBy,
         dto.resourceType,
-        BigInt(dto.resourceId),
+        Number(dto.resourceId),
         'share',
         userType,
         tenantId
@@ -177,16 +177,16 @@ export class PermissionsService {
          ${dto.permissionType ? 'AND permission_type = @permissionType' : ''}`,
         {
           resourceType: dto.resourceType,
-          resourceId: BigInt(dto.resourceId),
+          resourceId: Number(dto.resourceId),
           entityType: dto.entityType,
-          entityId: BigInt(dto.entityId),
+          entityId: Number(dto.entityId),
           permissionType: dto.permissionType || null
         }
       );
 
       // Log the revocation
       if (revokedBy) {
-        await this.logResourceAccess(dto.resourceType, BigInt(dto.resourceId), revokedBy, 'revoke_access',
+        await this.logResourceAccess(dto.resourceType, Number(dto.resourceId), revokedBy, 'revoke_access',
           { entityType: dto.entityType, entityId: dto.entityId, permissionType: dto.permissionType }
         );
       }
@@ -199,10 +199,10 @@ export class PermissionsService {
 
   // ✅ UPDATED: Use sp_CheckResourcePermission
   async checkResourcePermission(
-    userId: bigint,
-    tenantId: bigint,
+    userId: number,
+    tenantId: number,
     resourceType: string,
-    resourceId: bigint,
+    resourceId: number,
     permissionType: string,
   ): Promise<boolean> {
     const result = await this.sqlService.execute('sp_CheckResourcePermission', {
@@ -220,14 +220,14 @@ export class PermissionsService {
     return hasDirectPermission || hasRolePermission;
   }
 
-  async checkBatchPermissions(checks: any[], userId: bigint, tenantId: bigint) {
+  async checkBatchPermissions(checks: any[], userId: number, tenantId: number) {
     const results = await Promise.all(
       checks.map(async (check) => {
         const hasPermission = await this.checkResourcePermission(
           userId,
           tenantId,
           check.resourceType,
-          BigInt(check.resourceId),
+          Number(check.resourceId),
           check.permissionType,
         );
         return {
@@ -242,7 +242,7 @@ export class PermissionsService {
     return { checks: results };
   }
 
-  async listResourcePermissions(resourceType: string, resourceId: bigint, requestorId?: bigint, userType?: string, tenantId?: bigint) {
+  async listResourcePermissions(resourceType: string, resourceId: number, requestorId?: number, userType?: string, tenantId?: number) {
     // Validate requestor has access
     if (requestorId) {
       const canView = await this.checkAccess(requestorId, resourceType, resourceId, 'read', userType, tenantId);
@@ -274,9 +274,9 @@ export class PermissionsService {
   // ============================================
   // SHARING
   // ============================================
-  async createShare(dto: any, userId: bigint, userType?: string, tenantId?: bigint) {
+  async createShare(dto: any, userId: number, userType?: string, tenantId?: number) {
     // Validate creator has permission to share
-    const canShare = await this.checkAccess(userId, dto.resourceType, BigInt(dto.resourceId), 'share', userType, tenantId);
+    const canShare = await this.checkAccess(userId, dto.resourceType, Number(dto.resourceId), 'share', userType, tenantId);
 
     if (!canShare && userType !== 'owner' && userType !== 'superadmin') {
       throw new ForbiddenException('You do not have permission to share this resource');
@@ -306,12 +306,12 @@ export class PermissionsService {
         )`,
         {
           resourceType: dto.resourceType,
-          resourceId: BigInt(dto.resourceId),
+          resourceId: Number(dto.resourceId),
           shareToken,
           shareType: dto.shareType || 'view',
           recipientEmail: dto.recipientEmail || null,
-          recipientUserId: dto.recipientUserId ? BigInt(dto.recipientUserId) : null,
-          recipientTenantId: dto.recipientTenantId ? BigInt(dto.recipientTenantId) : null,
+          recipientUserId: dto.recipientUserId ? Number(dto.recipientUserId) : null,
+          recipientTenantId: dto.recipientTenantId ? Number(dto.recipientTenantId) : null,
           passwordProtected: dto.passwordProtected || false,
           passwordHash,
           requiresLogin: dto.requiresLogin !== false,
@@ -331,7 +331,7 @@ export class PermissionsService {
     }
   }
 
-  async accessShare(shareToken: string, password?: string, userId?: bigint) {
+  async accessShare(shareToken: string, password?: string, userId?: number) {
     try {
       const result: any = await this.sqlService.query(
         `SELECT * FROM resource_shares WHERE share_token = @shareToken`,
@@ -365,7 +365,7 @@ export class PermissionsService {
       }
 
       // Check if recipient-specific
-      if (share.recipient_user_id && userId && BigInt(userId) !== BigInt(share.recipient_user_id)) {
+      if (share.recipient_user_id && userId && Number(userId) !== Number(share.recipient_user_id)) {
         throw new ForbiddenException('This link is for a specific user only');
       }
 
@@ -408,7 +408,7 @@ export class PermissionsService {
     }
   }
 
-  async revokeShare(shareId: bigint, userId: bigint, userType?: string) {
+  async revokeShare(shareId: number, userId: number, userType?: string) {
     const shareLinks = await this.sqlService.query(
       `SELECT * FROM resource_shares WHERE id = @shareId`,
       { shareId }
@@ -421,7 +421,7 @@ export class PermissionsService {
     const shareLink = shareLinks[0];
 
     // Verify permission to revoke
-    if (BigInt(shareLink.created_by) !== BigInt(userId) && userType !== 'owner' && userType !== 'superadmin') {
+    if (Number(shareLink.created_by) !== Number(userId) && userType !== 'owner' && userType !== 'superadmin') {
       throw new ForbiddenException('You do not have permission to revoke this share link');
     }
 
@@ -433,7 +433,7 @@ export class PermissionsService {
     return { message: 'Share link revoked successfully' };
   }
 
-  async listShares(resourceType: string, resourceId: bigint, userId: bigint, userType?: string, tenantId?: bigint) {
+  async listShares(resourceType: string, resourceId: number, userId: number, userType?: string, tenantId?: number) {
     // Validate access
     const canView = await this.checkAccess(userId, resourceType, resourceId, 'read', userType, tenantId);
 
@@ -462,12 +462,12 @@ export class PermissionsService {
   // ACCESS CHECK (ENHANCED)
   // ============================================
   async checkAccess(
-    userId: bigint,
+    userId: number,
     resourceType: string,
-    resourceId: bigint,
+    resourceId: number,
     permissionType: string,
     userType?: string,
-    tenantId?: bigint
+    tenantId?: number
   ): Promise<boolean> {
     // Owner/Super Admin always have access
     if (userType === 'owner' || userType === 'superadmin' || userType === 'super_admin') {
@@ -504,7 +504,7 @@ export class PermissionsService {
   // ============================================
   // PRIVATE HELPER METHODS
   // ============================================
-  private async checkOwnership(userId: bigint, resourceType: string, resourceId: bigint): Promise<boolean> {
+  private async checkOwnership(userId: number, resourceType: string, resourceId: number): Promise<boolean> {
     const tableMap: Record<string, string> = {
       email: 'email_messages',
       message: 'messages',
@@ -529,7 +529,7 @@ export class PermissionsService {
     }
   }
 
-  private async getResourceData(resourceType: string, resourceId: bigint) {
+  private async getResourceData(resourceType: string, resourceId: number) {
     const tableMap: Record<string, string> = {
       email: 'email_messages',
       message: 'messages',
@@ -557,7 +557,7 @@ export class PermissionsService {
     return result[0];
   }
 
-  private async logResourceAccess(resourceType: string, resourceId: bigint, userId: bigint | null, action: string, metadata?: any) {
+  private async logResourceAccess(resourceType: string, resourceId: number, userId: number | null, action: string, metadata?: any) {
     try {
       await this.sqlService.query(
         `INSERT INTO resource_access_logs (resource_type, resource_id, user_id, action, metadata, accessed_at)

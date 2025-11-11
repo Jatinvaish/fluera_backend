@@ -78,19 +78,20 @@ async function bootstrap() {
     console.log(`[${request.headers['x-request-id']}] preHandler called`);
     console.log(`Encryption enabled:`, request.headers['x-encryption-enabled']);
     console.log(`Request body:`, request.body);
+
     if (request.method === 'OPTIONS') {
       return;
     }
 
-    const encryptionEnabled = request.headers['x-encryption-enabled'] === 'true';
+    // ✅ Check env variable if header is not set
+    const encryptionEnabledByDefault = process.env.ENCRYPTION_ENABLED_BY_DEFAULT === 'true';
+    const encryptionEnabled = request.headers['x-encryption-enabled'] === 'true'
+      || (request.headers['x-encryption-enabled'] === undefined && encryptionEnabledByDefault);
+
     const requestId = request.headers['x-request-id'] || 'unknown';
 
     if (!encryptionEnabled) {
-      return;
-    }
-
-
-    if (!encryptionEnabled) {
+      console.log(`[${requestId}] Encryption disabled, skipping decryption`);
       return;
     }
 

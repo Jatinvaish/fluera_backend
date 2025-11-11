@@ -98,7 +98,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   // ✅ ALL METHODS NOW HANDLE REDIS BEING UNAVAILABLE
   // ============================================
 
-  async cacheUserSession(userId: bigint, sessionData: any, ttl: number = 900): Promise<void> {
+  async cacheUserSession(userId: number, sessionData: any, ttl: number = 900): Promise<void> {
     if (!this.isAvailable()) {
       this.logger.debug('Redis unavailable, skipping session cache');
       return; // ✅ Silently skip
@@ -113,7 +113,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async getCachedSession(userId: bigint): Promise<any | null> {
+  async getCachedSession(userId: number): Promise<any | null> {
     if (!this.isAvailable()) return null;
 
     try {
@@ -126,7 +126,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async deleteCachedSession(userId: bigint): Promise<void> {
+  async deleteCachedSession(userId: number): Promise<void> {
     if (!this.isAvailable()) return;
 
     try {

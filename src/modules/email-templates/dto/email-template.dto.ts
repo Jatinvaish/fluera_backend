@@ -6,7 +6,7 @@ import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsObject, IsNumber } from 
 export class CreateEmailTemplateDto {
   @IsNumber()
   @IsNotEmpty()
-  organizationId: bigint;
+  organizationId: number;
 
   @IsString()
   @IsNotEmpty()
@@ -40,7 +40,7 @@ export class CreateEmailTemplateDto {
 export class UpdateEmailTemplateDto {
   @IsNumber()
   @IsNotEmpty()
-  id: bigint;
+  id: number;
 
   @IsString()
   @IsOptional()
@@ -82,7 +82,7 @@ export class PreviewTemplateDto {
 
   @IsNumber()
   @IsOptional()
-  organizationId?: bigint;
+  organizationId?: number;
 }
 
 export class SendTestEmailDto {
@@ -100,5 +100,5 @@ export class SendTestEmailDto {
 
   @IsNumber()
   @IsOptional()
-  organizationId?: bigint;
+  organizationId?: number;
 }
