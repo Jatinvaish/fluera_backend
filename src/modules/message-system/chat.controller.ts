@@ -15,7 +15,7 @@ import {
   Put,
 } from '@nestjs/common';
 import { ChatService } from './chat.service';
-import { CurrentUser } from 'src/core/decorators';
+import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
 import { JwtAuthGuard } from 'src/core/guards/jwt-auth.guard';
 import { EncryptionGuard, RequireEncryption } from 'src/core/guards/encryption.guard';
 import { RateLimit, RateLimitGuard } from 'src/core/guards/rate-limit.guard';
@@ -42,6 +42,7 @@ import {
 } from './dto/chat.dto';
 
 @Controller('chat')
+@Unencrypted()
 @UseGuards(JwtAuthGuard)
 export class ChatController {
   constructor(private chatService: ChatService) {}
@@ -52,12 +53,12 @@ export class ChatController {
   @HttpCode(HttpStatus.OK)
   async getUserChannels(
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
     @Body() dto: GetChannelsDto,
   ) {
     return this.chatService.getUserChannels(
       userId,
-      organizationId ?? 30008,
+      tenantId ,
       dto
     );
   }
@@ -80,12 +81,12 @@ export class ChatController {
   async createChannel(
     @Body() dto: CreateChannelDto,
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
     return this.chatService.createChannel(
       dto,
       userId,
-      organizationId ?? 30008
+      tenantId 
     );
   }
 
@@ -238,12 +239,12 @@ export class ChatController {
   async sendMessage(
     @Body() dto: SendMessageDto,
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
     return this.chatService.sendMessage(
       dto,
       userId,
-      organizationId ?? 30008
+      tenantId 
     );
   }
 
@@ -296,13 +297,13 @@ export class ChatController {
   async forwardMessage(
     @Body() dto: ForwardMessageDto,
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
     return this.chatService.forwardMessage(
       dto.messageId,
       dto.targetChannelIds,
       userId,
-      organizationId ?? 30008
+      tenantId 
     );
   }
 
@@ -312,13 +313,13 @@ export class ChatController {
   async reactToMessage(
     @Body() dto: ReactToMessageDto,
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
     return this.chatService.reactToMessage(
       dto.messageId,
       dto.emoji,
       userId,
-      organizationId ?? 30008
+      tenantId 
     );
   }
 
@@ -379,12 +380,12 @@ export class ChatController {
   async replyToThread(
     @Body() dto: SendMessageDto,
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
     return this.chatService.sendMessage(
       dto,
       userId,
-      organizationId ?? 30008
+      tenantId 
     );
   }
 
@@ -395,11 +396,11 @@ export class ChatController {
   async searchMessages(
     @Body() dto: SearchMessagesDto,
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
     return this.chatService.searchMessages(
       userId,
-      organizationId ?? 30008,
+      tenantId ,
       dto
     );
   }
@@ -413,12 +414,12 @@ export class ChatController {
   async createDirectMessage(
     @Body() dto: CreateDirectMessageDto,
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
     return this.chatService.createDirectMessage(
       dto,
       userId,
-      organizationId ?? 30008
+      tenantId 
     );
   }
 
@@ -452,11 +453,11 @@ export class ChatController {
   @HttpCode(HttpStatus.OK)
   async getUnreadCount(
     @CurrentUser('id') userId: number,
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
     return this.chatService.getUnreadCount(
       userId,
-      organizationId ?? 30008
+      tenantId 
     );
   }
 
@@ -512,9 +513,9 @@ export class ChatController {
   @Post('presence/online')
   @HttpCode(HttpStatus.OK)
   async getOnlineUsers(
-    @CurrentUser('organizationId') organizationId: number,
+    @TenantId() tenantId: number,
   ) {
-    return this.chatService.getOnlineUsers(organizationId ?? 30008);
+    return this.chatService.getOnlineUsers(tenantId );
   }
 
   // ==================== CHANNEL SETTINGS ====================
