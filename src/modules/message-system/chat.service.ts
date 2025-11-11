@@ -44,7 +44,7 @@ export class ChatService {
   async createChannel(
     dto: CreateChannelDto,
     userId: number,
-    organizationId: number,
+    tenantId: number,
   ) {
     try {
       // ✅ Generate secure channel encryption key
@@ -60,13 +60,13 @@ export class ChatService {
         )
         OUTPUT INSERTED.*
         VALUES (
-          @organizationId, @name, @description, @channelType, 
+          @tenantId, @name, @description, @channelType, 
           @relatedType, @relatedId, @isPrivate, 1,
           1, 'v1', 'AES-256-GCM',
           GETUTCDATE(), @userId, GETUTCDATE()
         )`,
         {
-          organizationId,
+          tenantId,
           name: dto.name,
           description: dto.description || null,
           channelType: dto.channelType,
@@ -83,7 +83,7 @@ export class ChatService {
       await this.addChannelParticipant(
         Number(channel.id),
         userId,
-        organizationId,
+        tenantId,
         userId,
         MemberRole.OWNER,
         encryptedChannelKey,
@@ -96,7 +96,7 @@ export class ChatService {
             await this.addChannelParticipant(
               Number(channel.id),
               Number(memberId),
-              organizationId,
+              tenantId,
               userId,
               MemberRole.MEMBER,
               encryptedChannelKey,
@@ -164,7 +164,7 @@ export class ChatService {
 
   async getUserChannels(
     userId: number,
-    organizationId: number,
+    tenantId: number,
     dto: GetChannelsDto,
   ) {
     try {
@@ -196,10 +196,10 @@ export class ChatService {
         INNER JOIN chat_participants cp ON c.id = cp.channel_id
         WHERE cp.user_id = @userId 
         AND cp.is_active = 1
-        AND c.created_by_tenant_id = @organizationId
+        AND c.created_by_tenant_id = @tenantId
       `;
 
-      const params: any = { userId, organizationId };
+      const params: any = { userId, tenantId };
 
       if (dto.channelType) {
         query += ` AND c.channel_type = @channelType`;
@@ -363,7 +363,7 @@ export class ChatService {
         throw new NotFoundException('Channel not found');
       }
 
-      const organizationId = channel[0].created_by_tenant_id;
+      const tenantId = channel[0].created_by_tenant_id;
       const encryptedChannelKey = channel[0].encrypted_channel_key;
       const addedMembers: any = [];
 
@@ -372,7 +372,7 @@ export class ChatService {
           const member: any = await this.addChannelParticipant(
             channelId,
             Number(memberId),
-            organizationId,
+            tenantId,
             userId,
             dto.role || MemberRole.MEMBER,
             encryptedChannelKey,
@@ -559,7 +559,7 @@ export class ChatService {
   async sendMessage(
     dto: SendMessageDto,
     userId: number,
-    organizationId: number,
+    tenantId: number,
   ) {
     try {
       await this.checkChannelMembership(Number(dto.channelId), userId);
@@ -589,14 +589,14 @@ export class ChatService {
         )
         OUTPUT INSERTED.*
         VALUES (
-          @channelId, @organizationId, @userId, @messageType, 
+          @channelId, @tenantId, @userId, @messageType, 
           @encryptedContent, @encryptionIv, @encryptionAuthTag, @contentHash,
           @hasAttachments, @hasMentions, @replyToMessageId, @threadId,
           GETUTCDATE(), @userId, GETUTCDATE()
         )`,
         {
           channelId: Number(dto.channelId),
-          organizationId,
+          tenantId,
           userId,
           messageType: dto.messageType || 'text',
           encryptedContent: dto.encryptedContent,
@@ -825,7 +825,7 @@ export class ChatService {
     messageId: number,
     emoji: string,
     userId: number,
-    organizationId: number,
+    tenantId: number,
   ) {
     try {
       const existing = await this.sqlService.query(
@@ -844,8 +844,8 @@ export class ChatService {
       } else {
         await this.sqlService.query(
           `INSERT INTO message_reactions (message_id, tenant_id, user_id, emoji, created_by, created_at)
-           VALUES (@messageId, @organizationId, @userId, @emoji, @userId, GETUTCDATE())`,
-          { messageId, organizationId, userId, emoji },
+           VALUES (@messageId, @tenantId, @userId, @emoji, @userId, GETUTCDATE())`,
+          { messageId, tenantId, userId, emoji },
         );
         return { message: 'Reaction added', action: 'added' };
       }
@@ -983,7 +983,7 @@ export class ChatService {
     }
   }
 
-  async getUnreadCount(userId: number, organizationId: number) {
+  async getUnreadCount(userId: number, tenantId: number) {
     try {
       const cacheKey = `user:${userId}:unread_count`;
       const cached = await this.redisService.get(cacheKey);
@@ -1001,11 +1001,11 @@ export class ChatService {
          INNER JOIN chat_participants cp ON c.id = cp.channel_id
          WHERE cp.user_id = @userId
          AND cp.is_active = 1
-         AND c.created_by_tenant_id = @organizationId
+         AND c.created_by_tenant_id = @tenantId
          AND m.is_deleted = 0
          AND m.sender_user_id != @userId
          AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)`,
-        { userId, organizationId },
+        { userId, tenantId },
       );
 
       await this.redisService.set(cacheKey, JSON.stringify(result[0]), 30);
@@ -1133,7 +1133,7 @@ export class ChatService {
 
   async searchMessages(
     userId: number,
-    organizationId: number,
+    tenantId: number,
     dto: SearchMessagesDto,
   ) {
     try {
@@ -1148,14 +1148,14 @@ export class ChatService {
         INNER JOIN users u ON m.sender_user_id = u.id
         INNER JOIN chat_channels c ON m.channel_id = c.id
         INNER JOIN chat_participants cp ON c.id = cp.channel_id AND cp.user_id = @userId
-        WHERE m.sender_tenant_id = @organizationId
+        WHERE m.sender_tenant_id = @tenantId
         AND m.is_deleted = 0
         AND cp.is_active = 1
       `;
 
       const params: any = {
         userId,
-        organizationId,
+        tenantId,
       };
 
       if (dto.channelId) {
@@ -1202,7 +1202,7 @@ export class ChatService {
   async createDirectMessage(
     dto: CreateDirectMessageDto,
     userId: number,
-    organizationId: number,
+    tenantId: number,
   ) {
     try {
       let channel = await this.sqlService.query(
@@ -1210,9 +1210,9 @@ export class ChatService {
          INNER JOIN chat_participants cp1 ON c.id = cp1.channel_id AND cp1.user_id = @userId
          INNER JOIN chat_participants cp2 ON c.id = cp2.channel_id AND cp2.user_id = @recipientId
          WHERE c.channel_type = 'direct' 
-         AND c.created_by_tenant_id = @organizationId
+         AND c.created_by_tenant_id = @tenantId
          AND (SELECT COUNT(*) FROM chat_participants WHERE channel_id = c.id AND is_active = 1) = 2`,
-        { userId, recipientId: Number(dto.recipientUserId), organizationId },
+        { userId, recipientId: Number(dto.recipientUserId), tenantId },
       );
 
       let channelId: number;
@@ -1227,8 +1227,8 @@ export class ChatService {
             is_encrypted, created_by, created_at
           )
           OUTPUT INSERTED.*
-          VALUES (@organizationId, 'Direct Message', 'direct', 1, 1, @userId, GETUTCDATE())`,
-          { organizationId, userId },
+          VALUES (@tenantId, 'Direct Message', 'direct', 1, 1, @userId, GETUTCDATE())`,
+          { tenantId, userId },
         );
 
         channelId = newChannel[0].id;
@@ -1236,7 +1236,7 @@ export class ChatService {
         await this.addChannelParticipant(
           channelId,
           userId,
-          organizationId,
+          tenantId,
           userId,
           MemberRole.MEMBER,
           encryptedChannelKey,
@@ -1244,7 +1244,7 @@ export class ChatService {
         await this.addChannelParticipant(
           channelId,
           Number(dto.recipientUserId),
-          organizationId,
+          tenantId,
           userId,
           MemberRole.MEMBER,
           encryptedChannelKey,
@@ -1271,7 +1271,7 @@ export class ChatService {
           messageType: MessageType.TEXT,
         },
         userId,
-        organizationId,
+        tenantId,
       );
     } catch (error) {
       if (error instanceof BadRequestException) {
@@ -1461,18 +1461,18 @@ export class ChatService {
     }
   }
 
-  async getOnlineUsers(organizationId: number) {
+  async getOnlineUsers(tenantId: number) {
     try {
       return await this.sqlService.query(
         `SELECT DISTINCT u.id, u.first_name, u.last_name, u.avatar_url, u.status, u.last_active_at
          FROM users u
          INNER JOIN chat_participants cp ON u.id = cp.user_id
          INNER JOIN chat_channels c ON cp.channel_id = c.id
-         WHERE c.created_by_tenant_id = @organizationId
+         WHERE c.created_by_tenant_id = @tenantId
          AND cp.is_active = 1
          AND u.status IN ('online', 'away')
          AND u.last_active_at > DATEADD(minute, -5, GETUTCDATE())`,
-        { organizationId },
+        { tenantId },
       );
     } catch (error) {
       throw new BadRequestException(
@@ -1661,7 +1661,7 @@ export class ChatService {
     messageId: number,
     targetChannelIds: number[],
     userId: number,
-    organizationId: number,
+    tenantId: number,
   ) {
     try {
       // Get original message
@@ -1694,14 +1694,14 @@ export class ChatService {
             )
             OUTPUT INSERTED.*
             VALUES (
-              @channelId, @organizationId, @userId, @messageType,
+              @channelId, @tenantId, @userId, @messageType,
               @encryptedContent, @encryptionIv, @encryptionAuthTag, @contentHash,
               @hasAttachments, @originalMessageId,
               GETUTCDATE(), @userId, GETUTCDATE()
             )`,
             {
               channelId: targetChannelId,
-              organizationId,
+              tenantId,
               userId,
               messageType: message[0].message_type,
               encryptedContent: message[0].encrypted_content,

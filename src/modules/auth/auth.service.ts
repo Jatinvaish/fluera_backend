@@ -518,14 +518,14 @@ export class AuthService {
 
       const tenantId = tenantResult[0].id;
 
-      // Create agency profile
-      await transaction.request()
-        .input('tenantId', tenantId)
-        .input('industry', dto.industry || null)
-        .query(`
-        INSERT INTO agency_profiles (tenant_id, industry)
-        VALUES (@tenantId, @industry)
-      `);
+      // // Create agency profile
+      // await transaction.request()
+      //   .input('tenantId', tenantId)
+      //   .input('industry', dto.industry || null)
+      //   .query(`
+      //   INSERT INTO agency_profiles (tenant_id, industry)
+      //   VALUES (@tenantId, @industry)
+      // `);
 
       // Update user details
       await transaction.request()
