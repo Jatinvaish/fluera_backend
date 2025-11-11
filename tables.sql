@@ -641,16 +641,18 @@ CREATE TABLE [dbo].[message_reactions] (
     UNIQUE([message_id], [user_id], [emoji])
 );
 
-CREATE TABLE [dbo].[message_read_receipts] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [message_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [read_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([message_id], [user_id])
+CREATE TABLE message_read_receipts (
+    id INT PRIMARY KEY IDENTITY(1,1),
+    message_id INT NOT NULL,
+    user_id INT NOT NULL,
+    status VARCHAR(20) NOT NULL, -- 'sent', 'delivered', 'read'
+    delivered_at DATETIME2 NULL,
+    read_at DATETIME2 NULL,
+    created_at DATETIME2 DEFAULT GETUTCDATE(),
+    FOREIGN KEY (message_id) REFERENCES messages(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    INDEX idx_message_receipts (message_id, user_id),
+    INDEX idx_user_unread (user_id, status)
 );
 
 CREATE INDEX [IX_read_receipts] ON [dbo].[message_read_receipts] ([message_id]);
