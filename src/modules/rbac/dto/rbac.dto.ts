@@ -62,6 +62,12 @@ export class ListRolesDto {
   @Min(1)
   @Max(100)
   limit?: number = 50;
+
+
+  search?: string;  
+  sortBy?: string;  
+  category?: string;  
+  sortOrder?: string;  
 }
 
 export class GetRoleDto {
