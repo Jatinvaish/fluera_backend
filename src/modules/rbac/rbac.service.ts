@@ -405,12 +405,61 @@ export class RbacService {
   // USER-ROLES
   // ============================================
 
-  async assignRoleToUser(userId: number, roleId: number, assignedBy: number, assignerType: string, assignerTenantId: number) {
+  private async checkRoleHierarchy(
+    assignerId: number,
+    targetRoleId: number,
+    assignerType: string
+  ): Promise<void> {
+    // Super admins can assign any role
+    if (assignerType === 'owner' || assignerType === 'superadmin' || assignerType === 'super_admin') {
+      return;
+    }
+
+    // Get assigner's highest hierarchy level
+    const assignerRoles: any = await this.sqlService.query(
+      `SELECT MAX(r.hierarchy_level) as max_hierarchy
+     FROM user_roles ur
+     JOIN roles r ON ur.role_id = r.id
+     WHERE ur.user_id = @userId AND ur.is_active = 1`,
+      { userId: assignerId }
+    );
+
+    const assignerHierarchy = assignerRoles[0]?.max_hierarchy || 0;
+
+    // Get target role hierarchy
+    const targetRole: any = await this.sqlService.query(
+      `SELECT hierarchy_level FROM roles WHERE id = @roleId`,
+      { roleId: targetRoleId }
+    );
+
+    const targetHierarchy = targetRole[0]?.hierarchy_level || 0;
+
+    // Check hierarchy
+    if (targetHierarchy > assignerHierarchy) {
+      throw new ForbiddenException(
+        `Cannot assign role with hierarchy ${targetHierarchy}. Your maximum hierarchy is ${assignerHierarchy}`
+      );
+    }
+  }
+
+  /**
+   * ✅ UPDATE: Add hierarchy check to assignRoleToUser
+   */
+  async assignRoleToUser(
+    userId: number,
+    roleId: number,
+    assignedBy: number,
+    assignerType: string,
+    assignerTenantId: number
+  ) {
+    // ✅ ADD HIERARCHY CHECK
+    await this.checkRoleHierarchy(assignedBy, roleId, assignerType);
+
     const targetUser: any = await this.sqlService.query(
       `SELECT tm.tenant_id, u.user_type 
-       FROM users u
-       LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
-       WHERE u.id = @userId`,
+     FROM users u
+     LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
+     WHERE u.id = @userId`,
       { userId }
     );
 
@@ -430,8 +479,8 @@ export class RbacService {
     try {
       const result: any = await this.sqlService.query(
         `INSERT INTO user_roles (user_id, role_id, is_active, created_by) 
-         OUTPUT INSERTED.* 
-         VALUES (@userId, @roleId, 1, @assignedBy)`,
+       OUTPUT INSERTED.* 
+       VALUES (@userId, @roleId, 1, @assignedBy)`,
         { userId, roleId, assignedBy }
       );
 
@@ -447,6 +496,7 @@ export class RbacService {
       throw error;
     }
   }
+
 
   async getUserRoles(userId: number, requestorType: string, requestorTenantId: number) {
     if (requestorType !== 'owner' && requestorType !== 'superadmin' && requestorType !== 'super_admin') {
