@@ -48,7 +48,7 @@ export class RbacController {
   @Post('roles/list')
   @Permissions('roles:read')
   async listRoles(
-    @Body() dto: ListRolesDto,
+    @Body() dto: any,
     @CurrentUser('userType') userType: string,
     @TenantId() tenantId: number
   ) {
