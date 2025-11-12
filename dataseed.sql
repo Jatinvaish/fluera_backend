@@ -2724,3 +2724,2184 @@ CREATE TABLE [dbo].[activities] (
 
 CREATE INDEX [IX_activities] ON [dbo].[activities] ([tenant_id], [user_id], [created_at] DESC);
 CREATE INDEX [IX_activities_unread] ON [dbo].[activities] ([user_id], [is_read]) WHERE [is_read] = 0;
+
+
+-- =====================================================
+-- EMAIL TEMPLATES INSERT SCRIPT
+-- Updated for V3.0 Multi-Tenant Schema (No organization_id)
+-- =====================================================
+
+-- Clear existing templates (optional - comment out in production)
+-- DELETE FROM [dbo].[email_templates];
+
+-- 1. EMAIL VERIFICATION TEMPLATE
+INSERT INTO [dbo].[email_templates] (
+    tenant_id, name, category, subject, body_html, variables, is_active, created_at
+)
+VALUES (
+    0, -- Global template (NULL tenant_id for all tenants)
+    'Default Email Verification',
+    'email_verification',
+    'Verify Your Email - Fluera Platform',
+    '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 0;">
+    <div style="max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">Welcome to Fluera! 🎉</h1>
+        </div>
+        <div style="padding: 40px 30px;">
+            <p style="font-size: 16px; margin-bottom: 20px;">Hello <strong>{{firstName}}</strong>,</p>
+            <p style="font-size: 16px; margin-bottom: 30px;">Thank you for signing up! To complete your registration, please verify your email address by entering the code below:</p>
+            <div style="background: #F3F4F6; padding: 20px; text-align: center; border-radius: 6px; margin: 30px 0;">
+                <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #4F46E5; font-family: monospace;">
+                    {{code}}
+                </div>
+            </div>
+            <p style="font-size: 14px; color: #EF4444; font-weight: bold; margin: 20px 0;">
+                ⏱️ This code will expire in {{expiryMinutes}} minutes.
+            </p>
+            <p style="font-size: 14px; color: #6B7280; margin-top: 30px;">
+                If you didn''t create an account with Fluera, you can safely ignore this email.
+            </p>
+        </div>
+        <div style="background-color: #F9FAFB; padding: 20px 30px; border-top: 1px solid #E5E7EB;">
+            <p style="font-size: 12px; color: #6B7280; margin: 0; text-align: center;">
+                © {{currentYear}} Fluera Platform. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>',
+    '{"firstName": "string", "code": "string", "expiryMinutes": "number", "currentYear": "number"}',
+    1,
+    GETUTCDATE()
+);
+
+-- 2. PASSWORD RESET TEMPLATE
+INSERT INTO [dbo].[email_templates] (
+    tenant_id, name, category, subject, body_html, variables, is_active, created_at
+)
+VALUES (
+    0,
+    'Default Password Reset Email',
+    'password_reset',
+    'Reset Your Password - Fluera Platform',
+    '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 0;">
+    <div style="max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <div style="background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); padding: 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">Password Reset Request 🔐</h1>
+        </div>
+        <div style="padding: 40px 30px;">
+            <p style="font-size: 16px; margin-bottom: 20px;">Hello,</p>
+            <p style="font-size: 16px; margin-bottom: 30px;">We received a request to reset your password for your Fluera account. Click the button below to create a new password:</p>
+            <div style="text-align: center; margin: 40px 0;">
+                <a href="{{resetLink}}" style="display: inline-block; background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+                    Reset Password
+                </a>
+            </div>
+            <p style="font-size: 14px; color: #6B7280; margin-bottom: 10px;">
+                Or copy and paste this link into your browser:
+            </p>
+            <p style="background: #F3F4F6; padding: 12px; border-radius: 4px; word-break: break-all; font-family: monospace; font-size: 12px; color: #4B5563;">
+                {{resetLink}}
+            </p>
+            <div style="background: #FEF2F2; border-left: 4px solid #EF4444; padding: 15px; margin-top: 30px; border-radius: 4px;">
+                <p style="font-size: 14px; color: #DC2626; margin: 0; font-weight: bold;">
+                    ⚠️ This link expires in 1 hour.
+                </p>
+                <p style="font-size: 13px; color: #DC2626; margin: 10px 0 0 0;">
+                    If you didn''t request a password reset, please ignore this email or contact support if you have concerns.
+                </p>
+            </div>
+        </div>
+        <div style="background-color: #F9FAFB; padding: 20px 30px; border-top: 1px solid #E5E7EB;">
+            <p style="font-size: 12px; color: #6B7280; margin: 0; text-align: center;">
+                © {{currentYear}} Fluera Platform. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>',
+    '{"resetLink": "string", "currentYear": "number"}',
+    1,
+    GETUTCDATE()
+);
+
+-- 3. WELCOME EMAIL TEMPLATE
+INSERT INTO [dbo].[email_templates] (
+    tenant_id, name, category, subject, body_html, variables, is_active, created_at
+)
+VALUES (
+    0,
+    'Default Welcome Email',
+    'welcome',
+    'Welcome to Fluera Platform! 🎉',
+    '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 0;">
+    <div style="max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <div style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); padding: 40px 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0 0 10px 0; font-size: 32px;">Welcome to Fluera! 🎉</h1>
+            <p style="color: #ffffff; margin: 0; font-size: 16px; opacity: 0.9;">Your account is now active!</p>
+        </div>
+        <div style="padding: 40px 30px;">
+            <p style="font-size: 16px; margin-bottom: 20px;">Hello <strong>{{firstName}}</strong>,</p>
+            <p style="font-size: 16px; margin-bottom: 30px;">Congratulations! Your email has been successfully verified, and your Fluera account is now active. You can now access all features of our platform.</p>
+            
+            <div style="background: #F0FDF4; border-left: 4px solid #10B981; padding: 20px; margin: 30px 0; border-radius: 4px;">
+                <h3 style="color: #059669; margin: 0 0 15px 0; font-size: 18px;">What you can do now:</h3>
+                <ul style="margin: 0; padding-left: 20px; color: #065F46;">
+                    <li style="margin-bottom: 10px;">Complete your profile setup</li>
+                    <li style="margin-bottom: 10px;">Connect with agencies, brands, and creators</li>
+                    <li style="margin-bottom: 10px;">Manage campaigns and collaborations</li>
+                    <li>Access powerful analytics and insights</li>
+                </ul>
+            </div>
+            
+            <div style="text-align: center; margin: 40px 0;">
+                <a href="{{loginUrl}}" style="display: inline-block; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+                    Login to Your Account
+                </a>
+            </div>
+            
+            <p style="font-size: 14px; color: #6B7280; margin-top: 30px;">
+                Need help getting started? Check out our <a href="https://fluera.com/docs" style="color: #4F46E5; text-decoration: none;">documentation</a> or <a href="https://fluera.com/support" style="color: #4F46E5; text-decoration: none;">contact support</a>.
+            </p>
+        </div>
+        <div style="background-color: #F9FAFB; padding: 20px 30px; border-top: 1px solid #E5E7EB;">
+            <p style="font-size: 12px; color: #6B7280; margin: 0; text-align: center;">
+                © {{currentYear}} Fluera Platform. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>',
+    '{"firstName": "string", "loginUrl": "string", "currentYear": "number"}',
+    1,
+    GETUTCDATE()
+);
+
+-- 4. INVITATION EMAIL TEMPLATE
+INSERT INTO [dbo].[email_templates] (
+    tenant_id, name, category, subject, body_html, variables, is_active, created_at
+)
+VALUES (
+    0,
+    'Default Invitation Email',
+    'invitation',
+    'You''re invited to join {{tenantName}} on Fluera',
+    '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 0;">
+    <div style="max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <div style="background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%); padding: 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">You''ve Been Invited! 🎊</h1>
+        </div>
+        <div style="padding: 40px 30px;">
+            <p style="font-size: 16px; margin-bottom: 20px;">Hello,</p>
+            <p style="font-size: 16px; margin-bottom: 30px;">
+                <strong>{{inviterName}}</strong> has invited you to join <strong>{{tenantName}}</strong> on the Fluera Platform.
+            </p>
+            
+            <div style="text-align: center; margin: 40px 0;">
+                <a href="{{inviteLink}}" style="display: inline-block; background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+                    Accept Invitation
+                </a>
+            </div>
+            
+            <p style="font-size: 14px; color: #6B7280; margin-bottom: 10px;">
+                Or copy and paste this link into your browser:
+            </p>
+            <p style="background: #F3F4F6; padding: 12px; border-radius: 4px; word-break: break-all; font-family: monospace; font-size: 12px; color: #4B5563;">
+                {{inviteLink}}
+            </p>
+            
+            <div style="background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 15px; margin-top: 30px; border-radius: 4px;">
+                <p style="font-size: 14px; color: #92400E; margin: 0;">
+                    ⏱️ This invitation link will expire in <strong>7 days</strong>.
+                </p>
+            </div>
+        </div>
+        <div style="background-color: #F9FAFB; padding: 20px 30px; border-top: 1px solid #E5E7EB;">
+            <p style="font-size: 12px; color: #6B7280; margin: 0; text-align: center;">
+                © {{currentYear}} Fluera Platform. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>',
+    '{"inviterName": "string", "tenantName": "string", "inviteLink": "string", "currentYear": "number"}',
+    1,
+    GETUTCDATE()
+);
+
+-- 5. TWO-FACTOR AUTHENTICATION (2FA) CODE TEMPLATE
+INSERT INTO [dbo].[email_templates] (
+    tenant_id, name, category, subject, body_html, variables, is_active, created_at
+)
+VALUES (
+    0,
+    'Default 2FA Code Email',
+    '2fa_code',
+    'Your Two-Factor Authentication Code - Fluera',
+    '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 0;">
+    <div style="max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <div style="background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); padding: 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">Security Code 🔒</h1>
+        </div>
+        <div style="padding: 40px 30px;">
+            <p style="font-size: 16px; margin-bottom: 20px;">Hello <strong>{{firstName}}</strong>,</p>
+            <p style="font-size: 16px; margin-bottom: 30px;">Your two-factor authentication code is:</p>
+            <div style="background: #FEF3C7; padding: 20px; text-align: center; border-radius: 6px; margin: 30px 0; border: 2px solid #F59E0B;">
+                <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #92400E; font-family: monospace;">
+                    {{code}}
+                </div>
+            </div>
+            <p style="font-size: 14px; color: #DC2626; font-weight: bold; margin: 20px 0;">
+                ⏱️ This code will expire in {{expiryMinutes}} minutes.
+            </p>
+            <div style="background: #FEE2E2; border-left: 4px solid #DC2626; padding: 15px; margin-top: 30px; border-radius: 4px;">
+                <p style="font-size: 14px; color: #991B1B; margin: 0;">
+                    <strong>Security Notice:</strong> Never share this code with anyone. Fluera will never ask for this code via phone or email.
+                </p>
+            </div>
+        </div>
+        <div style="background-color: #F9FAFB; padding: 20px 30px; border-top: 1px solid #E5E7EB;">
+            <p style="font-size: 12px; color: #6B7280; margin: 0; text-align: center;">
+                © {{currentYear}} Fluera Platform. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>',
+    '{"firstName": "string", "code": "string", "expiryMinutes": "number", "currentYear": "number"}',
+    1,
+    GETUTCDATE()
+);
+
+GO
+
+USE [fluera_new_structure]
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CheckResourcePermission]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 7. Get User Permissions for Resource
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_CheckResourcePermission]
+    @userId BIGINT,
+    @tenantId BIGINT,
+    @resourceType NVARCHAR(50),
+    @resourceId BIGINT,
+    @permissionType NVARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Check if user has direct resource permission
+    SELECT COUNT(*) AS has_permission
+    FROM resource_permissions
+    WHERE resource_type = @resourceType
+      AND resource_id = @resourceId
+      AND entity_type = 'user'
+      AND entity_id = @userId
+      AND permission_type = @permissionType
+      AND (expires_at IS NULL OR expires_at > GETUTCDATE());
+
+    -- Also check role-based permissions
+    SELECT COUNT(*) AS has_role_permission
+    FROM resource_permissions rp
+    JOIN user_roles ur ON rp.entity_id = ur.role_id
+    WHERE rp.resource_type = @resourceType
+      AND rp.resource_id = @resourceId
+      AND rp.entity_type = 'role'
+      AND ur.user_id = @userId
+      AND ur.is_active = 1
+      AND rp.permission_type = @permissionType
+      AND (rp.expires_at IS NULL OR rp.expires_at > GETUTCDATE());
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CleanupExpiredSessions]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 15. Cleanup Expired Sessions
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_CleanupExpiredSessions]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE user_sessions
+    SET is_active = 0
+    WHERE expires_at < GETUTCDATE() AND is_active = 1;
+
+    SELECT @@ROWCOUNT AS sessions_cleaned;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateAuditLog]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 8. Create Audit Log
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateAuditLog]
+    @tenantId BIGINT = NULL,
+    @userId BIGINT = NULL,
+    @entityType NVARCHAR(100),
+    @entityId BIGINT = NULL,
+    @actionType NVARCHAR(50),
+    @oldValues NVARCHAR(MAX) = NULL,
+    @newValues NVARCHAR(MAX) = NULL,
+    @ipAddress NVARCHAR(45) = NULL,
+    @userAgent NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO audit_logs (
+        tenant_id, user_id, entity_type, entity_id, action_type,
+        old_values, new_values, ip_address, user_agent
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @tenantId, @userId, @entityType, @entityId, @actionType,
+        @oldValues, @newValues, @ipAddress, @userAgent
+    );
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateErrorLog]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROCEDURE [dbo].[sp_CreateErrorLog]
+    @tenant_id BIGINT = NULL,
+    @user_id BIGINT = NULL,
+    @error_type NVARCHAR(100),
+    @error_message NVARCHAR(MAX),
+    @stack_trace NVARCHAR(MAX) = NULL,
+    @request_url NVARCHAR(MAX) = NULL,
+    @request_method NVARCHAR(10) = NULL,
+    @request_body NVARCHAR(MAX) = NULL,
+    @severity NVARCHAR(20) = 'error',
+    @ip_address NVARCHAR(45) = NULL,
+    @user_agent NVARCHAR(MAX) = NULL,
+    @metadata NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[error_logs] (
+        tenant_id, user_id, error_type, error_message, stack_trace,
+        request_url, request_method, request_body, severity,  metadata, created_at
+    )
+    VALUES (
+        @tenant_id, @user_id, @error_type, @error_message, @stack_trace,
+        @request_url, @request_method, @request_body, @severity,
+         @metadata, GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateNotification]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== NOTIFICATIONS ====================
+
+-- SP: Create Notification
+-- FIX: Changed user_id to recipient_id and added event_type, channel
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateNotification]
+    @recipient_id BIGINT,
+    @tenant_id BIGINT = NULL,
+    @event_type NVARCHAR(100),
+    @channel NVARCHAR(50) = 'in_app',
+    @subject NVARCHAR(500) = NULL,
+    @message NVARCHAR(MAX),
+    @data NVARCHAR(MAX) = NULL,
+    @priority NVARCHAR(20) = 'normal'
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[notifications] (
+        recipient_id, tenant_id, event_type, channel, subject, message, data, priority,
+        status, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @recipient_id, @tenant_id, @event_type, @channel, @subject, @message, @data, @priority,
+        'pending', GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateSystemEvent]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== SYSTEM EVENTS ====================
+
+-- SP: Create System Event
+-- FIX: Changed severity parameter name from @severity to match column
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateSystemEvent]
+    @tenant_id BIGINT = NULL,
+    @user_id BIGINT = NULL,
+    @event_type NVARCHAR(100),
+    @event_name NVARCHAR(255),
+    @event_data NVARCHAR(MAX) = NULL,
+    @source NVARCHAR(100) = NULL,
+    @session_id BIGINT = NULL,
+    @ip_address NVARCHAR(45) = NULL,
+    @user_agent NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[system_events] (
+        tenant_id, user_id, event_type, event_name, event_data,
+        source, session_id, ip_address, user_agent,
+        created_at
+    )
+    VALUES (
+        @tenant_id, @user_id, @event_type, @event_name, @event_data,
+        @source, @session_id, @ip_address, @user_agent,
+        GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateTenant]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== TENANTS ====================
+
+-- SP: Create Tenant
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateTenant]
+    @tenant_type NVARCHAR(20),
+    @name NVARCHAR(255),
+    @slug NVARCHAR(100),
+    @owner_user_id BIGINT,
+    @timezone NVARCHAR(50) = 'UTC',
+    @locale NVARCHAR(10) = 'en-US'
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    
+    BEGIN TRY
+        -- Create tenant
+        DECLARE @tenantId BIGINT;
+        
+        INSERT INTO [dbo].[tenants] (
+            tenant_type, name, slug, owner_user_id,
+            timezone, locale, status, created_at, created_by
+        )
+        VALUES (
+            @tenant_type, @name, @slug, @owner_user_id,
+            @timezone, @locale, 'active', GETUTCDATE(), @owner_user_id
+        );
+        
+        SET @tenantId = SCOPE_IDENTITY();
+        
+        -- FIX: Get a valid role_id for owner role
+        DECLARE @ownerRoleId BIGINT;
+        SELECT TOP 1 @ownerRoleId = id 
+        FROM [dbo].[roles] 
+        WHERE name = 'owner' AND is_system_role = 1;
+        
+        -- If no owner role exists, create a basic role reference
+        IF @ownerRoleId IS NULL
+        BEGIN
+            -- Insert a default owner role for the tenant
+            INSERT INTO [dbo].[roles] (tenant_id, name, display_name, is_system_role, hierarchy_level, created_at)
+            VALUES (@tenantId, 'owner', 'Owner', 1, 100, GETUTCDATE());
+            SET @ownerRoleId = SCOPE_IDENTITY();
+        END
+        
+        -- Add owner as member with owner role
+        INSERT INTO [dbo].[tenant_members] (
+            tenant_id, user_id, role_id, member_type, joined_at, created_at
+        )
+        VALUES (
+            @tenantId, @owner_user_id, @ownerRoleId, 'staff', GETUTCDATE(), GETUTCDATE()
+        );
+        
+        -- Return created tenant
+        SELECT * FROM [dbo].[tenants] WHERE id = @tenantId;
+        
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateUser]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+ CREATE    PROCEDURE [dbo].[sp_CreateUser]
+    @email NVARCHAR(320),
+    @password_hash NVARCHAR(255),
+    @first_name NVARCHAR(100) = NULL,
+    @last_name NVARCHAR(100) = NULL,
+    @public_key NVARCHAR(MAX),
+    @encrypted_private_key NVARCHAR(MAX),
+    @user_type NVARCHAR(50) = 'pending',
+    @created_by BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[users] (
+        email, password_hash, first_name, last_name, 
+        display_name, user_type, status,
+        public_key, encrypted_private_key, key_version, key_created_at,
+        created_at, created_by
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @email, @password_hash, @first_name, @last_name,
+        CONCAT(ISNULL(@first_name, ''), ' ', ISNULL(@last_name, '')), 
+        @user_type, 'pending',
+        @public_key, @encrypted_private_key, 1, GETUTCDATE(),
+        GETUTCDATE(), @created_by
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateUserSession]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- SP: Create User Session
+-- FIX: Removed session_type and tenant_id parameters that don't exist in table
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateUserSession]
+    @user_id BIGINT,
+    @active_tenant_id BIGINT = NULL,
+    @session_token NVARCHAR(512),
+    @ip_address NVARCHAR(45),
+    @device_name NVARCHAR(255) = NULL,
+    @browser_name NVARCHAR(100) = NULL,
+    @os_name NVARCHAR(100) = NULL,
+    @expires_at DATETIME2(7)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[user_sessions] (
+        user_id, active_tenant_id, session_token,
+        ip_address, device_name, browser_name, os_name, expires_at,
+        last_activity_at, is_active, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @user_id, @active_tenant_id, @session_token,
+        @ip_address, @device_name, @browser_name, @os_name, @expires_at,
+        GETUTCDATE(), 1, GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateVerificationCode]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== VERIFICATION CODES ====================
+
+-- SP: Create Verification Code
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateVerificationCode]
+    @user_id BIGINT = NULL,
+    @email NVARCHAR(320),
+    @code NVARCHAR(10),
+    @code_type NVARCHAR(20),
+    @expires_at DATETIME2(7),
+    @max_attempts INT = 5,
+    @ip_address NVARCHAR(45) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    -- Invalidate previous codes of same type
+    UPDATE [dbo].[verification_codes]
+    SET used_at = GETUTCDATE()
+    WHERE email = @email 
+        AND code_type = @code_type 
+        AND used_at IS NULL;
+    
+    -- Create new code
+    INSERT INTO [dbo].[verification_codes] (
+        user_id, email, code, code_type, expires_at, 
+        max_attempts, attempts, ip_address, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @user_id, @email, @code, @code_type, @expires_at,
+        @max_attempts, 0, @ip_address, GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_DeleteEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 5. Delete Email Template
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_DeleteEmailTemplate]
+    @id BIGINT,
+    @organizationId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM email_templates
+    OUTPUT 1 AS affected_rows
+    WHERE id = @id AND tenant_id = @organizationId;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_EndUserSession]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- SP: End User Session
+-- FIX: Changed logged_out_at to use updated_at (column doesn't exist in table)
+CREATE OR ALTER PROCEDURE [dbo].[sp_EndUserSession]
+    @session_token NVARCHAR(512)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    UPDATE [dbo].[user_sessions]
+    SET is_active = 0,
+        updated_at = GETUTCDATE()
+    WHERE session_token = @session_token;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetActiveSession]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- SP: Get Active Session
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetActiveSession]
+    @session_token NVARCHAR(512)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT *
+    FROM [dbo].[user_sessions]
+    WHERE session_token = @session_token
+        AND is_active = 1
+        AND expires_at > GETUTCDATE();
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetAuditLogs]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetAuditLogs]
+    @userId BIGINT = NULL,
+    @tenantId BIGINT = NULL,
+    @entityType NVARCHAR(100) = NULL,
+    @startDate DATETIME2(7) = NULL,
+    @endDate DATETIME2(7) = NULL,
+    @limit INT = 100,
+    @offset INT = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT *
+    FROM audit_logs
+    WHERE 1=1
+        AND (@userId IS NULL OR user_id = @userId)
+        AND (@tenantId IS NULL OR tenant_id = @tenantId)
+        AND (@entityType IS NULL OR entity_type = @entityType)
+        AND (@startDate IS NULL OR created_at >= @startDate)
+        AND (@endDate IS NULL OR created_at <= @endDate)
+    ORDER BY created_at DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+END
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+-- ============================================
+-- 2. Get Email Template
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetEmailTemplate]
+    @tenant_id BIGINT = NULL,
+    @category NVARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Try to get tenant-specific template first
+    IF @tenant_id IS NOT NULL
+    BEGIN
+        SELECT TOP 1 *
+        FROM email_templates
+        WHERE tenant_id = @tenant_id 
+          AND category = @category 
+          AND is_active = 1
+        ORDER BY created_at DESC;
+
+        IF @@ROWCOUNT > 0
+            RETURN;
+    END
+
+    -- Fall back to system-wide template
+    SELECT TOP 1 *
+    FROM email_templates
+    WHERE (tenant_id IS NULL OR tenant_id = 0)
+      AND category = @category 
+      AND is_active = 1
+    ORDER BY created_at DESC;
+
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetOrganizationTemplates]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 4. Get Tenant Templates
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetOrganizationTemplates]
+    @organizationId BIGINT,
+    @includeGlobal BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @includeGlobal = 1
+    BEGIN
+        SELECT *
+        FROM email_templates
+        WHERE (tenant_id = @organizationId OR tenant_id IS NULL)
+          AND is_active = 1
+        ORDER BY tenant_id DESC, category, created_at DESC;
+    END
+    ELSE
+    BEGIN
+        SELECT *
+        FROM email_templates
+        WHERE tenant_id = @organizationId
+          AND is_active = 1
+        ORDER BY category, created_at DESC;
+    END
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetSystemConfigByKey]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== SYSTEM CONFIG ====================
+
+-- SP: Get System Config by Key
+-- FIX: Removed environment parameter (doesn't exist in query)
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetSystemConfigByKey]
+    @config_key NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT *
+    FROM [dbo].[system_config]
+    WHERE config_key = @config_key;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantMembers]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 11. Get Tenant Members with Roles
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetTenantMembers]
+    @tenantId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        tm.id AS member_id,
+        tm.member_type,
+        tm.joined_at,
+        tm.is_active,
+        u.id AS user_id,
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.avatar_url,
+        u.last_active_at,
+        r.id AS role_id,
+        r.name AS role_name,
+        r.display_name AS role_display_name
+    FROM tenant_members tm
+    JOIN users u ON tm.user_id = u.id
+    LEFT JOIN roles r ON tm.role_id = r.id
+    WHERE tm.tenant_id = @tenantId
+    ORDER BY tm.joined_at DESC;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantUsageStats]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 13. Get Tenant Usage Stats
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetTenantUsageStats]
+    @tenantId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        -- Limits
+        max_staff,
+        max_storage_gb,
+        max_campaigns,
+        max_invitations,
+        max_creators,
+        max_brands,
+        
+        -- Current usage
+        current_staff,
+        current_storage_gb,
+        current_campaigns,
+        current_invitations,
+        current_creators,
+        current_brands,
+        
+        -- Calculated percentages
+        CASE WHEN max_staff > 0 
+             THEN (CAST(current_staff AS FLOAT) / max_staff) * 100 
+             ELSE 0 END AS staff_usage_percent,
+        
+        CASE WHEN max_storage_gb > 0 
+             THEN (CAST(current_storage_gb AS FLOAT) / max_storage_gb) * 100 
+             ELSE 0 END AS storage_usage_percent,
+        
+        CASE WHEN max_campaigns > 0 
+             THEN (CAST(current_campaigns AS FLOAT) / max_campaigns) * 100 
+             ELSE 0 END AS campaigns_usage_percent
+    FROM tenants
+    WHERE id = @tenantId;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAccessibleMenus]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- =====================================================
+-- SP: Get User Accessible Menus (if not exists)
+-- =====================================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserAccessibleMenus]
+    @userId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- User's permissions
+    SELECT DISTINCT
+        p.id as permission_id,
+        p.permission_key,
+        p.resource,
+        p.action,
+        p.category
+    FROM user_roles ur
+    INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+    INNER JOIN permissions p ON rp.permission_id = p.id
+    WHERE ur.user_id = @userId AND ur.is_active = 1
+    ORDER BY p.category, p.permission_key;
+
+    -- Accessible menus
+    SELECT DISTINCT mp.menu_key
+    FROM menu_permissions mp
+    WHERE mp.is_required = 1
+      AND EXISTS (
+        SELECT 1 
+        FROM user_roles ur
+        INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+        WHERE ur.user_id = @userId 
+          AND rp.permission_id = mp.permission_id
+          AND ur.is_active = 1
+      )
+    UNION
+    SELECT DISTINCT mp2.menu_key
+    FROM menu_permissions mp2
+    WHERE mp2.is_required = 0
+    ORDER BY menu_key;
+
+    -- Blocked menus (missing required permissions)
+    SELECT DISTINCT 
+        mp.menu_key,
+        STRING_AGG(p.permission_key, ', ') as missing_permissions
+    FROM menu_permissions mp
+    INNER JOIN permissions p ON mp.permission_id = p.id
+    WHERE mp.is_required = 1
+      AND NOT EXISTS (
+        SELECT 1 
+        FROM user_roles ur
+        INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+        WHERE ur.user_id = @userId 
+          AND rp.permission_id = mp.permission_id
+          AND ur.is_active = 1
+      )
+    GROUP BY mp.menu_key
+    ORDER BY mp.menu_key;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAuthData]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+ -- =====================================================
+-- FIXED STORED PROCEDURES FOR FLUERA V3.0
+-- Multi-Tenant SaaS with E2E Encryption
+-- =====================================================
+
+-- ==================== USER AUTHENTICATION ====================
+
+-- SP: Get User Auth Data (Used in JWT Strategy)
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserAuthData]
+    @userId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Get User Data
+    SELECT 
+        u.id,
+        u.email,
+        u.username,
+        u.user_type AS userType,
+        u.first_name AS firstName,
+        u.last_name AS lastName,
+        u.display_name AS displayName,
+        u.avatar_url AS avatarUrl,
+        u.is_super_admin AS isSuperAdmin,
+        u.email_verified_at AS emailVerifiedAt,
+        u.status,
+        u.two_factor_enabled AS twoFactorEnabled,
+        u.public_key AS publicKey
+    FROM [dbo].[users] u
+    WHERE u.id = @userId 
+        AND u.status = 'active'
+        AND u.email_verified_at IS NOT NULL;
+
+    -- Get User Roles (from tenant memberships)
+    -- FIX: Changed from tm.role_type to r.name (roles table)
+    SELECT 
+        STRING_AGG(r.name, ',') AS roles
+    FROM [dbo].[tenant_members] tm
+    INNER JOIN [dbo].[roles] r ON tm.role_id = r.id
+    WHERE tm.user_id = @userId 
+        AND tm.is_active = 1;
+
+    -- Get User Permissions (from roles)
+    SELECT 
+	STRING_AGG(p.permission_key, ',') WITHIN GROUP (ORDER BY p.permission_key) AS permissions
+    FROM [dbo].[tenant_members] tm
+    INNER JOIN [dbo].[role_permissions] rp ON tm.role_id = rp.role_id
+    INNER JOIN [dbo].[permissions] p ON rp.permission_id = p.id
+    WHERE tm.user_id = @userId 
+        AND tm.is_active = 1;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUserSessions]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 9. Get User Sessions
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserSessions]
+    @userId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        id,
+        active_tenant_id,
+        device_name,
+        device_type,
+        browser_name,
+        os_name,
+        ip_address,
+        last_activity_at,
+        is_active,
+        expires_at,
+        created_at
+    FROM user_sessions
+    WHERE user_id = @userId
+    ORDER BY last_activity_at DESC;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_IncrementTemplateUsage]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 6. Increment Template Usage
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_IncrementTemplateUsage]
+    @template_id BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE email_templates
+    SET usage_count = usage_count + 1
+    WHERE id = @template_id;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_ListMenuPermissions]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+-- =====================================================
+-- SP: List Menu Permissions (if not exists)
+-- =====================================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_ListMenuPermissions]
+    @page INT = 1,
+    @limit INT = 50,
+    @search NVARCHAR(255) = NULL,
+    @menuKey NVARCHAR(100) = NULL,
+    @category NVARCHAR(100) = NULL,
+    @sortBy NVARCHAR(50) = 'created_at',
+    @sortOrder NVARCHAR(4) = 'DESC'
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @offset INT = (@page - 1) * @limit;
+
+    -- Main query
+    SELECT 
+        mp.id,
+        mp.menu_key,
+        mp.permission_id,
+        mp.is_required,
+        mp.applicable_to,
+        mp.created_at,
+        mp.updated_at,
+        p.permission_key,
+        p.resource,
+        p.action,
+        p.category,
+        p.description,
+        p.is_system_permission
+    FROM menu_permissions mp
+    INNER JOIN permissions p ON mp.permission_id = p.id
+    WHERE 1=1
+        AND (@menuKey IS NULL OR mp.menu_key = @menuKey)
+        AND (@category IS NULL OR p.category = @category)
+        AND (@search IS NULL OR mp.menu_key LIKE '%' + @search + '%' OR p.permission_key LIKE '%' + @search + '%')
+    ORDER BY 
+        CASE WHEN @sortBy = 'menu_key' AND @sortOrder = 'ASC' THEN mp.menu_key END ASC,
+        CASE WHEN @sortBy = 'menu_key' AND @sortOrder = 'DESC' THEN mp.menu_key END DESC,
+        CASE WHEN @sortBy = 'created_at' AND @sortOrder = 'ASC' THEN mp.created_at END ASC,
+        CASE WHEN @sortBy = 'created_at' AND @sortOrder = 'DESC' THEN mp.created_at END DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+
+    -- Pagination metadata
+    SELECT 
+        @page AS currentPage,
+        @limit AS itemsPerPage,
+        COUNT(*) AS totalItems,
+        CEILING(CAST(COUNT(*) AS FLOAT) / @limit) AS totalPages,
+        CASE WHEN @page < CEILING(CAST(COUNT(*) AS FLOAT) / @limit) THEN 1 ELSE 0 END AS hasNextPage,
+        CASE WHEN @page > 1 THEN 1 ELSE 0 END AS hasPreviousPage
+    FROM menu_permissions mp
+    INNER JOIN permissions p ON mp.permission_id = p.id
+    WHERE 1=1
+        AND (@menuKey IS NULL OR mp.menu_key = @menuKey)
+        AND (@category IS NULL OR p.category = @category)
+        AND (@search IS NULL OR mp.menu_key LIKE '%' + @search + '%' OR p.permission_key LIKE '%' + @search + '%');
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_ListPermissions]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE PROCEDURE [dbo].[sp_ListPermissions]
+    @category NVARCHAR(100) = NULL,
+    @scope NVARCHAR(20) = 'all',
+    @page INT = 1,
+    @limit INT = 50
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @offset INT = (@page - 1) * @limit;
+
+    -- Get filtered permissions
+    SELECT 
+        p.id,
+        p.permission_key,
+        p.resource,
+        p.action,
+        p.description,
+        p.category,
+        p.is_system_permission,
+        p.created_at,
+        p.updated_at
+    FROM permissions p
+    WHERE (@category IS NULL OR p.category = @category)
+    AND (
+        @scope = 'all' 
+        OR (@scope = 'system' AND p.is_system_permission = 1)
+        OR (@scope = 'custom' AND p.is_system_permission = 0)
+    )
+    ORDER BY p.category, p.resource, p.action
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+
+    -- Get total count for pagination
+    SELECT 
+        @page AS currentPage,
+        @limit AS itemsPerPage,
+        COUNT(*) AS totalItems,
+        CEILING(CAST(COUNT(*) AS FLOAT) / @limit) AS totalPages,
+        CASE WHEN @page < CEILING(CAST(COUNT(*) AS FLOAT) / @limit) THEN 1 ELSE 0 END AS hasNextPage,
+        CASE WHEN @page > 1 THEN 1 ELSE 0 END AS hasPreviousPage
+    FROM permissions p
+    WHERE (@category IS NULL OR p.category = @category)
+    AND (
+        @scope = 'all' 
+        OR (@scope = 'system' AND p.is_system_permission = 1)
+        OR (@scope = 'custom' AND p.is_system_permission = 0)
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_RotateTenantKeys]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 10. Rotate Tenant Encryption Keys
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_RotateTenantKeys]
+    @tenantId BIGINT,
+    @newPublicKey NVARCHAR(MAX),
+    @newEncryptedPrivateKey NVARCHAR(MAX),
+    @rotatedBy BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+
+    BEGIN TRY
+        DECLARE @currentVersion INT;
+
+        SELECT @currentVersion = key_version
+        FROM tenants
+        WHERE id = @tenantId;
+
+        -- Update tenant keys
+        UPDATE tenants
+        SET public_key = @newPublicKey,
+            encrypted_private_key = @newEncryptedPrivateKey,
+            key_version = @currentVersion + 1,
+            key_rotated_at = GETUTCDATE(),
+            updated_at = GETUTCDATE(),
+            updated_by = @rotatedBy
+        WHERE id = @tenantId;
+
+        -- Log key rotation
+        INSERT INTO audit_logs (
+            tenant_id, user_id, entity_type, entity_id, action_type,
+            old_values, new_values
+        )
+        VALUES (
+            @tenantId, @rotatedBy, 'tenants', @tenantId, 'KEY_ROTATION',
+            JSON_QUERY('{"key_version": ' + CAST(@currentVersion AS NVARCHAR(10)) + '}'),
+            JSON_QUERY('{"key_version": ' + CAST(@currentVersion + 1 AS NVARCHAR(10)) + '}')
+        );
+
+        COMMIT TRANSACTION;
+
+        SELECT 
+            id,
+            key_version,
+            key_rotated_at
+        FROM tenants
+        WHERE id = @tenantId;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_UpdateSessionActivity]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 14. Update Session Activity
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpdateSessionActivity]
+    @sessionId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE user_sessions
+    SET last_activity_at = GETUTCDATE()
+    WHERE id = @sessionId AND is_active = 1;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_UpsertEmailTemplate]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 3. Upsert Email Template
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertEmailTemplate]
+    @id BIGINT = NULL,
+    @tenantId BIGINT = NULL,
+    @name NVARCHAR(255),
+    @category NVARCHAR(100),
+    @subject NVARCHAR(500),
+    @bodyHtml NVARCHAR(MAX),
+    @bodyText NVARCHAR(MAX) = NULL,
+    @variables NVARCHAR(MAX) = NULL,
+    @userId BIGINT,
+    @isActive BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @id IS NULL
+    BEGIN
+        -- INSERT
+        INSERT INTO email_templates (
+            tenant_id, name, category, subject, body_html, body_text,
+            variables, is_active, created_by
+        )
+        OUTPUT INSERTED.id
+        VALUES (
+            @tenantId, @name, @category, @subject, @bodyHtml, @bodyText,
+            @variables, @isActive, @userId
+        );
+    END
+    ELSE
+    BEGIN
+        -- UPDATE
+        UPDATE email_templates
+        SET name = @name,
+            category = @category,
+            subject = @subject,
+            body_html = @bodyHtml,
+            body_text = @bodyText,
+            variables = @variables,
+            is_active = @isActive,
+            updated_at = GETUTCDATE(),
+            updated_by = @userId
+        OUTPUT INSERTED.id
+        WHERE id = @id;
+    END
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_UpsertOAuthProvider]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== OAUTH PROVIDERS ====================
+
+-- SP: Upsert OAuth Provider
+-- FIX: Changed table name from oauth_providers to user_social_accounts
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertOAuthProvider]
+    @user_id BIGINT,
+    @provider NVARCHAR(50),
+    @provider_user_id NVARCHAR(255),
+    @email NVARCHAR(320),
+    @access_token NVARCHAR(MAX),
+    @refresh_token NVARCHAR(MAX) = NULL,
+    @profile_data NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    MERGE [dbo].[user_social_accounts] AS target
+    USING (SELECT @user_id AS user_id, @provider AS provider) AS source
+    ON (target.user_id = source.user_id AND target.provider = source.provider)
+    WHEN MATCHED THEN
+        UPDATE SET
+            access_token = @access_token,
+            refresh_token = @refresh_token,
+            profile_data = @profile_data,
+            updated_at = GETUTCDATE()
+    WHEN NOT MATCHED THEN
+        INSERT (user_id, provider, provider_user_id, provider_email, access_token, refresh_token, profile_data, created_at)
+        VALUES (@user_id, @provider, @provider_user_id, @email, @access_token, @refresh_token, @profile_data, GETUTCDATE())
+    OUTPUT INSERTED.*;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_UpsertSystemConfig]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- SP: Upsert System Config
+-- FIX: Removed environment parameter (column doesn't exist in table)
+CREATE OR ALTER PROCEDURE [dbo].[sp_UpsertSystemConfig]
+    @config_key NVARCHAR(255),
+    @config_value NVARCHAR(MAX),
+    @config_type NVARCHAR(50) = 'string',
+    @is_encrypted BIT = 0,
+    @description NVARCHAR(MAX) = NULL,
+    @created_by BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    MERGE [dbo].[system_config] AS target
+    USING (SELECT @config_key AS config_key) AS source
+    ON (target.config_key = source.config_key)
+    WHEN MATCHED THEN
+        UPDATE SET
+            config_value = @config_value,
+            config_type = @config_type,
+            is_encrypted = @is_encrypted,
+            updated_at = GETUTCDATE(),
+            updated_by = @created_by
+    WHEN NOT MATCHED THEN
+        INSERT (config_key, config_value, config_type, is_encrypted, created_at, created_by)
+        VALUES (@config_key, @config_value, @config_type, @is_encrypted, GETUTCDATE(), @created_by)
+    OUTPUT INSERTED.*;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_VerifyTenantAccess]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- 12. Verify Tenant Access
+-- ============================================
+CREATE OR ALTER PROCEDURE [dbo].[sp_VerifyTenantAccess]
+    @userId BIGINT,
+    @tenantId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        CASE 
+            WHEN COUNT(*) > 0 THEN 1 
+            ELSE 0 
+        END AS has_access
+    FROM tenant_members
+    WHERE user_id = @userId
+      AND tenant_id = @tenantId
+      AND is_active = 1;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_VerifyUserEmail]    Script Date: 05-11-2025 23:40:28 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROCEDURE [dbo].[sp_VerifyUserEmail]
+    @email NVARCHAR(320),
+    @code NVARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    
+    BEGIN TRY
+        DECLARE @userId BIGINT;
+        DECLARE @codeId BIGINT;
+        
+        SELECT TOP 1 
+            @userId = user_id,
+            @codeId = id
+        FROM [dbo].[verification_codes]
+        WHERE email = @email 
+            AND code = @code
+            AND code_type = 'email_verify'  -- ✅ FIXED: Changed from 'email_verification'
+            AND used_at IS NULL
+            AND expires_at > GETUTCDATE()
+            AND attempts < max_attempts
+        ORDER BY created_at DESC;
+        
+        -- ✅ FIXED: Added error handling
+        IF @userId IS NULL
+        BEGIN
+            ROLLBACK TRANSACTION;
+            THROW 50001, 'Invalid or expired verification code', 1;
+        END
+        
+        -- Mark code as used
+        UPDATE [dbo].[verification_codes]
+        SET used_at = GETUTCDATE(),
+            attempts = attempts + 1
+        WHERE id = @codeId;
+        
+        -- Update user
+        UPDATE [dbo].[users]
+        SET email_verified_at = GETUTCDATE(),
+            status = 'active',
+            updated_at = GETUTCDATE()
+        WHERE id = @userId;
+        
+        -- Return updated user
+        SELECT * FROM [dbo].[users] WHERE id = @userId;
+        
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END
+GO
+
+
+-- =====================================================
+-- MISSING STORED PROCEDURES
+-- =====================================================
+
+-- SP: Create Security Event
+CREATE OR ALTER PROCEDURE [dbo].[sp_CreateSecurityEvent]
+    @tenant_id BIGINT = NULL,
+    @user_id BIGINT = NULL,
+    @event_type NVARCHAR(100),
+    @event_category NVARCHAR(50),
+    @severity NVARCHAR(20),
+    @description NVARCHAR(MAX),
+    @ip_address NVARCHAR(45) = NULL,
+    @user_agent NVARCHAR(MAX) = NULL,
+    @location NVARCHAR(MAX) = NULL,
+    @resource_type NVARCHAR(50) = NULL,
+    @resource_id BIGINT = NULL,
+    @action_taken NVARCHAR(MAX) = NULL,
+    @risk_score INT = 0,
+    @is_anomaly BIT = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[security_events] (
+        tenant_id, user_id, event_type, event_category, severity,
+        description, ip_address, user_agent, location,
+        resource_type, resource_id, action_taken, risk_score, is_anomaly,
+        is_resolved, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @tenant_id, @user_id, @event_type, @event_category, @severity,
+        @description, @ip_address, @user_agent, @location,
+        @resource_type, @resource_id, @action_taken, @risk_score, @is_anomaly,
+        0, GETUTCDATE()
+    );
+END
+GO
+
+-- =====================================================
+-- SYSTEM ROLES AND PERMISSIONS SETUP
+-- =====================================================
+
+USE [fluera_new_structure]
+GO
+
+-- ============================================
+-- 1. INSERT SYSTEM ROLES
+-- ============================================
+
+SET IDENTITY_INSERT [dbo].[roles] ON;
+GO
+
+INSERT INTO [dbo].[roles] (
+    id, tenant_id, name, display_name, description, 
+    is_system_role, is_default, hierarchy_level, created_at
+)
+VALUES
+-- SaaS Owner Roles (No tenant, system-wide)
+(1, NULL, 'super_admin', 'Super Administrator', 'Full system access with all privileges', 1, 0, 1000, GETUTCDATE()),
+(2, NULL, 'saas_admin', 'SaaS Administrator', 'Platform-wide administrative access', 1, 0, 900, GETUTCDATE()),
+
+-- Tenant-specific System Roles
+(3, NULL, 'agency_admin', 'Agency Administrator', 'Full access within agency tenant', 1, 1, 800, GETUTCDATE()),
+(4, NULL, 'brand_admin', 'Brand Administrator', 'Full access within brand tenant', 1, 1, 800, GETUTCDATE()),
+(5, NULL, 'creator_admin', 'Creator Administrator', 'Full access within creator profile', 1, 1, 800, GETUTCDATE()),
+(6, NULL, 'owner', 'Owner', 'Tenant owner with full control', 1, 0, 850, GETUTCDATE());
+
+SET IDENTITY_INSERT [dbo].[roles] OFF;
+GO
+
+-- ============================================
+-- 2. INSERT SYSTEM PERMISSIONS
+-- ============================================
+
+SET IDENTITY_INSERT [dbo].[permissions] ON;
+GO
+
+INSERT INTO [dbo].[permissions] (
+    id, permission_key, resource, action, description, category, is_system_permission, created_at
+)
+VALUES
+-- System Management
+(1, 'system:manage', 'system', 'manage', 'Full system management access', 'System', 1, GETUTCDATE()),
+(2, 'system:read', 'system', 'read', 'View system information', 'System', 1, GETUTCDATE()),
+
+-- User Management
+(3, 'users:create', 'users', 'create', 'Create new users', 'Users', 1, GETUTCDATE()),
+(4, 'users:read', 'users', 'read', 'View user information', 'Users', 1, GETUTCDATE()),
+(5, 'users:write', 'users', 'write', 'Update user information', 'Users', 1, GETUTCDATE()),
+(6, 'users:delete', 'users', 'delete', 'Delete users', 'Users', 1, GETUTCDATE()),
+
+-- Tenant Management
+(7, 'tenants:create', 'tenants', 'create', 'Create new tenants', 'Tenants', 1, GETUTCDATE()),
+(8, 'tenants:read', 'tenants', 'read', 'View tenant information', 'Tenants', 1, GETUTCDATE()),
+(9, 'tenants:write', 'tenants', 'write', 'Update tenant information', 'Tenants', 1, GETUTCDATE()),
+(10, 'tenants:delete', 'tenants', 'delete', 'Delete tenants', 'Tenants', 1, GETUTCDATE()),
+
+-- Role Management
+(11, 'roles:create', 'roles', 'create', 'Create new roles', 'RBAC', 1, GETUTCDATE()),
+(12, 'roles:read', 'roles', 'read', 'View role information', 'RBAC', 1, GETUTCDATE()),
+(13, 'roles:write', 'roles', 'write', 'Update role information', 'RBAC', 1, GETUTCDATE()),
+(14, 'roles:delete', 'roles', 'delete', 'Delete roles', 'RBAC', 1, GETUTCDATE()),
+
+-- Permission Management
+(15, 'permissions:create', 'permissions', 'create', 'Create new permissions', 'RBAC', 1, GETUTCDATE()),
+(16, 'permissions:read', 'permissions', 'read', 'View permission information', 'RBAC', 1, GETUTCDATE()),
+(17, 'permissions:write', 'permissions', 'write', 'Update permission information', 'RBAC', 1, GETUTCDATE()),
+(18, 'permissions:delete', 'permissions', 'delete', 'Delete permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- Role Permission Management
+(19, 'role-permissions:read', 'role-permissions', 'read', 'View role permissions', 'RBAC', 1, GETUTCDATE()),
+(20, 'role-permissions:write', 'role-permissions', 'write', 'Assign/remove role permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- User Role Management
+(21, 'user-roles:read', 'user-roles', 'read', 'View user roles', 'RBAC', 1, GETUTCDATE()),
+(22, 'user-roles:write', 'user-roles', 'write', 'Assign/remove user roles', 'RBAC', 1, GETUTCDATE()),
+
+-- Menu Permission Management
+(23, 'menu-permissions:read', 'menu-permissions', 'read', 'View menu permissions', 'RBAC', 1, GETUTCDATE()),
+(24, 'menu-permissions:write', 'menu-permissions', 'write', 'Manage menu permissions', 'RBAC', 1, GETUTCDATE()),
+
+-- Campaign Management
+(25, 'campaigns:create', 'campaigns', 'create', 'Create campaigns', 'Campaigns', 1, GETUTCDATE()),
+(26, 'campaigns:read', 'campaigns', 'read', 'View campaigns', 'Campaigns', 1, GETUTCDATE()),
+(27, 'campaigns:write', 'campaigns', 'write', 'Update campaigns', 'Campaigns', 1, GETUTCDATE()),
+(28, 'campaigns:delete', 'campaigns', 'delete', 'Delete campaigns', 'Campaigns', 1, GETUTCDATE()),
+
+-- Content Management
+(29, 'content:create', 'content', 'create', 'Upload content', 'Content', 1, GETUTCDATE()),
+(30, 'content:read', 'content', 'read', 'View content', 'Content', 1, GETUTCDATE()),
+(31, 'content:write', 'content', 'write', 'Update content', 'Content', 1, GETUTCDATE()),
+(32, 'content:delete', 'content', 'delete', 'Delete content', 'Content', 1, GETUTCDATE()),
+(33, 'content:approve', 'content', 'approve', 'Approve content', 'Content', 1, GETUTCDATE()),
+
+-- Audit Logs
+(34, 'audit-logs:read', 'audit-logs', 'read', 'View audit logs', 'System', 1, GETUTCDATE()),
+(35, 'audit-logs:create', 'audit-logs', 'create', 'Create audit logs', 'System', 1, GETUTCDATE()),
+
+-- System Events
+(36, 'system-events:read', 'system-events', 'read', 'View system events', 'System', 1, GETUTCDATE()),
+(37, 'system-events:create', 'system-events', 'create', 'Create system events', 'System', 1, GETUTCDATE());
+
+SET IDENTITY_INSERT [dbo].[permissions] OFF;
+GO
+
+-- ============================================
+-- 3. ASSIGN PERMISSIONS TO ROLES
+-- ============================================
+
+-- Super Admin - ALL permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 1, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE is_system_permission = 1;
+
+-- SaaS Admin - Most permissions except system:manage
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 2, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE is_system_permission = 1
+    AND permission_key NOT IN ('system:manage', 'permissions:delete', 'roles:delete');
+
+-- Agency Admin - Agency-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(3, 4, GETUTCDATE()),  -- users:read
+(3, 5, GETUTCDATE()),  -- users:write
+(3, 8, GETUTCDATE()),  -- tenants:read
+(3, 9, GETUTCDATE()),  -- tenants:write
+(3, 12, GETUTCDATE()), -- roles:read
+(3, 16, GETUTCDATE()), -- permissions:read
+(3, 19, GETUTCDATE()), -- role-permissions:read
+(3, 21, GETUTCDATE()), -- user-roles:read
+(3, 22, GETUTCDATE()), -- user-roles:write
+(3, 25, GETUTCDATE()), -- campaigns:create
+(3, 26, GETUTCDATE()), -- campaigns:read
+(3, 27, GETUTCDATE()), -- campaigns:write
+(3, 28, GETUTCDATE()), -- campaigns:delete
+(3, 30, GETUTCDATE()), -- content:read
+(3, 31, GETUTCDATE()), -- content:write
+(3, 33, GETUTCDATE()), -- content:approve
+(3, 34, GETUTCDATE()); -- audit-logs:read
+
+-- Brand Admin - Brand-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(4, 4, GETUTCDATE()),  -- users:read
+(4, 5, GETUTCDATE()),  -- users:write
+(4, 8, GETUTCDATE()),  -- tenants:read
+(4, 9, GETUTCDATE()),  -- tenants:write
+(4, 12, GETUTCDATE()), -- roles:read
+(4, 16, GETUTCDATE()), -- permissions:read
+(4, 21, GETUTCDATE()), -- user-roles:read
+(4, 25, GETUTCDATE()), -- campaigns:create
+(4, 26, GETUTCDATE()), -- campaigns:read
+(4, 27, GETUTCDATE()), -- campaigns:write
+(4, 30, GETUTCDATE()), -- content:read
+(4, 31, GETUTCDATE()), -- content:write
+(4, 33, GETUTCDATE()), -- content:approve
+(4, 34, GETUTCDATE()); -- audit-logs:read
+
+-- Creator Admin - Creator-specific permissions
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+VALUES
+(5, 4, GETUTCDATE()),  -- users:read
+(5, 8, GETUTCDATE()),  -- tenants:read
+(5, 9, GETUTCDATE()),  -- tenants:write
+(5, 26, GETUTCDATE()), -- campaigns:read
+(5, 29, GETUTCDATE()), -- content:create
+(5, 30, GETUTCDATE()), -- content:read
+(5, 31, GETUTCDATE()); -- content:write
+
+-- Owner - Full tenant access
+INSERT INTO [dbo].[role_permissions] (role_id, permission_id, created_at)
+SELECT 6, id, GETUTCDATE()
+FROM [dbo].[permissions]
+WHERE permission_key NOT LIKE 'system:%'
+    AND is_system_permission = 1;
+
+GO
+
+-- ============================================
+-- 4. ASSIGN ROLES TO TEST USERS
+-- ============================================
+
+-- Assuming users with IDs 1-5 exist
+INSERT INTO [dbo].[user_roles] (user_id, role_id, is_active, assigned_at, created_at)
+VALUES
+(5, 1, 1, GETUTCDATE(), GETUTCDATE()), -- User 5: Super Admin
+(1, 3, 1, GETUTCDATE(), GETUTCDATE()), -- User 1: Agency Admin
+(2, 3, 1, GETUTCDATE(), GETUTCDATE()), -- User 2: Agency Admin
+(3, 4, 1, GETUTCDATE(), GETUTCDATE()), -- User 3: Brand Admin
+(4, 5, 1, GETUTCDATE(), GETUTCDATE()); -- User 4: Creator Admin
+
+GO
+ 
+PRINT 'System roles, permissions, and menu permissions setup completed successfully!'
+GO
+
+
+--
+
+ -- 1. EMAIL VERIFICATION TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Verify your email</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, please use the verification code below to complete your registration.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 600; letter-spacing: 0.25em; color: #111827; font-family: ''Courier New'', monospace;">
+                    {{code}}
+                </div>
+            </div>
+            <p style="margin: 20px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This code expires in {{expiryMinutes}} minutes
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you didn''t request this, you can safely ignore this email.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'email_verification' AND tenant_id = 0;
+
+-- 2. PASSWORD RESET TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Reset your password</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                We received a request to reset your password. Click the button below to choose a new password.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="text-align: center;">
+                <a href="{{resetLink}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Reset Password
+                </a>
+            </div>
+            <p style="margin: 24px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This link expires in 1 hour
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you didn''t request this, please ignore this email or contact support if you have concerns.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'password_reset' AND tenant_id = 0;
+
+-- 3. WELCOME EMAIL TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Welcome to Fluera</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, your account is now active and ready to use.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px;">
+                <p style="margin: 0 0 12px 0; font-size: 13px; font-weight: 500; color: #111827;">Getting started:</p>
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; font-weight: 400; color: #6b7280; line-height: 1.8;">
+                    <li>Complete your profile</li>
+                    <li>Explore campaigns and collaborations</li>
+                    <li>Connect with your network</li>
+                </ul>
+            </div>
+            <div style="text-align: center; margin-top: 24px;">
+                <a href="{{loginUrl}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Go to Dashboard
+                </a>
+            </div>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                Need help? Visit our documentation or contact support.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'welcome' AND tenant_id = 0;
+
+-- 4. INVITATION EMAIL TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">You''ve been invited</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                {{inviterName}} has invited you to join {{tenantName}} on Fluera.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="text-align: center;">
+                <a href="{{inviteLink}}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                    Accept Invitation
+                </a>
+            </div>
+            <p style="margin: 24px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This invitation expires in 7 days
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                If you weren''t expecting this invitation, you can safely ignore this email.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = 'invitation' AND tenant_id = 0;
+
+-- 5. TWO-FACTOR AUTHENTICATION (2FA) CODE TEMPLATE - UPDATE
+UPDATE [dbo].[email_templates]
+SET body_html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f8f9fa;">
+    <div style="max-width: 560px; margin: 12px auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <div style="padding: 40px 40px 32px 40px;">
+            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827; letter-spacing: -0.02em;">Security code</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 400; color: #6b7280; line-height: 1.5;">
+                Hello {{firstName}}, use this code to complete your sign in.
+            </p>
+        </div>
+        <div style="padding: 0 40px 32px 40px;">
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 24px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 600; letter-spacing: 0.25em; color: #111827; font-family: ''Courier New'', monospace;">
+                    {{code}}
+                </div>
+            </div>
+            <p style="margin: 20px 0 0 0; font-size: 13px; font-weight: 400; color: #9ca3af; text-align: center;">
+                This code expires in {{expiryMinutes}} minutes
+            </p>
+        </div>
+        <div style="padding: 24px 40px; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; line-height: 1.5;">
+                Never share this code with anyone. Fluera will never ask for this code.
+            </p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; font-size: 12px; font-weight: 400; color: #9ca3af; text-align: center;">
+                © {{currentYear}} Fluera. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>'
+WHERE category = '2fa_code' AND tenant_id = 0;
+
+
+-- =====================================================
+-- INSERT MENU PERMISSIONS FOR ACCESS CONTROL MODULE
+-- Links menu items to required permissions
+-- =====================================================
+
+-- Dashboard (No special permissions required - all users can access)
+-- Not inserting anything for dashboard as it's public
+
+-- Access Control - Main Menu (requires reading roles OR permissions)
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control', p.id, 0, 1
+FROM permissions p
+WHERE p.permission_key IN ('roles:read', 'permissions:read');
+
+-- Access Control > Roles
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.roles', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'roles:read';
+
+-- Access Control > Permissions
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.permissions', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'permissions:read';
+
+-- Access Control > Role Permissions
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.role-permissions', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'role-permissions:read';
+
+-- Access Control > User Roles
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.user-roles', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'user-roles:read';
+
+-- Access Control > Menu Permissions
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.menu-permissions', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'menu-permissions:read';
+
+-- Access Control > ABAC Attributes (future use)
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.attributes', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'system:manage';
+
+-- Access Control > ABAC Policies (future use)
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.policies', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'system:manage';
+
+-- Access Control > Policy Evaluation (future use)
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.policy-evaluation', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'system:manage';
+
+-- Access Control > Resource Attributes (future use)
+INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by)
+SELECT 'access-control.resource-attributes', p.id, 1, 1
+FROM permissions p
+WHERE p.permission_key = 'system:manage';
+
+-- =====================================================
+-- VERIFY INSERTS
+-- =====================================================
+SELECT 
+    mp.menu_key,
+    p.permission_key,
+    p.resource,
+    p.action,
+    mp.is_required,
+    mp.created_at
+FROM menu_permissions mp
+JOIN permissions p ON mp.permission_id = p.id
+ORDER BY mp.menu_key, p.permission_key;
+
+-- =====================================================
+-- CHECK WHICH MENUS A SPECIFIC USER CAN ACCESS
+-- =====================================================
+-- Replace @userId with actual user ID to test
+DECLARE @TestUserId INT = 5; -- Change this to test different users
+
+SELECT DISTINCT mp.menu_key
+FROM menu_permissions mp
+WHERE mp.is_required = 1
+  AND EXISTS (
+    SELECT 1 
+    FROM user_roles ur
+    JOIN role_permissions rp ON ur.role_id = rp.role_id
+    WHERE ur.user_id = @TestUserId 
+      AND ur.is_active = 1
+      AND rp.permission_id = mp.permission_id
+  )
+ORDER BY mp.menu_key;
