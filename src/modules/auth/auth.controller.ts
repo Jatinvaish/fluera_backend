@@ -244,15 +244,17 @@ export class AuthController {
   // MICROSOFT OAUTH FLOW
   // ============================================
 
+  
   @Get('microsoft')
   @Public()
   async microsoftLogin(@Res() res: FastifyReply) {
+    const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
     const redirectUri = `${process.env.APP_URL}/api/v1/auth/microsoft/callback`;
-    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
+    const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?` +
       `client_id=${process.env.MICROSOFT_CLIENT_ID}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&response_type=code` +
-      `&scope=${encodeURIComponent('openid profile email')}` +
+      `&scope=${encodeURIComponent('openid profile email User.Read')}` +
       `&response_mode=query`;
 
     return res.redirect(authUrl, 302);
@@ -274,11 +276,12 @@ export class AuthController {
     }
 
     try {
+      const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
       const redirectUri = `${process.env.APP_URL}/api/v1/auth/microsoft/callback`;
 
       // Exchange code for tokens
       const tokenResponse = await axios.post(
-        'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
         new URLSearchParams({
           code,
           client_id: process.env.MICROSOFT_CLIENT_ID!,
@@ -325,6 +328,7 @@ export class AuthController {
       );
     }
   }
+  
   @Get('sessions')
   async getUserSessions(@CurrentUser('id') userId: number) {
     return this.authService.getUserSessions(userId);

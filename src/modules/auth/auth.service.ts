@@ -508,24 +508,16 @@ export class AuthService {
 
       // ✅ USE SP INSTEAD OF INLINE SQL
       const tenantResult = await this.sqlService.execute('sp_CreateTenant', {
-        tenant_type: 'agency',
+        tenant_type: 'agency_admin',
         name: dto.name,
         slug: slug,
         owner_user_id: userId,
         timezone: dto.timezone || 'UTC',
         locale: 'en-US',
+        metadata: dto.metadata ? JSON.stringify(dto.metadata) : null,
       });
 
       const tenantId = tenantResult[0].id;
-
-      // // Create agency profile
-      // await transaction.request()
-      //   .input('tenantId', tenantId)
-      //   .input('industry', dto.industry || null)
-      //   .query(`
-      //   INSERT INTO agency_profiles (tenant_id, industry)
-      //   VALUES (@tenantId, @industry)
-      // `);
 
       // Update user details
       await transaction.request()
@@ -544,9 +536,14 @@ export class AuthService {
         WHERE id = @userId
       `);
 
+      // Get user email
+      const userEmail = await transaction.request()
+        .input('userId', userId)
+        .query('SELECT email FROM users WHERE id = @userId');
+
       const tokens = await this.generateTokens({
         id: userId,
-        email: (await transaction.request().input('userId', userId).query('SELECT email FROM users WHERE id = @userId')).recordset[0].email,
+        email: userEmail.recordset[0].email,
         userType: 'agency_admin',
         tenantId,
         onboardingRequired: false,
@@ -559,12 +556,25 @@ export class AuthService {
         tenantId,
         tenantType: 'agency',
         name: dto.name,
+        metadata: dto.metadata,
       }, tenantId);
 
-      await this.createAuditLog(userId, 'tenants', tenantId, 'CREATE', null, { name: dto.name }, tenantId);
+      await this.createAuditLog(userId, 'tenants', tenantId, 'CREATE', null, {
+        name: dto.name,
+        metadata: dto.metadata
+      }, tenantId);
 
       return {
         message: 'Agency created successfully',
+        user: {
+          id: userId,
+          email: userEmail.recordset[0].email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          userType: 'agency_admin',
+          tenantId,
+          onboardingRequired: false,
+        },
         tenantId,
         ...tokens,
       };
@@ -581,7 +591,7 @@ export class AuthService {
 
       // ✅ USE SP
       const tenantResult = await this.sqlService.execute('sp_CreateTenant', {
-        tenant_type: 'brand',
+        tenant_type: 'brand_admin',
         name: dto.name,
         slug: slug,
         owner_user_id: userId,
@@ -667,7 +677,7 @@ export class AuthService {
       const tenantKeys = this.encryptionService.generateTenantKey();
 
       const tenantResult = await this.sqlService.execute('sp_CreateTenant', {
-        tenant_type: 'creator',
+        tenant_type: 'creator_admin',
         name: dto.stageName || `${dto.firstName} ${dto.lastName}`,
         slug: slug,
         owner_user_id: userId,
