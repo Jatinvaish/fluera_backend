@@ -244,7 +244,7 @@ export class AuthController {
   // MICROSOFT OAUTH FLOW
   // ============================================
 
-  
+
   @Get('microsoft')
   @Public()
   async microsoftLogin(@Res() res: FastifyReply) {
@@ -328,7 +328,7 @@ export class AuthController {
       );
     }
   }
-  
+
   @Get('sessions')
   async getUserSessions(@CurrentUser('id') userId: number) {
     return this.authService.getUserSessions(userId);

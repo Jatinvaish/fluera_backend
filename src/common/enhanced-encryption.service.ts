@@ -131,7 +131,7 @@ export class EnhancedEncryptionService {
 
       // Deactivate any existing active keys
       await this.sqlService.query(
-        `UPDATE [dbo].[UserEncryptionKeys]
+        `UPDATE [dbo].[user_encryption_keys]
          SET status = 'inactive', updated_at = GETUTCDATE()
          WHERE user_id = @userId AND status = 'active'`,
         { userId }
@@ -143,7 +143,7 @@ export class EnhancedEncryptionService {
       // Get next key version
       const versionResult = await this.sqlService.query(
         `SELECT ISNULL(MAX(key_version), 0) + 1 as nextVersion 
-         FROM [dbo].[UserEncryptionKeys] 
+         FROM [dbo].[user_encryption_keys] 
          WHERE user_id = @userId`,
         { userId }
       );
@@ -152,7 +152,7 @@ export class EnhancedEncryptionService {
 
       // Insert new key
       const result = await this.sqlService.query(
-        `INSERT INTO [dbo].[UserEncryptionKeys] (
+        `INSERT INTO [dbo].[user_encryption_keys] (
           user_id,
           public_key_pem,
           encrypted_private_key_pem,
@@ -216,7 +216,7 @@ export class EnhancedEncryptionService {
           status,
           created_at,
           expires_at
-        FROM [dbo].[UserEncryptionKeys]
+        FROM [dbo].[user_encryption_keys]
         WHERE user_id = @userId
         AND status = 'active'
         AND (expires_at IS NULL OR expires_at > GETUTCDATE())
@@ -256,7 +256,7 @@ export class EnhancedEncryptionService {
       // Mark old key as rotated
       if (oldKeyId) {
         await this.sqlService.query(
-          `UPDATE [dbo].[UserEncryptionKeys]
+          `UPDATE [dbo].[user_encryption_keys]
            SET status = 'rotated', 
                revoked_at = GETUTCDATE(),
                revoke_reason = @reason,
