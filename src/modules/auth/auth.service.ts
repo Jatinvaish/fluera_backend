@@ -1123,6 +1123,7 @@ export class AuthService {
         userType: 'creator',
         tenantId,
         onboardingRequired: false,
+        onboardingCompleted: true,    
       });
 
       await this.createSession(userId, tokens.refreshToken, undefined, tenantId);
