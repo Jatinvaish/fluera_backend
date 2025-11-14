@@ -712,9 +712,6 @@ export class AuthService {
     }
   }
 
-  // Keep other unchanged methods like createAgency, createBrand, createCreator, etc.
-  // [Other methods remain the same...]
-
   async getUserSessions(userId: number) {
     const sessions = await this.sqlService.execute('sp_GetUserSessions', {
       userId,
