@@ -23,6 +23,8 @@ import { RbacService } from '../rbac/rbac.service';
         secret: config.get('jwt.secret'),
         signOptions: {
           expiresIn: config.get('jwt.accessTokenExpiry'),
+          issuer: config.get('jwt.issuer'),
+          audience: config.get('jwt.audience'),
         },
       }),
     }),
