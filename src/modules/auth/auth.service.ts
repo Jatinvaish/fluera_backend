@@ -863,7 +863,7 @@ export class AuthService {
 
       // ✅ USE SP INSTEAD OF INLINE SQL
       const tenantResult = await this.sqlService.execute('sp_CreateTenant', {
-        tenant_type: 'agency_admin',
+        tenant_type: 'agency',
         name: dto.name,
         slug: slug,
         owner_user_id: userId,
@@ -890,7 +890,6 @@ export class AuthService {
             updated_at = GETUTCDATE()
         WHERE id = @userId
       `);
-      console.log('798645123978')
 
       // Get user email
       const userEmail = await transaction.request()
@@ -905,11 +904,44 @@ export class AuthService {
         onboardingRequired: false,
       });
 
-      console.log('asdasdasdassasadsad')
-
       await this.createSession(userId, tokens.refreshToken, undefined, tenantId);
 
-      // Log events
+      // ✅ Audit log for tenant creation
+      await this.auditLogger.log({
+        tenantId,
+        userId,
+        entityType: 'tenants',
+        entityId: tenantId,
+        actionType: 'CREATE',
+        newValues: {
+          tenantType: 'agency',
+          name: dto.name,
+          slug,
+          timezone: dto.timezone || 'UTC',
+          metadata: dto.metadata,
+        },
+        severity: 'medium',
+      });
+
+      // ✅ Audit log for user role assignment
+      await this.auditLogger.log({
+        tenantId,
+        userId,
+        entityType: 'users',
+        entityId: userId,
+        actionType: 'UPDATE',
+        oldValues: { userType: 'pending' },
+        newValues: {
+          userType: 'agency_admin',
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          onboardingCompleted: true,
+        },
+        severity: 'medium',
+      });
+
+      // Log system event
       await this.logSystemEvent(userId, 'tenant.created', {
         tenantId,
         tenantType: 'agency',
@@ -934,10 +966,7 @@ export class AuthService {
     });
   }
 
-
-
   async createBrand(dto: CreateBrandDto, userId: number) {
-    // Implementation remains the same
     return this.sqlService.transaction(async (transaction) => {
       const slug = this.generateSlug(dto.name);
 
@@ -948,6 +977,7 @@ export class AuthService {
         owner_user_id: userId,
         timezone: 'UTC',
         locale: 'en-US',
+        metadata: dto.metadata ? JSON.stringify(dto.metadata) : null,
       });
 
       const tenantId = tenantResult[0].id;
@@ -961,43 +991,25 @@ export class AuthService {
         VALUES (@tenantId, @website, @industry)
       `);
 
-      const roleResult = await transaction.request()
-        .query(`SELECT id FROM roles WHERE name = 'brand_admin' AND is_system_role = 1`);
-
-      let roleId = null;
-      if (roleResult.recordset.length > 0) {
-        roleId = roleResult.recordset[0].id;
-
-        await transaction.request()
-          .input('userId', userId)
-          .input('roleId', roleId)
-          .query(`INSERT INTO user_roles (user_id, role_id, is_active) VALUES (@userId, @roleId, 1)`);
-      }
-
-      await transaction.request()
-        .input('tenantId', tenantId)
-        .input('userId', userId)
-        .input('roleId', roleId)
-        .query(`
-          INSERT INTO tenant_members (tenant_id, user_id, role_id, member_type, is_active)
-          VALUES (@tenantId, @userId, @roleId, 'staff', 1)
-        `);
-
       await transaction.request()
         .input('userId', userId)
         .input('firstName', dto.firstName)
         .input('lastName', dto.lastName)
         .input('phone', dto.phone || null)
         .query(`
-          UPDATE users 
-          SET first_name = @firstName, last_name = @lastName, phone = @phone,
-              user_type = 'brand_admin', onboarding_completed_at = GETUTCDATE()
-          WHERE id = @userId
-        `);
+        UPDATE users 
+        SET first_name = @firstName, last_name = @lastName, phone = @phone,
+            user_type = 'brand_admin', onboarding_completed_at = GETUTCDATE()
+        WHERE id = @userId
+      `);
+
+      const userEmail = await transaction.request()
+        .input('userId', userId)
+        .query('SELECT email FROM users WHERE id = @userId');
 
       const tokens = await this.generateTokens({
         id: userId,
-        email: (await transaction.request().input('userId', userId).query('SELECT email FROM users WHERE id = @userId')).recordset[0].email,
+        email: userEmail.recordset[0].email,
         userType: 'brand_admin',
         tenantId,
         onboardingRequired: false,
@@ -1005,13 +1017,60 @@ export class AuthService {
 
       await this.createSession(userId, tokens.refreshToken, undefined, tenantId);
 
+      // ✅ Audit log for tenant creation
+      await this.auditLogger.log({
+        tenantId,
+        userId,
+        entityType: 'tenants',
+        entityId: tenantId,
+        actionType: 'CREATE',
+        newValues: {
+          tenantType: 'brand',
+          name: dto.name,
+          slug,
+          website: dto.website,
+          industry: dto.industry,
+          metadata: dto.metadata,
+        },
+        severity: 'medium',
+      });
+
+      // ✅ Audit log for user role assignment
+      await this.auditLogger.log({
+        tenantId,
+        userId,
+        entityType: 'users',
+        entityId: userId,
+        actionType: 'UPDATE',
+        oldValues: { userType: 'pending' },
+        newValues: {
+          userType: 'brand_admin',
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          onboardingCompleted: true,
+        },
+        severity: 'medium',
+      });
+
+      // Log system event
       await this.logSystemEvent(userId, 'tenant.created', {
         tenantId,
-        tenantType: 'brand'
+        tenantType: 'brand',
+        metadata: dto.metadata,
       }, tenantId);
 
       return {
         message: 'Brand created successfully',
+        user: {
+          id: userId,
+          email: userEmail.recordset[0].email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          userType: 'brand_admin',
+          tenantId,
+          onboardingRequired: false,
+        },
         tenantId,
         ...tokens,
       };
@@ -1019,7 +1078,6 @@ export class AuthService {
   }
 
   async createCreator(dto: CreateCreatorDto, userId: number) {
-    // Implementation remains the same
     return this.sqlService.transaction(async (transaction) => {
       const slug = this.generateSlug(dto.stageName || `${dto.firstName}-${dto.lastName}`);
 
@@ -1030,6 +1088,7 @@ export class AuthService {
         owner_user_id: userId,
         timezone: 'UTC',
         locale: 'en-US',
+        metadata: dto.metadata ? JSON.stringify(dto.metadata) : null,
       });
 
       const tenantId = tenantResult[0].id;
@@ -1039,60 +1098,90 @@ export class AuthService {
         .input('stageName', dto.stageName || null)
         .input('bio', dto.bio || null)
         .query(`
-          INSERT INTO creator_profiles (tenant_id, stage_name, bio, availability_status)
-          VALUES (@tenantId, @stageName, @bio, 'available')
-        `);
-
-      const roleResult = await transaction.request()
-        .query(`SELECT id FROM roles WHERE name = 'creator' AND is_system_role = 1`);
-
-      let roleId = null;
-      if (roleResult.recordset.length > 0) {
-        roleId = roleResult.recordset[0].id;
-        await transaction.request()
-          .input('userId', userId)
-          .input('roleId', roleId)
-          .query(`INSERT INTO user_roles (user_id, role_id, is_active) VALUES (@userId, @roleId, 1)`);
-      }
-
-      await transaction.request()
-        .input('tenantId', tenantId)
-        .input('userId', userId)
-        .input('roleId', roleId)
-        .query(`
-          INSERT INTO tenant_members (tenant_id, user_id, role_id, member_type, is_active)
-          VALUES (@tenantId, @userId, @roleId, 'staff', 1)
-        `);
-
+        INSERT INTO creator_profiles (tenant_id, stage_name, bio, availability_status)
+        VALUES (@tenantId, @stageName, @bio, 'available')
+      `);
       await transaction.request()
         .input('userId', userId)
         .input('firstName', dto.firstName)
         .input('lastName', dto.lastName)
         .input('phone', dto.phone || null)
         .query(`
-          UPDATE users 
-          SET first_name = @firstName, last_name = @lastName, phone = @phone,
-              user_type = 'creator', onboarding_completed_at = GETUTCDATE()
-          WHERE id = @userId
-        `);
+        UPDATE users 
+        SET first_name = @firstName, last_name = @lastName, phone = @phone,
+            user_type = 'creator', onboarding_completed_at = GETUTCDATE()
+        WHERE id = @userId
+      `);
+
+      const userEmail = await transaction.request()
+        .input('userId', userId)
+        .query('SELECT email FROM users WHERE id = @userId');
 
       const tokens = await this.generateTokens({
         id: userId,
-        email: (await transaction.request().input('userId', userId).query('SELECT email FROM users WHERE id = @userId')).recordset[0].email,
+        email: userEmail.recordset[0].email,
         userType: 'creator',
         tenantId,
         onboardingRequired: false,
+        onboardingCompleted: true,    
       });
 
       await this.createSession(userId, tokens.refreshToken, undefined, tenantId);
 
+      // ✅ Audit log for tenant creation
+      await this.auditLogger.log({
+        tenantId,
+        userId,
+        entityType: 'tenants',
+        entityId: tenantId,
+        actionType: 'CREATE',
+        newValues: {
+          tenantType: 'creator',
+          name: dto.stageName || `${dto.firstName} ${dto.lastName}`,
+          slug,
+          stageName: dto.stageName,
+          bio: dto.bio,
+          metadata: dto.metadata,
+        },
+        severity: 'medium',
+      });
+
+      // ✅ Audit log for user role assignment
+      await this.auditLogger.log({
+        tenantId,
+        userId,
+        entityType: 'users',
+        entityId: userId,
+        actionType: 'UPDATE',
+        oldValues: { userType: 'pending' },
+        newValues: {
+          userType: 'creator',
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          onboardingCompleted: true,
+        },
+        severity: 'medium',
+      });
+
+      // Log system event
       await this.logSystemEvent(userId, 'tenant.created', {
         tenantId,
-        tenantType: 'creator'
+        tenantType: 'creator',
+        metadata: dto.metadata,
       }, tenantId);
 
       return {
         message: 'Creator profile created successfully',
+        user: {
+          id: userId,
+          email: userEmail.recordset[0].email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          userType: 'creator',
+          tenantId,
+          onboardingRequired: false,
+        },
         tenantId,
         ...tokens,
       };
