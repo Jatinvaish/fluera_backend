@@ -79,8 +79,20 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @Unencrypted() // IMPORTANT: Disable encryption for refresh endpoint
   async refresh(@Body() refreshDto: RefreshTokenDto) {
-    return this.authService.refreshToken(refreshDto.refreshToken);
+    try {
+      const result = await this.authService.refreshToken(refreshDto.refreshToken);
+
+      // Return in a simple format without encryption wrapper
+      return {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      };
+    } catch (error) {
+      console.error('Refresh token error:', error);
+      throw error;
+    }
   }
 
   @Post('logout')
