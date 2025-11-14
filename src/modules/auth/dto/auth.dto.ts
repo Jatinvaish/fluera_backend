@@ -41,7 +41,6 @@ export class RefreshTokenDto {
   @IsNotEmpty()
   refreshToken: string;
 }
-
 export class CreateAgencyDto {
   @IsNotEmpty()
   @IsString()
@@ -66,6 +65,9 @@ export class CreateAgencyDto {
   @IsOptional()
   @IsString()
   industry?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
 }
 
 export class CreateBrandDto {
@@ -92,6 +94,9 @@ export class CreateBrandDto {
   @IsOptional()
   @IsString()
   industry?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
 }
 
 export class CreateCreatorDto {
@@ -114,6 +119,9 @@ export class CreateCreatorDto {
   @IsOptional()
   @IsString()
   bio?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
 }
 
 export class ResetPasswordRequestDto {
@@ -129,4 +137,3 @@ export class ResetPasswordDto {
   @MinLength(8)
   newPassword: string;
 }
- 
