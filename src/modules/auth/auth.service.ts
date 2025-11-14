@@ -1,10 +1,10 @@
 // src/modules/auth/auth.service.ts - UPDATED FOR E2E ENCRYPTION
-import { 
-  Injectable, 
-  UnauthorizedException, 
-  ConflictException, 
-  BadRequestException, 
-  Logger 
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  Logger
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -107,13 +107,13 @@ export class AuthService {
       // Generate E2E encryption keys
       try {
         const keyData = await this.encryptionService.generateUserKeyPair(
-          userId, 
+          userId,
           registerDto.password
         );
 
         // Store encryption keys using stored procedure
         const keyId = await this.encryptionService.storeUserEncryptionKey(
-          userId, 
+          userId,
           keyData
         );
 
@@ -188,12 +188,12 @@ export class AuthService {
 
     // Check if user is SaaS owner
     const userRoles = user.roles ? user.roles.split(',') : [];
-    const isSaaSOwner = userRoles.includes('super_admin') || 
-                        userRoles.includes('saas_admin') || 
-                        user.is_super_admin;
+    const isSaaSOwner = userRoles.includes('super_admin') ||
+      userRoles.includes('saas_admin') ||
+      user.is_super_admin;
 
     // Log event
-    await this.logSystemEvent(user.id, 'user.email_verified', { 
+    await this.logSystemEvent(user.id, 'user.email_verified', {
       email,
       hasEncryptionKeys: !!userKey,
     });
@@ -271,7 +271,7 @@ export class AuthService {
       }
 
       const user = users[0];
-      
+
       // Verify password
       if (!user?.password_hash) {
         throw new UnauthorizedException('Invalid credentials');
@@ -322,9 +322,9 @@ export class AuthService {
 
       // Check roles
       const userRoles = user.roles ? user.roles.split(',') : [];
-      const isSaaSOwner = userRoles.includes('super_admin') || 
-                          userRoles.includes('saas_admin') || 
-                          user.is_super_admin;
+      const isSaaSOwner = userRoles.includes('super_admin') ||
+        userRoles.includes('saas_admin') ||
+        user.is_super_admin;
 
       let primaryTenant = null;
       let tenants: any = [];
@@ -377,9 +377,9 @@ export class AuthService {
       this.auditLogger.logAuth(
         user.id,
         'LOGIN',
-        { 
-          tenantId: primaryTenant, 
-          deviceInfo, 
+        {
+          tenantId: primaryTenant,
+          deviceInfo,
           isSaaSOwner,
           hasEncryptionKeys: !!userKey,
         },
@@ -446,8 +446,8 @@ export class AuthService {
       // Rotate encryption keys with new password
       try {
         await this.encryptionService.rotateUserKey(
-          resetToken.user_id, 
-          newPassword, 
+          resetToken.user_id,
+          newPassword,
           'password_reset'
         );
         this.logger.log(`Encryption keys rotated for user ${resetToken.user_id} after password reset`);
@@ -491,11 +491,11 @@ export class AuthService {
 
       if (socialAccount.recordset.length > 0) {
         user = socialAccount.recordset[0];
-        
+
         // Check if user has encryption keys
         const userKey = await this.encryptionService.getUserActiveKey(user.user_id);
         hasEncryptionKeys = !!userKey;
-        
+
         // Update tokens
         await transaction.request()
           .input('id', user.user_id)
@@ -543,12 +543,12 @@ export class AuthService {
           const tempPassword = this.hashingService.generateRandomToken(32);
           try {
             const keyData = await this.encryptionService.generateUserKeyPair(
-              user.id, 
+              user.id,
               tempPassword
             );
             await this.encryptionService.storeUserEncryptionKey(user.id, keyData);
             hasEncryptionKeys = true;
-            
+
             // TODO: Send email to user about setting up their password
             // to properly encrypt their private key
           } catch (error) {
@@ -596,7 +596,7 @@ export class AuthService {
       });
 
       await this.createSession(user.user_id || user.id, tokens.refreshToken, deviceInfo, primaryTenant);
-      
+
       // Log event
       await this.logSystemEvent(user.user_id || user.id, `user.social_login.${provider}`, {
         email: user.email,
@@ -854,22 +854,27 @@ export class AuthService {
   }
 
   // Keep createAgency, createBrand, createCreator methods unchanged
+
+
+
   async createAgency(dto: CreateAgencyDto, userId: number) {
-    // Implementation remains the same
     return this.sqlService.transaction(async (transaction) => {
       const slug = this.generateSlug(dto.name);
 
+      // ✅ USE SP INSTEAD OF INLINE SQL
       const tenantResult = await this.sqlService.execute('sp_CreateTenant', {
-        tenant_type: 'agency',
+        tenant_type: 'agency_admin',
         name: dto.name,
         slug: slug,
         owner_user_id: userId,
         timezone: dto.timezone || 'UTC',
         locale: 'en-US',
+        metadata: dto.metadata ? JSON.stringify(dto.metadata) : null,
       });
 
       const tenantId = tenantResult[0].id;
 
+      // Update user details
       await transaction.request()
         .input('userId', userId)
         .input('firstName', dto.firstName)
@@ -885,30 +890,51 @@ export class AuthService {
             updated_at = GETUTCDATE()
         WHERE id = @userId
       `);
+      console.log('798645123978')
+
+      // Get user email
+      const userEmail = await transaction.request()
+        .input('userId', userId)
+        .query('SELECT email FROM users WHERE id = @userId');
 
       const tokens = await this.generateTokens({
         id: userId,
-        email: (await transaction.request().input('userId', userId).query('SELECT email FROM users WHERE id = @userId')).recordset[0].email,
+        email: userEmail.recordset[0].email,
         userType: 'agency_admin',
         tenantId,
         onboardingRequired: false,
       });
 
+      console.log('asdasdasdassasadsad')
+
       await this.createSession(userId, tokens.refreshToken, undefined, tenantId);
 
+      // Log events
       await this.logSystemEvent(userId, 'tenant.created', {
         tenantId,
         tenantType: 'agency',
         name: dto.name,
+        metadata: dto.metadata,
       }, tenantId);
 
       return {
         message: 'Agency created successfully',
+        user: {
+          id: userId,
+          email: userEmail.recordset[0].email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          userType: 'agency_admin',
+          tenantId,
+          onboardingRequired: false,
+        },
         tenantId,
         ...tokens,
       };
     });
   }
+
+
 
   async createBrand(dto: CreateBrandDto, userId: number) {
     // Implementation remains the same
@@ -979,9 +1005,9 @@ export class AuthService {
 
       await this.createSession(userId, tokens.refreshToken, undefined, tenantId);
 
-      await this.logSystemEvent(userId, 'tenant.created', { 
-        tenantId, 
-        tenantType: 'brand' 
+      await this.logSystemEvent(userId, 'tenant.created', {
+        tenantId,
+        tenantType: 'brand'
       }, tenantId);
 
       return {
@@ -1060,9 +1086,9 @@ export class AuthService {
 
       await this.createSession(userId, tokens.refreshToken, undefined, tenantId);
 
-      await this.logSystemEvent(userId, 'tenant.created', { 
-        tenantId, 
-        tenantType: 'creator' 
+      await this.logSystemEvent(userId, 'tenant.created', {
+        tenantId,
+        tenantType: 'creator'
       }, tenantId);
 
       return {
