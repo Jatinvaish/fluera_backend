@@ -22,16 +22,18 @@ export class ResourcePermissionGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const user = request.user;
-    const tenantId = request.tenant?.id || request.user?.tenantId;
+
+    // ✅ Get tenantId - may be NULL for global admins
+    const tenantId = request.tenant?.id || request.user?.tenantId || null;
 
     const resourceId = config.extractResourceId
       ? config.extractResourceId(request)
       : request.params.id;
 
-    // ✅ USE SP FOR PERMISSION CHECK
+    // ✅ Check permission with nullable tenantId
     const hasPermission = await this.permissionsService.checkResourcePermission(
       user.id,
-      tenantId,
+      tenantId, // ✅ Can be NULL
       config.resourceType,
       Number(resourceId),
       config.permissionType,

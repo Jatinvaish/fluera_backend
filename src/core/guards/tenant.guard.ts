@@ -13,15 +13,21 @@ export class TenantGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private databaseService: SqlServerService,
-  ) {}
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
+    // ✅ Global admins can access without tenant
+    if (user.userType === 'super_admin' ||
+      user.userType === 'owner' ||
+      user.userType === 'saas_admin') {
+      return true; // ✅ ALLOW
+    }
+
     // Extract tenant ID from header or subdomain
-    const tenantId =
-      request.headers['x-tenant-id'] ||
+    const tenantId = request.headers['x-tenant-id'] ||
       this.extractTenantFromSubdomain(request.hostname);
 
     if (!tenantId) {
@@ -31,9 +37,9 @@ export class TenantGuard implements CanActivate {
     // Check if user has access to this tenant
     const membership = await this.databaseService.query(
       `SELECT * FROM [dbo].[tenant_members] 
-       WHERE user_id = @userId 
-         AND tenant_id = @tenantId 
-         AND status = 'active'`,
+     WHERE user_id = @userId 
+       AND tenant_id = @tenantId 
+       AND is_active = 1`,
       { userId: user.id, tenantId },
     );
 
@@ -41,7 +47,6 @@ export class TenantGuard implements CanActivate {
       throw new ForbiddenException('Access denied to this tenant');
     }
 
-    // Attach tenant info to request
     request.tenant = {
       id: tenantId,
       role: membership[0].role_type,
