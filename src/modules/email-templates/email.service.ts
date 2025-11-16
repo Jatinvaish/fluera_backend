@@ -58,7 +58,7 @@ export class EmailService {
 
     const variables = {
       firstName,
-      loginUrl: this.configService.get<string>('APP_URL') + '/login',
+      loginUrl: this.configService.get<string>('FRONTEND_URL') + '/login',
       currentYear: new Date().getFullYear(),
     };
 
@@ -79,7 +79,7 @@ export class EmailService {
   async sendPasswordResetEmail(email: string, token: string): Promise<void> {
     const template = await this.getEmailTemplate(null, 'password_reset');
 
-    const resetLink = `${this.configService.get<string>('APP_URL')}/reset-password?token=${token}`;
+    const resetLink = `${this.configService.get<string>('FRONTEND_URL')}/reset-password?token=${token}`;
 
     const variables = {
       resetLink,
