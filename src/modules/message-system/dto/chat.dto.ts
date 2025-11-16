@@ -1,18 +1,19 @@
 // ============================================
 // modules/chat/dto/chat.dto.ts - FIXED v3.0
 // ============================================
-import { 
-  IsString, 
-  IsOptional, 
-  IsBoolean, 
-  IsNumber, 
-  IsArray, 
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+  IsArray,
   IsEnum,
   MaxLength,
   MinLength,
   IsNotEmpty,
   ValidateNested,
-  IsObject
+  IsObject,
+  isNumber,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -24,7 +25,7 @@ export enum ChannelType {
   CAMPAIGN = 'campaign',
   PROJECT = 'project',
   PUBLIC = 'public',
-  PRIVATE = 'private'
+  PRIVATE = 'private',
 }
 
 export class CreateChannelDto {
@@ -98,7 +99,7 @@ export enum MemberRole {
   OWNER = 'owner',
   ADMIN = 'admin',
   MEMBER = 'member',
-  GUEST = 'guest'
+  GUEST = 'guest',
 }
 
 export class AddChannelMembersDto {
@@ -142,7 +143,7 @@ export class UpdateMemberNotificationDto {
   @IsObject()
   @IsOptional()
   notificationSettings?: any;
-  
+
   @IsNumber() // ✅ FIXED: Changed from string to number
   channelId: number;
 }
@@ -157,7 +158,7 @@ export enum MessageType {
   AUDIO = 'audio',
   SYSTEM = 'system',
   POLL = 'poll',
-  CODE = 'code'
+  CODE = 'code',
 }
 
 export class SendMessageDto {

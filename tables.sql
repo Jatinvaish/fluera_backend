@@ -1940,6 +1940,32 @@ CREATE TABLE [dbo].[password_reset_tokens] (
         [updated_by] BIGINT
     );
 
+CREATE TABLE [dbo].[message_encryption_audit] (
+        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+        [message_id] BIGINT NOT NULL,
+        [channel_id] BIGINT NOT NULL,
+        [sender_user_id] BIGINT NOT NULL,
+        
+        -- Encryption Details
+        [sender_key_version] INT NOT NULL,
+        [channel_key_version] INT NOT NULL,
+        [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+        [key_fingerprint] NVARCHAR(64),
+        
+        -- Decryption Tracking
+        [decryption_attempts] INT DEFAULT 0,
+        [successful_decryptions] INT DEFAULT 0,
+        [failed_decryptions] INT DEFAULT 0,
+        [last_decryption_attempt_at] DATETIME2(7) NULL,
+        
+        -- Compliance
+        [encryption_verified] BIT DEFAULT 1,
+        [verified_at] DATETIME2(7),
+        [verified_by] BIGINT,
+        
+        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+        [created_by] BIGINT
+    );
 -- ==================== TENANT MEMBERSHIP ====================
 
 CREATE TABLE [dbo].[tenant_members] (

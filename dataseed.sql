@@ -528,6 +528,30 @@ CREATE TABLE [dbo].[chat_channels] (
 
 CREATE INDEX [IX_channels_tenant] ON [dbo].[chat_channels] ([created_by_tenant_id]);
 
+CREATE TABLE [dbo].[chat_channel_keys] (
+    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [channel_id] BIGINT NOT NULL,
+    
+    -- ✅ CRITICAL: Master-key-encrypted channel key
+    [key_material_encrypted] NVARCHAR(MAX) NOT NULL, -- Encrypted with master key
+    [key_fingerprint] NVARCHAR(64) NOT NULL,
+    
+    [algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+    [key_version] INT NOT NULL,
+    [status] NVARCHAR(20) DEFAULT 'active',
+    
+    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [expires_at] DATETIME2(7) NULL,
+    [rotated_from_key_id] BIGINT NULL,
+    
+    [created_by] BIGINT,
+    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    
+    FOREIGN KEY ([channel_id]) REFERENCES [dbo].[chat_channels]([id]),
+    UNIQUE([channel_id], [key_version])
+);
+
+
 CREATE TABLE [dbo].[chat_participants] (
     [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
     [channel_id] BIGINT NOT NULL,
@@ -556,6 +580,14 @@ CREATE TABLE [dbo].[chat_participants] (
 
 CREATE INDEX [IX_chat_participants_channel] ON [dbo].[chat_participants] ([channel_id], [is_active]);
 CREATE INDEX [IX_chat_participants_user] ON [dbo].[chat_participants] ([user_id], [is_active]);
+
+ALTER TABLE [dbo].[chat_participants] ADD
+    [channel_key_version] INT NOT NULL DEFAULT 1, -- Which key version they have
+    [last_key_sync_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [can_decrypt_all] BIT DEFAULT 1, -- Can decrypt all messages or just new ones?
+    [decryption_failures] INT DEFAULT 0,
+    [last_decryption_failure_at] DATETIME2(7) NULL;
+
 
 CREATE TABLE [dbo].[messages] (
     [id] BIGINT IDENTITY(1,1) PRIMARY KEY,

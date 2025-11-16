@@ -1,4 +1,4 @@
-// src/common/enhanced-encryption.service.ts - FIXED VERSION
+// src/common/enhanced-encryption.service.ts - COMPLETE FIXED VERSION
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SqlServerService } from '../core/database/sql-server.service';
@@ -8,6 +8,8 @@ interface UserKeyData {
   id: number;
   user_id: number;
   public_key_pem: string;
+  encrypted_private_key_pem: string;
+  backup_encrypted_private_key: string;
   key_fingerprint: string;
   key_fingerprint_short: string;
   key_version: number;
@@ -46,55 +48,45 @@ export class EnhancedEncryptionService {
     }
 
     // Derive master key using PBKDF2 for better security
-    const masterSalt = this.configService.get('encryption.masterSalt') || 'fluera-platform-master-salt-v3';
+    const masterSalt =
+      this.configService.get('encryption.masterSalt') ||
+      'fluera-platform-master-salt-v3';
     this.masterKey = crypto.pbkdf2Sync(
       key,
       masterSalt,
       this.PBKDF2_ITERATIONS,
       this.KEY_LENGTH,
-      'sha256'
+      'sha256',
     );
   }
 
   /**
    * 🔒 Generate RSA-4096 key pair for E2E encryption with backup
    */
-  async generateUserKeyPair(userId: number, password: string): Promise<KeyGenerationResult> {
+  async generateUserKeyPair(
+    userId: number,
+    password: string,
+  ): Promise<KeyGenerationResult> {
     try {
-      this.logger.log(`Generating RSA-${this.RSA_KEY_SIZE} key pair for user ${userId}`);
+      this.logger.log(
+        `Generating RSA-${this.RSA_KEY_SIZE} key pair for user ${userId}`,
+      );
 
       // Generate RSA-4096 key pair
       const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
         modulusLength: this.RSA_KEY_SIZE,
-        publicKeyEncoding: { 
-          type: 'spki', 
-          format: 'pem' 
+        publicKeyEncoding: {
+          type: 'spki',
+          format: 'pem',
         },
-        privateKeyEncoding: { 
-          type: 'pkcs8', 
-          format: 'pem' 
+        privateKeyEncoding: {
+          type: 'pkcs8',
+          format: 'pem',
         },
       });
 
       // Encrypt private key with user's password-derived key
-      const salt = crypto.randomBytes(this.SALT_LENGTH);
-      const derivedKey = crypto.pbkdf2Sync(
-        password, 
-        salt, 
-        this.PBKDF2_ITERATIONS, 
-        this.KEY_LENGTH, 
-        'sha256'
-      );
-
-      const iv = crypto.randomBytes(this.IV_LENGTH);
-      const cipher = crypto.createCipheriv(this.ALGORITHM, derivedKey, iv);
-
-      let encrypted = cipher.update(privateKey, 'utf8', 'hex');
-      encrypted += cipher.final('hex');
-      const authTag = cipher.getAuthTag();
-
-      // Format: salt:iv:authTag:encrypted
-      const encryptedPrivateKey = `${salt.toString('hex')}:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+      const encryptedPrivateKey = this.encryptUserPrivateKey(privateKey, password);
 
       // Create backup encrypted with master key (for recovery)
       const backupEncryptedPrivateKey = await this.encryptWithMasterKey(privateKey);
@@ -105,7 +97,9 @@ export class EnhancedEncryptionService {
         .update(publicKey)
         .digest('hex');
 
-      this.logger.log(`Key pair generated successfully for user ${userId}, fingerprint: ${keyFingerprint.substring(0, 16)}`);
+      this.logger.log(
+        `Key pair generated successfully for user ${userId}, fingerprint: ${keyFingerprint.substring(0, 16)}`,
+      );
 
       return {
         publicKey,
@@ -114,17 +108,20 @@ export class EnhancedEncryptionService {
         keyFingerprint,
       };
     } catch (error) {
-      this.logger.error(`Failed to generate key pair for user ${userId}`, error);
+      this.logger.error(
+        `Failed to generate key pair for user ${userId}`,
+        error,
+      );
       throw new Error('Failed to generate encryption keys');
     }
   }
 
   /**
-   * 🔒 Store user encryption keys in database (FIXED - Direct SQL instead of SP)
+   * 🔒 Store user encryption keys in database
    */
   async storeUserEncryptionKey(
-    userId: number, 
-    keyData: KeyGenerationResult
+    userId: number,
+    keyData: KeyGenerationResult,
   ): Promise<number> {
     try {
       this.logger.log(`Storing encryption keys for user ${userId}`);
@@ -134,7 +131,7 @@ export class EnhancedEncryptionService {
         `UPDATE [dbo].[user_encryption_keys]
          SET status = 'inactive', updated_at = GETUTCDATE()
          WHERE user_id = @userId AND status = 'active'`,
-        { userId }
+        { userId },
       );
 
       // Calculate fingerprints
@@ -145,9 +142,9 @@ export class EnhancedEncryptionService {
         `SELECT ISNULL(MAX(key_version), 0) + 1 as nextVersion 
          FROM [dbo].[user_encryption_keys] 
          WHERE user_id = @userId`,
-        { userId }
+        { userId },
       );
-      
+
       const keyVersion = versionResult[0]?.nextVersion || 1;
 
       // Insert new key
@@ -188,20 +185,25 @@ export class EnhancedEncryptionService {
           backupKey: keyData.backupEncryptedPrivateKey,
           backupCreatedAt: keyData.backupEncryptedPrivateKey ? new Date() : null,
           keyVersion,
-        }
+        },
       );
 
       const keyId = result[0]?.id;
-      this.logger.log(`Encryption keys stored for user ${userId}, key ID: ${keyId}`);
+      this.logger.log(
+        `Encryption keys stored for user ${userId}, key ID: ${keyId}`,
+      );
       return keyId;
     } catch (error) {
-      this.logger.error(`Failed to store encryption keys for user ${userId}`, error);
+      this.logger.error(
+        `Failed to store encryption keys for user ${userId}`,
+        error,
+      );
       throw error;
     }
   }
 
   /**
-   * 🔒 Get user's active encryption key (FIXED - Direct SQL)
+   * 🔒 Get user's active encryption key
    */
   async getUserActiveKey(userId: number): Promise<UserKeyData | null> {
     try {
@@ -210,6 +212,8 @@ export class EnhancedEncryptionService {
           id,
           user_id,
           public_key_pem,
+          encrypted_private_key_pem,
+          backup_encrypted_private_key,
           key_fingerprint,
           key_fingerprint_short,
           key_version,
@@ -221,7 +225,7 @@ export class EnhancedEncryptionService {
         AND status = 'active'
         AND (expires_at IS NULL OR expires_at > GETUTCDATE())
         ORDER BY key_version DESC`,
-        { userId }
+        { userId },
       );
 
       if (result && result.length > 0) {
@@ -236,15 +240,17 @@ export class EnhancedEncryptionService {
   }
 
   /**
-   * 🔒 Rotate user encryption key (FIXED - Direct SQL)
+   * 🔒 Rotate user encryption key
    */
   async rotateUserKey(
-    userId: number, 
-    newPassword: string, 
-    reason: string = 'scheduled'
+    userId: number,
+    newPassword: string,
+    reason: string = 'scheduled',
   ): Promise<void> {
     try {
-      this.logger.log(`Rotating encryption key for user ${userId}, reason: ${reason}`);
+      this.logger.log(
+        `Rotating encryption key for user ${userId}, reason: ${reason}`,
+      );
 
       // Generate new key pair
       const newKeyData = await this.generateUserKeyPair(userId, newPassword);
@@ -263,7 +269,7 @@ export class EnhancedEncryptionService {
                updated_at = GETUTCDATE(),
                updated_by = @userId
            WHERE id = @keyId`,
-          { keyId: oldKeyId, reason, userId }
+          { keyId: oldKeyId, reason, userId },
         );
       }
 
@@ -278,11 +284,41 @@ export class EnhancedEncryptionService {
   }
 
   /**
+   * 🔒 Encrypt user's private key with password
+   */
+  encryptUserPrivateKey(privateKey: string, password: string): string {
+    try {
+      const salt = crypto.randomBytes(this.SALT_LENGTH);
+      const derivedKey = crypto.pbkdf2Sync(
+        password,
+        salt,
+        this.PBKDF2_ITERATIONS,
+        this.KEY_LENGTH,
+        'sha256',
+      );
+
+      const iv = crypto.randomBytes(this.IV_LENGTH);
+      const cipher = crypto.createCipheriv(this.ALGORITHM, derivedKey, iv);
+
+      let encrypted = cipher.update(privateKey, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      const authTag = cipher.getAuthTag();
+
+      // Format: salt:iv:authTag:encrypted
+      return `${salt.toString('hex')}:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+    } catch (error) {
+      this.logger.error('Private key encryption failed', error);
+      throw new Error('Private key encryption failed');
+    }
+  }
+
+  /**
    * 🔒 Decrypt user's private key
    */
   decryptUserPrivateKey(encryptedPrivateKey: string, password: string): string {
     try {
-      const [saltHex, ivHex, authTagHex, encryptedHex] = encryptedPrivateKey.split(':');
+      const [saltHex, ivHex, authTagHex, encryptedHex] =
+        encryptedPrivateKey.split(':');
 
       if (!saltHex || !ivHex || !authTagHex || !encryptedHex) {
         throw new Error('Invalid encrypted private key format');
@@ -294,11 +330,11 @@ export class EnhancedEncryptionService {
       const encrypted = Buffer.from(encryptedHex, 'hex');
 
       const derivedKey = crypto.pbkdf2Sync(
-        password, 
-        salt, 
-        this.PBKDF2_ITERATIONS, 
-        this.KEY_LENGTH, 
-        'sha256'
+        password,
+        salt,
+        this.PBKDF2_ITERATIONS,
+        this.KEY_LENGTH,
+        'sha256',
       );
 
       const decipher = crypto.createDecipheriv(this.ALGORITHM, derivedKey, iv);
@@ -317,7 +353,7 @@ export class EnhancedEncryptionService {
   /**
    * 🔒 Encrypt with master key (for backups)
    */
-  private async encryptWithMasterKey(data: string): Promise<string> {
+  async encryptWithMasterKey(data: string): Promise<string> {
     const iv = crypto.randomBytes(this.IV_LENGTH);
     const cipher = crypto.createCipheriv(this.ALGORITHM, this.masterKey, iv);
 
@@ -345,7 +381,11 @@ export class EnhancedEncryptionService {
       const authTag = Buffer.from(authTagHex, 'hex');
       const encrypted = Buffer.from(encryptedHex, 'hex');
 
-      const decipher = crypto.createDecipheriv(this.ALGORITHM, this.masterKey, iv);
+      const decipher = crypto.createDecipheriv(
+        this.ALGORITHM,
+        this.masterKey,
+        iv,
+      );
       decipher.setAuthTag(authTag);
 
       let decrypted = decipher.update(encrypted);
@@ -368,7 +408,10 @@ export class EnhancedEncryptionService {
   /**
    * 🔒 Encrypt message with AES-256-GCM
    */
-  encryptMessage(content: string, channelKey: string): {
+  encryptMessage(
+    content: string,
+    channelKey: string,
+  ): {
     encryptedContent: string;
     iv: string;
     authTag: string;
@@ -387,7 +430,7 @@ export class EnhancedEncryptionService {
       encrypted += cipher.final('hex');
 
       const authTag = cipher.getAuthTag();
-      
+
       // Generate content hash for integrity verification
       const contentHash = crypto
         .createHash('sha256')
@@ -413,14 +456,18 @@ export class EnhancedEncryptionService {
     encryptedContent: string,
     channelKey: string,
     iv: string,
-    authTag: string
+    authTag: string,
   ): string {
     try {
       const keyBuffer = Buffer.from(channelKey, 'hex');
       const ivBuffer = Buffer.from(iv, 'hex');
       const authTagBuffer = Buffer.from(authTag, 'hex');
 
-      const decipher = crypto.createDecipheriv(this.ALGORITHM, keyBuffer, ivBuffer);
+      const decipher = crypto.createDecipheriv(
+        this.ALGORITHM,
+        keyBuffer,
+        ivBuffer,
+      );
       decipher.setAuthTag(authTagBuffer);
 
       let decrypted = decipher.update(encryptedContent, 'hex', 'utf8');
@@ -445,7 +492,7 @@ export class EnhancedEncryptionService {
           padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
           oaepHash: 'sha256',
         },
-        buffer
+        buffer,
       );
       return encrypted.toString('base64');
     } catch (error) {
@@ -466,7 +513,7 @@ export class EnhancedEncryptionService {
           padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
           oaepHash: 'sha256',
         },
-        buffer
+        buffer,
       );
       return decrypted.toString('utf8');
     } catch (error) {
@@ -491,7 +538,7 @@ export class EnhancedEncryptionService {
       const calculated = this.generateHMAC(data, secret);
       return crypto.timingSafeEqual(
         Buffer.from(calculated, 'hex'),
-        Buffer.from(signature, 'hex')
+        Buffer.from(signature, 'hex'),
       );
     } catch {
       return false;
@@ -509,9 +556,87 @@ export class EnhancedEncryptionService {
    * 🔒 Calculate key fingerprint
    */
   calculateKeyFingerprint(publicKeyPem: string): string {
-    return crypto
-      .createHash('sha256')
-      .update(publicKeyPem)
-      .digest('hex');
+    return crypto.createHash('sha256').update(publicKeyPem).digest('hex');
+  }
+
+  /**
+   * ✅ Change user password and re-encrypt private key
+   */
+  async changeUserPassword(
+    userId: number,
+    oldPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const userKey = await this.getUserActiveKey(userId);
+    if (!userKey) {
+      throw new BadRequestException('User encryption keys not found');
+    }
+
+    // Decrypt with old password
+    let privateKey: string;
+    try {
+      privateKey = this.decryptUserPrivateKey(
+        userKey.encrypted_private_key_pem,
+        oldPassword,
+      );
+    } catch (error) {
+      throw new BadRequestException('Incorrect old password');
+    }
+
+    // Re-encrypt with new password
+    const newEncryptedPrivateKey = this.encryptUserPrivateKey(
+      privateKey,
+      newPassword,
+    );
+
+    // Update database
+    await this.sqlService.query(
+      `UPDATE user_encryption_keys 
+       SET encrypted_private_key_pem = @newEncrypted,
+           updated_at = GETUTCDATE()
+       WHERE user_id = @userId AND status = 'active'`,
+      { newEncrypted: newEncryptedPrivateKey, userId },
+    );
+  }
+
+  /**
+   * ✅ Admin recover user access
+   */
+  async recoverUserAccess(
+    userId: number,
+    adminUserId: number,
+    newPassword: string,
+  ): Promise<void> {
+    // Get backup encrypted private key
+    const userKeyResult = await this.sqlService.query(
+      `SELECT backup_encrypted_private_key 
+       FROM user_encryption_keys 
+       WHERE user_id = @userId AND status = 'active'`,
+      { userId },
+    );
+
+    if (!userKeyResult?.[0]?.backup_encrypted_private_key) {
+      throw new BadRequestException('No backup key found for user');
+    }
+
+    // Decrypt with master key
+    const privateKey = await this.decryptWithMasterKey(
+      userKeyResult[0].backup_encrypted_private_key,
+    );
+
+    // Re-encrypt with new password
+    const newEncryptedPrivateKey = this.encryptUserPrivateKey(
+      privateKey,
+      newPassword,
+    );
+
+    // Update database
+    await this.sqlService.query(
+      `UPDATE user_encryption_keys 
+       SET encrypted_private_key_pem = @newEncrypted,
+           updated_at = GETUTCDATE()
+       WHERE user_id = @userId AND status = 'active'`,
+      { newEncrypted: newEncryptedPrivateKey, userId },
+    );
   }
 }
