@@ -14,7 +14,7 @@ import { SqlServerService } from '../database';
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
 
-  constructor(private databaseService: SqlServerService) {}
+  constructor(private databaseService: SqlServerService) { }
 
   async catch(exception: unknown, host: ArgumentsHost): Promise<void> {
     const ctx = host.switchToHttp();
@@ -65,7 +65,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       reply.status(status).send(errorResponse);
     } catch (err) {
       this.logger.error('Failed to send error response:', err);
-      
+
       // Fallback: try raw response
       if (!reply.sent) {
         try {
@@ -87,9 +87,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     try {
       await this.databaseService.execute('[dbo].[sp_CreateErrorLog]', {
         user_id: (request as any).user?.id || null,
-        tenant_id: (request as any).tenant?.id || null,
-        error_type:
-          exception instanceof HttpException ? exception.name : 'UnknownError',
+        tenant_id: (request as any).tenant?.id || (request as any).user?.tenantId || null, // ✅ Can be NULL
+        error_type: exception instanceof HttpException ? exception.name : 'UnknownError',
         error_message: errorMessage,
         stack_trace: exception instanceof Error ? exception.stack : null,
         request_url: request.url,
@@ -102,6 +101,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           headers: request.headers,
           params: request.params,
           query: request.query,
+          isGlobalAdmin: (request as any).user?.userType === 'super_admin', // ✅ ADD
         }),
       });
     } catch (logError) {
