@@ -1909,6 +1909,37 @@ CREATE TABLE [dbo].[password_reset_tokens] (
     [updated_by] BIGINT
 );
 
+ CREATE TABLE [dbo].[user_encryption_keys] (
+        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+        [user_id] BIGINT NOT NULL UNIQUE,
+        -- RSA Key Pair (4096-bit)
+        [public_key_pem] NVARCHAR(MAX) NOT NULL,
+        [encrypted_private_key_pem] NVARCHAR(MAX) NOT NULL,
+        -- Key Metadata
+        [key_algorithm] NVARCHAR(50) DEFAULT 'RSA-4096',
+        [key_encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+        [key_fingerprint] NVARCHAR(64) NOT NULL,
+        [key_fingerprint_short] NVARCHAR(16) NOT NULL,
+        -- Key Status
+        [status] NVARCHAR(20) DEFAULT 'active',
+        [key_version] INT DEFAULT 1,
+        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+        [expires_at] DATETIME2(7) NULL,
+        [revoked_at] DATETIME2(7) NULL,
+        [revoke_reason] NVARCHAR(MAX) NULL,
+        -- Backup (Master key encrypted)
+        [backup_encrypted_private_key] NVARCHAR(MAX) NULL,
+        [backup_created_at] DATETIME2(7) NULL,
+        -- Rotation
+        [rotated_from_key_id] BIGINT NULL,
+        [next_rotation_at] DATETIME2(7) NULL,
+        [rotation_required] BIT DEFAULT 0,
+        -- Audit
+        [created_by] BIGINT,
+        [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+        [updated_by] BIGINT
+    );
+
 -- ==================== TENANT MEMBERSHIP ====================
 
 CREATE TABLE [dbo].[tenant_members] (
