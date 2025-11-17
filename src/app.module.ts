@@ -1,5 +1,5 @@
 // ============================================
-// UPDATED app.module.ts - With Tenant Context Middleware
+// src/app.module.ts - UPDATED
 // ============================================
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -17,7 +17,7 @@ import { CommonModule } from './common/common.module';
 import { LoggerMiddleware } from './core/middlewares/logger.middleware';
 import { CorrelationIdMiddleware } from './core/middlewares/correlation-id.middleware';
 import { EncryptionDefaultMiddleware } from './core/middlewares/encryption-default.middleware';
-import { TenantContextMiddleware } from './core/middlewares/tenant-context.middleware'; // ✅ NEW
+import { TenantContextMiddleware } from './core/middlewares/tenant-context.middleware';
 
 // Guards
 import { JwtAuthGuard } from './core/guards/jwt-auth.guard';
@@ -30,7 +30,7 @@ import { AuditLogsModule } from './modules/global-modules/audit-logs/audit-logs.
 import { SystemEventsModule } from './modules/global-modules/system-events/system-events.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { EmailModule } from './modules/email-templates/email.module';
-import { ChatModule } from './modules/message-system/chat.module';
+import { ChatModule } from './modules/message-system/chat.module'; // ✅ UPDATED MODULE
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { SessionActivityMiddleware } from './core/middlewares/session-activity.middleware';
 import { ResourcePermissionGuard } from './core/guards';
@@ -45,9 +45,9 @@ import { RedisModule } from './core/redis/redis.module';
       cache: true,
     }),
 
-    // Core modules (now @Global)
+    // Core modules
     DatabaseModule,
-    RedisModule,
+    RedisModule, // ✅ CRITICAL for performance
     CommonModule,
 
     // Feature modules
@@ -58,10 +58,9 @@ import { RedisModule } from './core/redis/redis.module';
     SystemEventsModule,
     RbacModule,
     EmailModule,
-    ChatModule,
+    ChatModule, // ✅ OPTIMIZED CHAT MODULE
   ],
   providers: [
-    // Guards
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
@@ -82,7 +81,7 @@ export class AppModule implements NestModule {
       .apply(
         CorrelationIdMiddleware,
         EncryptionDefaultMiddleware,
-        TenantContextMiddleware, // ✅ NEW: Runs AFTER JWT auth
+        TenantContextMiddleware,
         SessionActivityMiddleware,
         LoggerMiddleware,
       )

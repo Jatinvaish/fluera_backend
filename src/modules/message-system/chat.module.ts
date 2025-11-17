@@ -1,23 +1,31 @@
 // ============================================
-// modules/chat/chat.module.ts - FIXED & OPTIMIZED
+// src/modules/message-system/chat.module.ts - COMPLETE v5.0
 // ============================================
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt'; // FIX: Import JwtModule
+import { JwtModule } from '@nestjs/jwt';
 import { ChatController } from './chat.controller';
+import { CollaborationController } from './collaboration.controller';
+import { PresenceService } from './presence.service';
+import { OptimizedChatService } from './chat-optimized.service';
+import { MessageQueueService } from './message-queue.service';
+import { OptimizedChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
-import { SqlServerService } from '../../core/database/sql-server.service';
-import { ChatGateway } from './chat.gateway';
 
 @Module({
   imports: [
-    // FIX: Register JwtModule for token validation in Gateway
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'your-secret-key',
       signOptions: { expiresIn: '7d' },
     }),
   ],
-  controllers: [ChatController],
-  providers: [ChatService, ChatGateway, SqlServerService],
-  exports: [ChatService, ChatGateway],
+  controllers: [ChatController, CollaborationController],
+  providers: [
+    OptimizedChatService,
+    ChatService,
+    OptimizedChatGateway,
+    PresenceService,
+    MessageQueueService,
+  ],
+  exports: [OptimizedChatService, ChatService,OptimizedChatGateway, PresenceService],
 })
 export class ChatModule {}
