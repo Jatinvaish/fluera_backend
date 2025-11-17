@@ -11,12 +11,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private isConnected = false; // ✅ Track connection status
 
-  constructor(private configService: ConfigService) {}
+  constructor(private configService: ConfigService) { }
 
   async onModuleInit() {
     // ✅ Check if Redis is enabled
     const redisEnabled = this.configService.get('REDIS_ENABLED', 'false') === 'true';
-    
+
     if (!redisEnabled) {
       this.logger.warn('⚠️ Redis is DISABLED - Running without cache');
       return;
@@ -32,20 +32,23 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         password: this.configService.get('REDIS_PASSWORD'),
         tls: tlsEnabled
           ? {
-              rejectUnauthorized: true,
-            }
+            rejectUnauthorized: true,
+          }
           : undefined,
+        lazyConnect: false,
+        enableOfflineQueue: false,
+        maxRetriesPerRequest: 1,
+        connectTimeout: 3000,
+        commandTimeout: 2000,
+
+        // ✅ CONNECTION POOLING
         retryStrategy: (times) => {
-          if (times > 3) { // ✅ Reduce retries from 10 to 3
+          if (times > 2) { // ✅ Reduce retries from 10 to 3
             this.logger.error('❌ Redis connection failed after 3 retries - Running without cache');
             return null;
           }
-          return Math.min(times * 50, 2000);
+          return Math.min(times * 50, 1000);
         },
-        enableOfflineQueue: false,
-        maxRetriesPerRequest: 3,
-        connectTimeout: 5000, // ✅ Reduce from 10s to 5s
-        lazyConnect: false,
       });
 
       this.client.on('connect', () => {

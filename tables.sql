@@ -2781,3 +2781,169 @@ CREATE TABLE [dbo].[activities] (
 
 CREATE INDEX [IX_activities] ON [dbo].[activities] ([tenant_id], [user_id], [created_at] DESC);
 CREATE INDEX [IX_activities_unread] ON [dbo].[activities] ([user_id], [is_read]) WHERE [is_read] = 0;
+
+
+-- CRITICAL TABLES ==
+-- Message Queue Table (Fallback for when Redis is unavailable)
+CREATE TABLE [dbo].[message_queue] (
+    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [user_id] BIGINT NOT NULL,
+    [message_id] BIGINT NOT NULL,
+    [channel_id] BIGINT NOT NULL,
+    [queued_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [expires_at] DATETIME2(7) NOT NULL,
+    [delivered_at] DATETIME2(7),
+    INDEX IX_message_queue_user_queued (user_id, queued_at)
+);
+
+CREATE TABLE [dbo].[message_encryption_audit] (
+        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+        [message_id] BIGINT NOT NULL,
+        [channel_id] BIGINT NOT NULL,
+        [sender_user_id] BIGINT NOT NULL,
+        -- Encryption Details
+        [sender_key_version] INT NOT NULL,
+        [channel_key_version] INT NOT NULL,
+        [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+        [key_fingerprint] NVARCHAR(64),
+        -- Decryption Tracking
+        [decryption_attempts] INT DEFAULT 0,
+        [successful_decryptions] INT DEFAULT 0,
+        [failed_decryptions] INT DEFAULT 0,
+        [last_decryption_attempt_at] DATETIME2(7) NULL,
+        -- Compliance
+        [encryption_verified] BIT DEFAULT 1,
+        [verified_at] DATETIME2(7),
+        [verified_by] BIGINT,
+        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+        [created_by] BIGINT
+    );
+
+
+
+
+
+CREATE TABLE [dbo].[chat_channel_keys] (
+    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [channel_id] BIGINT NOT NULL,
+    -- :white_check_mark: CRITICAL: Master-key-encrypted channel key
+    [key_material_encrypted] NVARCHAR(MAX) NOT NULL, -- Encrypted with master key
+    [key_fingerprint] NVARCHAR(64) NOT NULL,
+    [algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+    [key_version] INT NOT NULL,
+    [status] NVARCHAR(20) DEFAULT 'active',
+    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [expires_at] DATETIME2(7) NULL,
+    [rotated_from_key_id] BIGINT NULL,
+    [created_by] BIGINT,
+    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    FOREIGN KEY ([channel_id]) REFERENCES [dbo].[chat_channels]([id]),
+    UNIQUE([channel_id], [key_version])
+);
+ALTER TABLE [dbo].[chat_participants] ADD
+    [channel_key_version] INT NOT NULL DEFAULT 1, -- Which key version they have
+    [last_key_sync_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [can_decrypt_all] BIT DEFAULT 1, -- Can decrypt all messages or just new ones?
+    [decryption_failures] INT DEFAULT 0,
+    [last_decryption_failure_at] DATETIME2(7) NULL;CREATE TABLE [dbo].[message_encryption_audit] (
+        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+        [message_id] BIGINT NOT NULL,
+        [channel_id] BIGINT NOT NULL,
+        [sender_user_id] BIGINT NOT NULL,
+        -- Encryption Details
+        [sender_key_version] INT NOT NULL,
+        [channel_key_version] INT NOT NULL,
+        [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+        [key_fingerprint] NVARCHAR(64),
+        -- Decryption Tracking
+        [decryption_attempts] INT DEFAULT 0,
+        [successful_decryptions] INT DEFAULT 0,
+        [failed_decryptions] INT DEFAULT 0,
+        [last_decryption_attempt_at] DATETIME2(7) NULL,
+        -- Compliance
+        [encryption_verified] BIT DEFAULT 1,
+        [verified_at] DATETIME2(7),
+        [verified_by] BIGINT,
+        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+        [created_by] BIGINT
+    );
+
+
+
+
+
+CREATE TABLE [dbo].[chat_channel_keys] (
+    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [channel_id] BIGINT NOT NULL,
+    -- :white_check_mark: CRITICAL: Master-key-encrypted channel key
+    [key_material_encrypted] NVARCHAR(MAX) NOT NULL, -- Encrypted with master key
+    [key_fingerprint] NVARCHAR(64) NOT NULL,
+    [algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+    [key_version] INT NOT NULL,
+    [status] NVARCHAR(20) DEFAULT 'active',
+    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [expires_at] DATETIME2(7) NULL,
+    [rotated_from_key_id] BIGINT NULL,
+    [created_by] BIGINT,
+    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    FOREIGN KEY ([channel_id]) REFERENCES [dbo].[chat_channels]([id]),
+    UNIQUE([channel_id], [key_version])
+);
+ALTER TABLE [dbo].[chat_participants] ADD
+    [channel_key_version] INT NOT NULL DEFAULT 1, -- Which key version they have
+    [last_key_sync_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [can_decrypt_all] BIT DEFAULT 1, -- Can decrypt all messages or just new ones?
+    [decryption_failures] INT DEFAULT 0,
+    [last_decryption_failure_at] DATETIME2(7) NULL;
+    
+    CREATE TABLE [dbo].[message_encryption_audit] (
+        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+        [message_id] BIGINT NOT NULL,
+        [channel_id] BIGINT NOT NULL,
+        [sender_user_id] BIGINT NOT NULL,
+        -- Encryption Details
+        [sender_key_version] INT NOT NULL,
+        [channel_key_version] INT NOT NULL,
+        [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+        [key_fingerprint] NVARCHAR(64),
+        -- Decryption Tracking
+        [decryption_attempts] INT DEFAULT 0,
+        [successful_decryptions] INT DEFAULT 0,
+        [failed_decryptions] INT DEFAULT 0,
+        [last_decryption_attempt_at] DATETIME2(7) NULL,
+        -- Compliance
+        [encryption_verified] BIT DEFAULT 1,
+        [verified_at] DATETIME2(7),
+        [verified_by] BIGINT,
+        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+        [created_by] BIGINT
+    );
+
+
+
+
+
+CREATE TABLE [dbo].[chat_channel_keys] (
+    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
+    [channel_id] BIGINT NOT NULL,
+    -- :white_check_mark: CRITICAL: Master-key-encrypted channel key
+    [key_material_encrypted] NVARCHAR(MAX) NOT NULL, -- Encrypted with master key
+    [key_fingerprint] NVARCHAR(64) NOT NULL,
+    [algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
+    [key_version] INT NOT NULL,
+    [status] NVARCHAR(20) DEFAULT 'active',
+    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [expires_at] DATETIME2(7) NULL,
+    [rotated_from_key_id] BIGINT NULL,
+    [created_by] BIGINT,
+    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    FOREIGN KEY ([channel_id]) REFERENCES [dbo].[chat_channels]([id]),
+    UNIQUE([channel_id], [key_version])
+);
+ALTER TABLE [dbo].[chat_participants] ADD
+    [channel_key_version] INT NOT NULL DEFAULT 1, -- Which key version they have
+    [last_key_sync_at] DATETIME2(7) DEFAULT GETUTCDATE(),
+    [can_decrypt_all] BIT DEFAULT 1, -- Can decrypt all messages or just new ones?
+    [decryption_failures] INT DEFAULT 0,
+    [last_decryption_failure_at] DATETIME2(7) NULL;
+-- CRITICAL TABLES ==
