@@ -12,7 +12,7 @@ import { SqlServerService } from '../database';
 
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
-  constructor(private databaseService: SqlServerService) {}
+  constructor(private databaseService: SqlServerService) { }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
@@ -38,7 +38,7 @@ export class AuditLogInterceptor implements NestInterceptor {
 
           await this.databaseService.execute('[dbo].[sp_CreateAuditLog]', {
             user_id: user?.id || null,
-            tenant_id: tenant?.id || null,
+            tenant_id: tenant?.id || null,  
             entity_type: entityInfo.entityType,
             entity_id: entityInfo.entityId,
             action_type: this.mapMethodToAction(method),
@@ -52,8 +52,10 @@ export class AuditLogInterceptor implements NestInterceptor {
               method,
               duration,
               statusCode: reply.statusCode,
+              isGlobalAdmin: user?.userType === 'super_admin' || user?.userType === 'owner', // ✅ ADD
             }),
           });
+
         } catch (error) {
           console.error('Failed to create audit log:', error);
         }

@@ -52,6 +52,9 @@ export class RbacController {
     @CurrentUser('userType') userType: string,
     @TenantId() tenantId: number
   ) {
+    console.log("🚀 ~ RbacController ~ listRoles ~ tenantId:", tenantId)
+    console.log("🚀 ~ RbacController ~ listRoles ~ userType:", userType)
+    console.log("🚀 ~ RbacController ~ listRoles ~ dto:", dto)
     return this.rbacService.listRoles(dto, userType, tenantId);
   }
 
