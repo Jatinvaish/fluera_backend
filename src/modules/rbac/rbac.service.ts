@@ -335,7 +335,7 @@ export class RbacService {
   async bulkAssignPermissions(roleId: number, changes: any[], userId: number, userType: string, tenantId: number) {
     const role = await this.getRoleById(roleId, userType, tenantId);
 
-    if (role.data.is_system_role && userType !== 'owner' && userType !== 'superadmin') {
+    if (role.data.is_system_role && userType !== 'owner' && userType !== 'super_admin') {
       throw new ForbiddenException('Cannot modify permissions for system roles');
     }
 

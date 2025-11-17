@@ -158,7 +158,7 @@ export class ChatService {
 
       // Store in database
       await this.sqlService.query(
-        `INSERT INTO chat_channel_keys (
+        `INSERT INTO chat_channel_keys_2 (
           channel_id, key_material_encrypted, key_fingerprint,
           algorithm, key_version, status, activated_at, created_by, created_at
         )
@@ -221,7 +221,7 @@ export class ChatService {
       // 3. Get channel key (master-key-encrypted)
       const channelKeyResult = await this.sqlService.query(
         `SELECT key_material_encrypted, key_fingerprint 
-         FROM chat_channel_keys 
+         FROM chat_channel_keys_2
          WHERE channel_id = @channelId 
          AND key_version = @keyVersion 
          AND status = 'active'`,
@@ -303,7 +303,6 @@ export class ChatService {
     }
   }
 
-
   /**
    * ✅ NEW: Backfill master-encrypted keys for existing channels
    */
@@ -325,7 +324,7 @@ export class ChatService {
          FROM chat_channels c
          WHERE c.is_encrypted = 1
          AND NOT EXISTS (
-           SELECT 1 FROM chat_channel_keys ck 
+           SELECT 1 FROM chat_channel_keys_2 ck 
            WHERE ck.channel_id = c.id
          )`,
         {},
@@ -440,6 +439,15 @@ export class ChatService {
         userKey.public_key_pem,
       );
 
+      console.log({
+        channelId,
+        memberId,
+        encryptedChannelKey,
+        keyVersion: userKey.key_version,
+        keyFingerprint,
+        addedBy,
+      });
+
       const result = await this.sqlService.query(
         `INSERT INTO chat_participants (
           channel_id, tenant_id, user_id, role, 
@@ -485,6 +493,7 @@ export class ChatService {
    */
   async sendMessage(dto: SendMessageDto, userId: number, tenantId: number) {
     try {
+      console.log('SendMessageDto:', dto);
       await this.checkChannelMembership(Number(dto.channelId), userId);
 
       if (
@@ -614,13 +623,15 @@ export class ChatService {
     if (!base64Regex.test(dto.encryptionIv)) {
       throw new BadRequestException('encryptionIv must be base64 encoded');
     }
+    
+    console.log('Encryption IV:', dto.encryptionIv);
 
     if (!base64Regex.test(dto.encryptionAuthTag)) {
       throw new BadRequestException('encryptionAuthTag must be base64 encoded');
     }
 
     if (dto.encryptionIv.length !== 24) {
-      throw new BadRequestException(
+      throw new BadRequestException(  
         'encryptionIv must be 16 bytes (24 base64 chars)',
       );
     }
