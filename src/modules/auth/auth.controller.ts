@@ -64,7 +64,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @RateLimit(5, 300) // 🔒 5 attempts per 5 minutes
-  // @Unencrypted()
+  @Unencrypted()
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto, @Req() req: any) {
     const deviceInfo = this.extractDeviceInfo(req);

@@ -228,6 +228,8 @@ export class EnhancedEncryptionService {
         { userId },
       );
 
+      console.log('Active key query result:', result);
+
       if (result && result.length > 0) {
         return result[0] as UserKeyData;
       }
