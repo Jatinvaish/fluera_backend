@@ -1802,7 +1802,7 @@ export class ChatService {
     const messages = await this.sqlService.query(
       `SELECT DISTINCT channel_id, sender_user_id 
        FROM messages 
-       WHERE id IN (${messageIds.join(',')})`,
+      WHERE id IN (${messageIds.map((_, i) => `@id${i}`).join(',')})`,
       {},
     );
 
@@ -1818,7 +1818,7 @@ export class ChatService {
     await this.sqlService.query(
       `UPDATE messages 
        SET is_deleted = 1, deleted_at = GETUTCDATE(), deleted_by = @userId
-       WHERE id IN (${messageIds.join(',')})`,
+       WHERE id IN (${messageIds.map((_, i) => `@id${i}`).join(',')})`,
       { userId },
     );
 
