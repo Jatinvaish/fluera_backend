@@ -1,17 +1,53 @@
-// modules/auth/strategies/jwt.strategy.ts
+// src/modules/auth/strategies/jwt.strategy.ts - COMPLETE FIX
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { SqlServerService } from '../../../core/database/sql-server.service';
+import { ConfigService } from '@nestjs/config';
+import { SqlServerService } from 'src/core/database/sql-server.service';
+
+export interface JwtPayload {
+  sub: number; // user ID
+  email: string;
+  userType: string;
+  tenantId?: number; // Current active tenant
+  iat?: number;
+  exp?: number;
+}
+
+export interface AuthenticatedUser {
+  id: number;
+  email: string;
+  username: string | null;
+  userType: string;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  isSuperAdmin: boolean;
+  emailVerifiedAt: Date | null;
+  status: string;
+  twoFactorEnabled: boolean;
+  publicKey: string | null;
+  roles: string[]; // Array of role names
+  permissions: string[]; // Array of permission keys
+  tenantId: number | null; // Active tenant ID
+  tenantRole: string | null; // Role in active tenant
+  tenants: Array<{ // All accessible tenants
+    tenantId: number;
+    tenantName: string;
+    tenantType: string;
+    role: string;
+    isActive: boolean;
+  }>;
+}
 
 @Injectable()
-export class JwtStrategy extends PassportStrategy(Strategy) {
+export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   private readonly logger = new Logger(JwtStrategy.name);
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly sqlService: SqlServerService,
+    private configService: ConfigService,
+    private sqlService: SqlServerService,
   ) {
     const secret = configService.get<string>('jwt.secret');
     if (!secret || secret.length < 32) {
@@ -29,97 +65,106 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(req: any, payload: any) {
+  async validate(request: any, payload: JwtPayload): Promise<AuthenticatedUser> {
     try {
-      // 🔒 Extract token for blacklist check
-      const token: any = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+      this.logger.debug(`Validating JWT for user ${payload.sub}`);
 
-      // 🔒 Check if token is blacklisted (revoked)
-      //TODO: enable token blacklist check
-      // const isBlacklisted = await this.isTokenBlacklisted(token);
-      // if (isBlacklisted) {
-      //   this.logger.warn(`Blacklisted token attempted: ${payload.sub}`);
-      //   throw new UnauthorizedException('Token has been revoked');
-      // }
+      // ✅ Get X-Tenant-ID from header (for tenant switching)
+      const requestedTenantId = request.headers['x-tenant-id']
+        ? parseInt(request.headers['x-tenant-id'])
+        : payload.tenantId;
 
-      // 🔒 Validate token claims
-      if (!payload.sub || !payload.email) {
-        throw new UnauthorizedException('Invalid token claims');
-      }
-
-      // 🔒 Check token age (prevent replay attacks)
-      const tokenAge = Date.now() - (payload.iat * 1000);
-      const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-      if (tokenAge > maxAge) {
-        throw new UnauthorizedException('Token too old, please re-authenticate');
-      }
-
-      // Get user data with permissions
+      // ✅ Call stored procedure to get FULL user data
       const result = await this.sqlService.execute('sp_GetUserAuthData', {
-        userId: payload.sub
+        userId: payload.sub,
       });
 
-      if (!result || !Array.isArray(result) || result.length === 0) {
-        throw new UnauthorizedException('User not found');
+      if (!result || result.length === 0 || result[0].length === 0) {
+        this.logger.error(`User ${payload.sub} not found or inactive`);
+        throw new UnauthorizedException('User not found or inactive');
       }
 
-      let user, roles, permissions;
+      // ✅ SP returns 4 result sets
+      const userData = result[0][0]; // User basic info
+      const rolesData = result[1] && result[1][0]; // Roles (comma-separated)
+      const permissionsData = result[2] && result[2][0]; // Permissions (comma-separated)
 
-      if (Array.isArray(result[0])) {
-        user = result[0][0];
-        roles = result[1] || [];
-        permissions = result[2] || [];
-      } else {
-        user = result[0];
-        roles = [];
-        permissions = [];
-      }
+      // ✅ Parse roles and permissions
+      const roles = rolesData?.roles
+        ? rolesData.roles.split(',').filter(Boolean)
+        : [];
 
-      if (!user || user.status !== 'active') {
-        throw new UnauthorizedException('User account is inactive');
-      }
+      const permissions = permissionsData?.permissions
+        ? permissionsData.permissions.split(',').filter(Boolean)
+        : [];
 
-      // 🔒 Verify email is verified
-      if (!user.emailVerifiedAt) {
-        throw new UnauthorizedException('Email not verified');
-      }
-
-      return {
-        id: user.id,
-        email: user.email,
-        userType: user.user_type,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        tenantId: payload.tenantId || null,
-        roles: roles.length > 0 && roles[0].roles ? roles[0].roles.split(',') : [],
-        permissions: permissions.length > 0 && permissions[0].permissions ? permissions[0].permissions.split(',') : [],
-        isSuperAdmin: user.is_super_admin || false,
-        // 🔒 Add security metadata
-        tokenIssuedAt: payload.iat,
-        tokenExpiry: payload.exp,
-      };
-    } catch (error) {
-      this.logger.error('JWT validation failed', error);
-      throw new UnauthorizedException('Invalid or expired token');
-    }
-  }
-
-  /**
-   * 🔒 Check if token is blacklisted/revoked
-   */
-  private async isTokenBlacklisted(token: string): Promise<boolean> {
-    try {
-      // Option 1: Check database
-      const result = await this.sqlService.query(
-        `SELECT COUNT(*) as count FROM revoked_tokens 
-         WHERE token_hash = HASHBYTES('SHA2_256', @token) 
-         AND expires_at > GETUTCDATE()`,
-        { token }
+      // ✅ Get all accessible tenants for this user
+      const tenantsResult = await this.sqlService.query(
+        `SELECT 
+          tm.tenant_id as tenantId,
+          t.name as tenantName,
+          t.tenant_type as tenantType,
+          r.name as role,
+          tm.is_active as isActive
+         FROM tenant_members tm
+         INNER JOIN tenants t ON tm.tenant_id = t.id
+         INNER JOIN roles r ON tm.role_id = r.id
+         WHERE tm.user_id = @userId AND tm.is_active = 1`,
+        { userId: payload.sub }
       );
-      return result[0]?.count > 0;
+
+      const tenants = tenantsResult || [];
+
+      // ✅ Determine active tenant
+      let activeTenantId:any = requestedTenantId || payload.tenantId;
+      let tenantRole: string | null = null;
+
+      // Validate tenant access
+      if (activeTenantId) {
+        const tenantAccess = tenants.find((t: any) => t.tenantId === activeTenantId);
+        if (!tenantAccess) {
+          this.logger.warn(
+            `User ${payload.sub} attempted to access tenant ${activeTenantId} without permission`
+          );
+          activeTenantId = tenants[0]?.tenantId || null; // Fallback to first tenant
+          tenantRole = tenants[0]?.role || null;
+        } else {
+          tenantRole = tenantAccess.role;
+        }
+      } else {
+        // No tenant specified, use first available
+        activeTenantId = tenants[0]?.tenantId || null;
+        tenantRole = tenants[0]?.role || null;
+      }
+
+      // ✅ Construct authenticated user object
+      const authenticatedUser: AuthenticatedUser = {
+        id: userData.id,
+        email: userData.email,
+        username: userData.username || null,
+        userType: userData.userType,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        displayName: userData.displayName,
+        avatarUrl: userData.avatarUrl,
+        isSuperAdmin: userData.isSuperAdmin === 1 || userData.isSuperAdmin === true,
+        emailVerifiedAt: userData.emailVerifiedAt,
+        status: userData.status,
+        twoFactorEnabled: userData.twoFactorEnabled === 1 || userData.twoFactorEnabled === true,
+        publicKey: userData.publicKey,
+        roles,
+        permissions,
+        tenantId: activeTenantId,
+        tenantRole,
+        tenants,
+      };
+
+      this.logger.debug(`✅ User ${payload.sub} validated successfully with ${roles.length} roles and ${permissions.length} permissions`);
+
+      return authenticatedUser;
     } catch (error) {
-      // If revoked_tokens table doesn't exist, skip check
-      return false;
+      this.logger.error(`JWT validation failed for user ${payload.sub}:`, error);
+      throw new UnauthorizedException('Invalid token');
     }
   }
 }

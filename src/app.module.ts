@@ -1,6 +1,5 @@
-
 // ============================================
-// UPDATED app.module.ts (No changes needed)
+// UPDATED app.module.ts - With Tenant Context Middleware
 // ============================================
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -13,11 +12,12 @@ import jwtConfig from './config/jwt.config';
 import encryptionConfig from './config/encryption.config';
 
 // Core modules
-import { DatabaseModule } from './core/database/database.module'; // ✅ Now @Global
-import { CommonModule } from './common/common.module'; // ✅ Now @Global
+import { DatabaseModule } from './core/database/database.module';
+import { CommonModule } from './common/common.module';
 import { LoggerMiddleware } from './core/middlewares/logger.middleware';
 import { CorrelationIdMiddleware } from './core/middlewares/correlation-id.middleware';
 import { EncryptionDefaultMiddleware } from './core/middlewares/encryption-default.middleware';
+import { TenantContextMiddleware } from './core/middlewares/tenant-context.middleware'; // ✅ NEW
 
 // Guards
 import { JwtAuthGuard } from './core/guards/jwt-auth.guard';
@@ -46,9 +46,9 @@ import { RedisModule } from './core/redis/redis.module';
     }),
 
     // Core modules (now @Global)
-    DatabaseModule, // ✅ SqlServerService available everywhere
-    RedisModule, // ✅ SqlServerService available everywhere
-    CommonModule, // ✅ EncryptionService, AuditService available everywhere
+    DatabaseModule,
+    RedisModule,
+    CommonModule,
 
     // Feature modules
     AuthModule,
@@ -82,6 +82,7 @@ export class AppModule implements NestModule {
       .apply(
         CorrelationIdMiddleware,
         EncryptionDefaultMiddleware,
+        TenantContextMiddleware, // ✅ NEW: Runs AFTER JWT auth
         SessionActivityMiddleware,
         LoggerMiddleware,
       )
