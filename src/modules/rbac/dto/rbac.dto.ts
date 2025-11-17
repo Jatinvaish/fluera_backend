@@ -1,5 +1,5 @@
 // modules/rbac/dto/rbac.dto.ts
-import { IsString, IsOptional, IsBoolean, IsNumber, IsArray, IsEnum, Min, Max, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsNumber, IsArray, IsEnum, Min, Max, ValidateNested, IsInt } from 'class-validator';
 import { Type } from 'class-transformer';
 
 // ==================== ROLE DTOs ====================
@@ -64,10 +64,10 @@ export class ListRolesDto {
   limit?: number = 50;
 
 
-  search?: string;  
-  sortBy?: string;  
-  category?: string;  
-  sortOrder?: string;  
+  search?: string;
+  sortBy?: string;
+  category?: string;
+  sortOrder?: string;
 }
 
 export class GetRoleDto {
@@ -112,19 +112,18 @@ export class ListPermissionsDto {
   @IsOptional()
   @IsEnum(['system', 'custom', 'all'])
   scope?: 'system' | 'custom' | 'all' = 'all';
+ 
 
   @IsOptional()
-  @IsNumber()
-  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500) // Changed from 100 to 500
+  limit?: number = 100;
+
+  @IsOptional()
+  @IsInt()
   @Min(1)
   page?: number = 1;
-
-  @IsOptional()
-  @IsNumber()
-  @Type(() => Number)
-  @Min(1)
-  @Max(100)
-  limit?: number = 50;
 }
 
 export class GetPermissionDto {
