@@ -158,7 +158,7 @@ export class ChatService {
 
       // Store in database
       await this.sqlService.query(
-        `INSERT INTO chat_channel_keys_2 (
+        `INSERT INTO chat_channel_keys (
           channel_id, key_material_encrypted, key_fingerprint,
           algorithm, key_version, status, activated_at, created_by, created_at
         )
@@ -221,7 +221,7 @@ export class ChatService {
       // 3. Get channel key (master-key-encrypted)
       const channelKeyResult = await this.sqlService.query(
         `SELECT key_material_encrypted, key_fingerprint 
-         FROM chat_channel_keys_2
+         FROM chat_channel_keys
          WHERE channel_id = @channelId 
          AND key_version = @keyVersion 
          AND status = 'active'`,
@@ -324,7 +324,7 @@ export class ChatService {
          FROM chat_channels c
          WHERE c.is_encrypted = 1
          AND NOT EXISTS (
-           SELECT 1 FROM chat_channel_keys_2 ck 
+           SELECT 1 FROM chat_channel_keys ck 
            WHERE ck.channel_id = c.id
          )`,
         {},
