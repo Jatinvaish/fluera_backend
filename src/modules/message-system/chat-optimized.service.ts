@@ -339,7 +339,7 @@ export class OptimizedChatService {
         SET @channelId = SCOPE_IDENTITY();
 
         -- Store master-encrypted channel key for admin recovery
-        INSERT INTO chat_channel_keys_2 (
+        INSERT INTO chat_channel_keys (
           channel_id, key_material_encrypted, key_fingerprint,
           algorithm, key_version, status, activated_at, created_by, created_at
         )
