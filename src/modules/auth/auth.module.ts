@@ -12,6 +12,7 @@ import { InvitationService } from './invitation.service';
 import { VerificationService } from 'src/common/verification.service';
 import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.service';
 import { RbacService } from '../rbac/rbac.service';
+import { RbacPermissionFilterService } from '../rbac/rbac-permission-filter.service';
 
 @Module({
   imports: [
@@ -30,7 +31,7 @@ import { RbacService } from '../rbac/rbac.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, VerificationService, AuditLoggerService, InvitationService,RbacService, JwtStrategy],
+  providers: [AuthService, VerificationService, RbacPermissionFilterService, AuditLoggerService, InvitationService,RbacService, JwtStrategy],
   exports: [AuthService, JwtStrategy],
 })
 export class AuthModule {}

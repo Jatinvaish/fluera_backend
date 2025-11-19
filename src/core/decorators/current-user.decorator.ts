@@ -1,16 +1,11 @@
-// ============================================
-// src/core/decorators/current-user.decorator.ts - ENHANCED
-// ============================================
+// src/core/decorators/current-user.decorator.ts - PRODUCTION READY
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 /**
- * @CurrentUser() - Get entire user object
+ * @CurrentUser() - Get entire user object with context
  * @CurrentUser('id') - Get user.id
- * @CurrentUser('email') - Get user.email
- * @CurrentUser('roles') - Get user.roles array
- * @CurrentUser('permissions') - Get user.permissions array
- * @CurrentUser('tenantId') - Get active tenant ID
- * @CurrentUser('isSuperAdmin') - Get super admin status
+ * @CurrentUser('permissions') - Get user's effective permissions
+ * @CurrentUser('tenantId') - Get active tenant ID (can be null for super_admin)
  */
 export const CurrentUser = createParamDecorator(
   (property: string | undefined, ctx: ExecutionContext) => {
@@ -21,7 +16,16 @@ export const CurrentUser = createParamDecorator(
       console.warn('⚠️ CurrentUser decorator: request.user is undefined');
       return null;
     }
+
+    // ✅ Enhance user object with context from middleware
+    const enhancedUser = {
+      ...user,
+      tenantId: request.tenantId || null,
+      userType: request.userType || user.user_type || user.userType,
+      isGlobalAdmin: request.isGlobalAdmin || false,
+      permissions: request.userPermissions || []
+    };
     
-    return property ? user[property] : user;
+    return property ? enhancedUser[property] : enhancedUser;
   },
 );
