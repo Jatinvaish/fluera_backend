@@ -1,58 +1,82 @@
-// src/core/middlewares/tenant-context.middleware.ts - NEW
+// src/core/middlewares/tenant-context.middleware.ts - PRODUCTION READY
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { SqlServerService } from '../database/sql-server.service';
 
 /**
- * ✅ Ensures tenantId and userType are always available on request object
- * This runs AFTER JWT authentication
+ * ✅ UPDATED: Fetches tenant context from DB using user_id
+ * No longer reads from headers - DB is single source of truth
  */
 @Injectable()
 export class TenantContextMiddleware implements NestMiddleware {
   private readonly logger = new Logger(TenantContextMiddleware.name);
 
-  use(req: FastifyRequest['raw'], res: FastifyReply['raw'], next: () => void) {
+  constructor(private sqlService: SqlServerService) {}
+
+  async use(req: FastifyRequest['raw'], res: FastifyReply['raw'], next: () => void) {
     const request = req as any;
 
-    if (request.user) {
-      const user = request.user;
+    if (request.user && request.user.id) {
+      try {
+        // ✅ FETCH FROM DB instead of headers
+        const userContext = await this.fetchUserContext(request.user.id);
 
-      // ✅ Handle global admins (NO tenant required)
-      const isGlobalAdmin =
-        user.userType === 'super_admin' ||
-        user.userType === 'owner' ||
-        user.userType === 'saas_admin';
-
-      if (isGlobalAdmin) {
-        // Check if acting on behalf of a tenant
-        const requestedTenantId = request.headers['x-tenant-id'];
-
-        if (requestedTenantId) {
-          request.tenantId = parseInt(requestedTenantId, 10);
+        if (userContext) {
+          // ✅ Set context from DB
+          request.tenantId = userContext.tenant_id;
+          request.userType = userContext.user_type;
+          request.isGlobalAdmin = this.isGlobalAdmin(userContext.user_type);
+          request.userPermissions = userContext.permissions || [];
+          
           this.logger.debug(
-            `Global admin ${user.id} acting as tenant ${request.tenantId}`
-          );
-        } else {
-          request.tenantId = null; // ✅ NULL is VALID for global operations
-          this.logger.debug(`Global admin ${user.id} performing global operation`);
-        }
-
-        request.userType = user.userType;
-        request.isGlobalAdmin = true; // ✅ NEW FLAG
-
-      } else {
-        // ✅ Regular users MUST have tenant
-        request.tenantId = user.tenantId;
-        request.userType = user.userType;
-        request.isGlobalAdmin = false;
-
-        if (!request.tenantId) {
-          this.logger.error(
-            `❌ Regular user ${user.id} has no tenant assignment`
+            `User ${request.user.id} context: tenant=${request.tenantId}, type=${request.userType}, isGlobal=${request.isGlobalAdmin}`
           );
         }
+      } catch (error) {
+        this.logger.error(`Failed to fetch user context: ${error.message}`);
       }
     }
 
     next();
+  }
+
+  /**
+   * ✅ Fetch user context from database
+   */
+  private async fetchUserContext(userId: number) {
+    try {
+      const result = await this.sqlService.query(
+        `SELECT 
+          u.id,
+          u.user_type,
+          tm.tenant_id,
+          (
+            SELECT STRING_AGG(p.permission_key, ',') 
+            FROM user_roles ur
+            JOIN role_permissions rp ON ur.role_id = rp.role_id
+            JOIN permissions p ON rp.permission_id = p.id
+            WHERE ur.user_id = u.id AND ur.is_active = 1
+          ) as permissions
+        FROM users u
+        LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
+        WHERE u.id = @userId`,
+        { userId }
+      );
+
+      if (result.length === 0) return null;
+
+      return {
+        tenant_id: result[0].tenant_id || null,
+        user_type: result[0].user_type,
+        permissions: result[0].permissions ? result[0].permissions.split(',') : []
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching user context: ${error.message}`);
+      return null;
+    }
+  }
+
+  private isGlobalAdmin(userType: string): boolean {
+    return ['super_admin', 'owner', 'saas_admin'].includes(userType);
   }
 }
