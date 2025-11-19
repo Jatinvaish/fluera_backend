@@ -1,10 +1,11 @@
 // modules/rbac/rbac.service.ts
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
+import { RbacPermissionFilterService } from './rbac-permission-filter.service';
 
 @Injectable()
 export class RbacService {
-  constructor(private sqlService: SqlServerService) { }
+  constructor(private sqlService: SqlServerService, private filterService: RbacPermissionFilterService) { }
 
   // ============================================
   // ROLES MANAGEMENT
@@ -232,7 +233,9 @@ export class RbacService {
   // ROLE-PERMISSIONS
   // ============================================
 
-  async getRolePermissionsTree(roleId: number, userType: string, tenantId: number) {
+  async getRolePermissionsTree(roleId: number, userType: string, tenantId: number,
+    userId: number // ✅ ADD userId parameter
+  ) {
     await this.getRoleById(roleId, userType, tenantId);
 
     const permissions = await this.sqlService.query(
@@ -1243,4 +1246,27 @@ export class RbacService {
 
     return result[0];
   }
+  async getAssignablePermissionsForUser(userId: number, userType: string) {
+    const permissions = await this.filterService.getAssignablePermissions(userId, userType);
+
+    // Group by category
+    const grouped = permissions.reduce((acc: any, perm: any) => {
+      const cat = perm.category || 'Uncategorized';
+      if (!acc[cat]) acc[cat] = [];
+      acc[cat].push(perm);
+      return acc;
+    }, {});
+
+    return {
+      success: true,
+      data: {
+        permissions,
+        groupedByCategory: grouped,
+        totalAssignable: permissions.length,
+        isGlobalAdmin: this.filterService.isGlobalAdmin(userType),
+      },
+      message: 'Assignable permissions retrieved successfully',
+    };
+  }
+
 }

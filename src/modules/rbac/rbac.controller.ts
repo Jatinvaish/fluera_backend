@@ -65,7 +65,7 @@ export class RbacController {
     @CurrentUser('userType') userType: string,
     @TenantId() tenantId: number
   ) {
-    console.log('getRoleById',dto.roleId)
+    console.log('getRoleById', dto.roleId)
     return this.rbacService.getRoleById(Number(dto.roleId), userType, tenantId);
   }
 
@@ -143,11 +143,16 @@ export class RbacController {
   async getRolePermissionsTree(
     @Body() dto: GetRolePermissionsTreeDto,
     @CurrentUser('userType') userType: string,
-    @TenantId() tenantId: number
+    @TenantId() tenantId: number,
+    @CurrentUser('id') userId: number // ✅ ADD THIS
   ) {
-    return this.rbacService.getRolePermissionsTree(Number(dto.roleId), userType, tenantId);
+    return this.rbacService.getRolePermissionsTree(
+      Number(dto.roleId),
+      userType,
+      tenantId,
+      userId // ✅ PASS userId
+    );
   }
-
   @Post('roles/permissions/assign')
   @Permissions('role-permissions:write')
   async assignPermissions(
@@ -167,7 +172,25 @@ export class RbacController {
     @CurrentUser('userType') userType: string,
     @TenantId() tenantId: number
   ) {
-    return this.rbacService.bulkAssignPermissions(Number(dto.roleId), dto.changes, userId, userType, tenantId);
+    return this.rbacService.bulkAssignPermissions(
+      Number(dto.roleId),
+      dto.changes,
+      userId,
+      userType,
+      tenantId
+    );
+  }
+
+  // ============================================
+  // ADD NEW ENDPOINT: Get Assignable Permissions
+  // ============================================
+  @Post('permissions/assignable')
+  @Permissions('permissions:read')
+  async getAssignablePermissions(
+    @CurrentUser('id') userId: number,
+    @CurrentUser('userType') userType: string
+  ) {
+    return this.rbacService.getAssignablePermissionsForUser(userId, userType);
   }
 
   @Post('roles/permissions/remove')
@@ -398,4 +421,5 @@ export class RbacController {
   async getRoleLimits(@Body() dto: GetRoleLimitsDto) {
     return this.rbacService.getRoleLimits(Number(dto.roleId));
   }
+  
 }
