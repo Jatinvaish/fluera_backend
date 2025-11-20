@@ -65,15 +65,15 @@ export class UltraFastChatController {
   /**
    * ✅ BATCH SEND - For multiple messages (target: <200ms for 5 messages)
    */
-  @Post('messages/batch')
-  @HttpCode(HttpStatus.OK)
-  async sendMessageBatch(
-    @Body('messages') messages: SendMessageDto[],
-    @CurrentUser('id') userId: number,
-    @TenantId() tenantId: number,
-  ) {
-    return this.ultraFastService.sendMessageBatch(messages, userId, tenantId);
-  }
+  // @Post('messages/batch')
+  // @HttpCode(HttpStatus.OK)
+  // async sendMessageBatch(
+  //   @Body('messages') messages: SendMessageDto[],
+  //   @CurrentUser('id') userId: number,
+  //   @TenantId() tenantId: number,
+  // ) {
+  //   return this.ultraFastService.sendMessageBatch(messages, userId, tenantId);
+  // }
 
   // ==================== CHANNEL MANAGEMENT (Standard Speed) ====================
   // These don't need ultra-optimization as they're not real-time critical
