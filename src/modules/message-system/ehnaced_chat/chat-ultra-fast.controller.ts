@@ -14,13 +14,14 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { UltraFastChatService } from './chat-ultra-fast.service';
-import { CurrentUser, TenantId } from 'src/core/decorators';
+import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
 import { JwtAuthGuard } from 'src/core/guards/jwt-auth.guard';
 import { ChatService } from '../chat.service';
-import { SendMessageDto, CreateChannelDto } from '../dto/chat.dto';
+import { SendMessageDto, CreateChannelDto } from '../../global-modules/dto/chat.dto';
 
 @Controller('chat/v2') // v2 for ultra-fast endpoints
 @UseGuards(JwtAuthGuard)
+@Unencrypted() // Bypass encryption for speed
 export class UltraFastChatController {
   constructor(
     private ultraFastService: UltraFastChatService,
@@ -48,10 +49,10 @@ export class UltraFastChatController {
    */
   @Get('messages')
   async getMessages(
-    @Query('channelId', ParseIntPipe) channelId: number,
-    @Query('limit', ParseIntPipe) limit: number = 50,
+    @Query('channelId',  ) channelId: any,
+    @Query('limit',  ) limit: any = 50,
     @CurrentUser('id') userId: number,
-    @Query('beforeId', ParseIntPipe) beforeId?: number,
+    @Query('beforeId',  ) beforeId?: number,
   ) {
     return this.ultraFastService.getMessagesUltraFast(
       channelId,

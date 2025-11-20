@@ -15,7 +15,7 @@ import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { UltraFastChatService } from './chat-ultra-fast.service';
 import { JwtService } from '@nestjs/jwt';
-import { SendMessageDto } from '../dto/chat.dto';
+import { SendMessageDto } from '../../global-modules/dto/chat.dto';
 import { PresenceService } from '../presence.service';
 
 interface AuthenticatedSocket extends Socket {

@@ -14,7 +14,7 @@ import { CurrentUser, TenantId } from 'src/core/decorators';
 import { JwtAuthGuard } from 'src/core/guards/jwt-auth.guard';
 import { EncryptionGuard, RequireEncryption } from 'src/core/guards/encryption.guard';
 import { RateLimit, RateLimitGuard } from 'src/core/guards/rate-limit.guard';
-import * as Dto from './dto/chat.dto';
+import * as Dto from '../global-modules/dto/chat.dto';
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
@@ -193,7 +193,7 @@ export class ChatController {
 
   // ==================== MESSAGES ====================
 
-  @Post('messages/list')
+  @Post('messages')
   @HttpCode(HttpStatus.OK)
   @UseGuards(EncryptionGuard)
   @RequireEncryption()
