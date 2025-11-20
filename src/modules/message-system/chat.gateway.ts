@@ -16,7 +16,7 @@ import { Logger, UnauthorizedException } from '@nestjs/common';
 import { OptimizedChatService } from './chat-optimized.service';
 import { PresenceService } from './presence.service';
 import { MessageQueueService } from './message-queue.service';
-import { SendMessageDto, TypingIndicatorDto, MarkAsReadDto } from './dto/chat.dto';
+import { SendMessageDto, TypingIndicatorDto, MarkAsReadDto } from '../global-modules/dto/chat.dto';
 import { SqlServerService } from 'src/core/database/sql-server.service';
 import { JwtService } from '@nestjs/jwt';
 

@@ -5,7 +5,7 @@
 import { Injectable, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { SqlServerService } from '../../../core/database/sql-server.service';
 import { RedisService } from '../../../core/redis/redis.service';
-import { SendMessageDto } from '../dto/chat.dto';
+import { SendMessageDto } from '../../global-modules/dto/chat.dto';
 
 @Injectable()
 export class UltraFastChatService {
@@ -284,7 +284,7 @@ export class UltraFastChatService {
        AND m.is_deleted = 0
        ${beforeId ? 'AND m.id < @beforeId' : ''}
        ORDER BY m.sent_at DESC`,
-      { channelId, limit, beforeId: beforeId || null }
+      { channelId, limit: Number(limit), beforeId: beforeId || null }
     );
 
     // Cache for 30 seconds

@@ -27,7 +27,7 @@ import {
   ChannelType,
   MemberRole,
   MessageType,
-} from './dto/chat.dto';
+} from '../global-modules/dto/chat.dto';
 
 @Injectable()
 export class ChatService {

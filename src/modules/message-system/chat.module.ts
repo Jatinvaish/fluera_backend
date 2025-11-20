@@ -10,6 +10,8 @@ import { OptimizedChatService } from './chat-optimized.service';
 import { MessageQueueService } from './message-queue.service';
 import { OptimizedChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
+import { UltraFastChatService } from './ehnaced_chat/chat-ultra-fast.service';
+import { UltraFastChatGateway } from './ehnaced_chat/chat-ultra-fast.gateway';
 
 @Module({
   imports: [
@@ -21,11 +23,13 @@ import { ChatService } from './chat.service';
   controllers: [ChatController, CollaborationController],
   providers: [
     OptimizedChatService,
+    UltraFastChatService,
     ChatService,
     OptimizedChatGateway,
+    UltraFastChatGateway,
     PresenceService,
     MessageQueueService,
   ],
-  exports: [OptimizedChatService, ChatService,OptimizedChatGateway, PresenceService],
+  exports: [OptimizedChatService, ChatService,OptimizedChatGateway,UltraFastChatGateway,UltraFastChatService, PresenceService],
 })
 export class ChatModule {}

@@ -1,6 +1,7 @@
 // ============================================
-// src/app.module.ts - UPDATED
+// src/app.module.ts - FIXED & CLEANED
 // ============================================
+
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -18,6 +19,9 @@ import { LoggerMiddleware } from './core/middlewares/logger.middleware';
 import { CorrelationIdMiddleware } from './core/middlewares/correlation-id.middleware';
 import { EncryptionDefaultMiddleware } from './core/middlewares/encryption-default.middleware';
 import { TenantContextMiddleware } from './core/middlewares/tenant-context.middleware';
+import { SessionActivityMiddleware } from './core/middlewares/session-activity.middleware';
+
+import { RedisModule } from './core/redis/redis.module';
 
 // Guards
 import { JwtAuthGuard } from './core/guards/jwt-auth.guard';
@@ -30,11 +34,25 @@ import { AuditLogsModule } from './modules/global-modules/audit-logs/audit-logs.
 import { SystemEventsModule } from './modules/global-modules/system-events/system-events.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { EmailModule } from './modules/email-templates/email.module';
-import { ChatModule } from './modules/message-system/chat.module'; // ✅ UPDATED MODULE
 import { PermissionsModule } from './modules/permissions/permissions.module';
-import { SessionActivityMiddleware } from './core/middlewares/session-activity.middleware';
-import { ResourcePermissionGuard } from './core/guards';
-import { RedisModule } from './core/redis/redis.module';
+import { ChatModule } from './modules/message-system/chat.module';
+
+// Chat components
+import { ChatService } from './modules/message-system/chat.service';
+import { OptimizedChatService } from './modules/message-system/chat-optimized.service';
+import { OptimizedChatGateway } from './modules/message-system/chat.gateway';
+import { MessageQueueService } from './modules/message-system/message-queue.service';
+import { PresenceService } from './modules/message-system/presence.service';
+import { ChatController } from './modules/message-system/chat.controller';
+import { CollaborationController } from './modules/message-system/collaboration.controller';
+
+// Ultra-fast chat
+import { UltraFastChatService } from './modules/message-system/ehnaced_chat/chat-ultra-fast.service';
+import { UltraFastChatGateway } from './modules/message-system/ehnaced_chat/chat-ultra-fast.gateway';
+import { UltraFastChatController } from './modules/message-system/ehnaced_chat/chat-ultra-fast.controller';
+
+import { JwtService } from '@nestjs/jwt';
+import { ResourcePermissionGuard } from './core/guards/permissions.guard';
 
 @Module({
   imports: [
@@ -45,12 +63,12 @@ import { RedisModule } from './core/redis/redis.module';
       cache: true,
     }),
 
-    // Core modules
+    // Core
     DatabaseModule,
-    RedisModule, // ✅ CRITICAL for performance
+    RedisModule,
     CommonModule,
 
-    // Feature modules
+    // Features
     AuthModule,
     PermissionsModule,
     SystemConfigModule,
@@ -58,21 +76,39 @@ import { RedisModule } from './core/redis/redis.module';
     SystemEventsModule,
     RbacModule,
     EmailModule,
-    ChatModule, // ✅ OPTIMIZED CHAT MODULE
+    ChatModule,
   ],
+
   providers: [
-    {
-      provide: APP_GUARD,
-      useClass: JwtAuthGuard,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: ResourcePermissionGuard,
-    },
+    // Global guards (execution order matters)
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: ResourcePermissionGuard },
+
+    // Chat services
+    UltraFastChatService,
+    UltraFastChatGateway,
+
+    ChatService,
+    OptimizedChatService,
+    OptimizedChatGateway,
+
+    PresenceService,
+    MessageQueueService,
+
+    JwtService,
+  ],
+
+  controllers: [
+     UltraFastChatController,
+    // ChatController,
+    // CollaborationController,
+  ],
+
+  exports: [
+    UltraFastChatService,
+    ChatService,
+    PresenceService,
   ],
 })
 export class AppModule implements NestModule {
