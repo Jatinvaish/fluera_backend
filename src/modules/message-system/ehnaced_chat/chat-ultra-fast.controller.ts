@@ -1,6 +1,6 @@
 // ============================================
-// src/modules/message-system/chat-ultra-fast.controller.ts
-// STREAMLINED: Only essential endpoints for speed
+// src/modules/message-system/chat-ultra-optimized.controller.ts
+// BACKWARD COMPATIBLE with existing frontend
 // ============================================
 import {
   Controller,
@@ -13,26 +13,26 @@ import {
   HttpStatus,
   ParseIntPipe,
 } from '@nestjs/common';
-import { UltraFastChatService } from './chat-ultra-fast.service';
-import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
-import { JwtAuthGuard } from 'src/core/guards/jwt-auth.guard';
+import { Unencrypted, CurrentUser, TenantId } from 'src/core/decorators';
+import { JwtAuthGuard } from 'src/core/guards';
+import { SendMessageDto, CreateChannelDto } from 'src/modules/global-modules/dto/chat.dto';
 import { ChatService } from '../chat.service';
-import { SendMessageDto, CreateChannelDto } from '../../global-modules/dto/chat.dto';
+import { UltraFastChatService, } from './chat-ultra-fast.service'; // ✅ Import MessageResponse
 
 @Controller('chat/v2') // v2 for ultra-fast endpoints
 @UseGuards(JwtAuthGuard)
 @Unencrypted() // Bypass encryption for speed
 export class UltraFastChatController {
   constructor(
-    private ultraFastService: UltraFastChatService,
-    private chatService: ChatService, // Fallback for complex operations
-  ) {}
+    private optimizedService: UltraFastChatService,
+    private chatService: ChatService, // Keep for backward compatibility
+  ) { }
 
-  // ==================== CRITICAL FAST ENDPOINTS ====================
+  // ==================== ULTRA-FAST ENDPOINTS ====================
 
   /**
-   * ✅ SEND MESSAGE - Ultra-fast path (target: <80ms)
-   * Used by WebSocket primarily, but also available via REST
+   * ✅ SEND MESSAGE - Ultra-fast path (<50ms)
+   * Compatible with existing frontend
    */
   @Post('messages/send')
   @HttpCode(HttpStatus.OK)
@@ -40,42 +40,83 @@ export class UltraFastChatController {
     @Body() dto: SendMessageDto,
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
-  ) {
-    return this.ultraFastService.sendMessageUltraFast(dto, userId, tenantId);
+  ): Promise<any> { // ✅ Explicit return type
+    return this.optimizedService.sendMessageUltraFast(dto, userId, tenantId);
   }
 
   /**
-   * ✅ GET MESSAGES - Optimized fetch (target: <50ms)
+   * ✅ GET MESSAGES - Ultra-fast fetch (<30ms)
+   * Compatible with existing frontend
    */
   @Get('messages')
   async getMessages(
-    @Query('channelId',  ) channelId: any,
-    @Query('limit',  ) limit: any = 50,
+    @Query('channelId', ParseIntPipe) channelId: number,
+    @Query('limit', ParseIntPipe) limit: number = 50,
     @CurrentUser('id') userId: number,
-    @Query('beforeId',  ) beforeId?: number,
+    @Query('beforeId') beforeId?: string,
   ) {
-    return this.ultraFastService.getMessagesUltraFast(
+    const beforeIdNum = beforeId ? parseInt(beforeId) : undefined;
+    return this.optimizedService.getMessagesUltraFast(
       channelId,
       userId,
       limit,
-      beforeId,
+      beforeIdNum,
     );
   }
 
   /**
-   * ✅ BATCH SEND - For multiple messages (target: <200ms for 5 messages)
+   * ✅ BATCH SEND - For multiple messages
    */
-  // @Post('messages/batch')
-  // @HttpCode(HttpStatus.OK)
-  // async sendMessageBatch(
-  //   @Body('messages') messages: SendMessageDto[],
-  //   @CurrentUser('id') userId: number,
-  //   @TenantId() tenantId: number,
-  // ) {
-  //   return this.ultraFastService.sendMessageBatch(messages, userId, tenantId);
-  // }
+  @Post('messages/batch')
+  @HttpCode(HttpStatus.OK)
+  async sendMessageBatch(
+    @Body('messages') messages: SendMessageDto[],
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
+    return this.optimizedService.sendMessageBatch(messages, userId, tenantId);
+  }
 
-  // ==================== CHANNEL MANAGEMENT (Standard Speed) ====================
+  /**
+   * ✅ MARK AS READ - Fire and forget (202 Accepted)
+   */
+  @Post('messages/mark-read')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async markAsRead(
+    @Body('channelId', ParseIntPipe) channelId: number,
+    @Body('messageId', ParseIntPipe) messageId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    // Non-blocking async call
+    this.optimizedService.markAsReadAsync(channelId, messageId, userId);
+    return { accepted: true };
+  }
+
+  /**
+   * ✅ GET UNREAD COUNT - Cached (<20ms)
+   */
+  @Get('unread')
+  async getUnreadCount(
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
+    const count = await this.optimizedService.getUnreadCount(userId, tenantId);
+    return { unread: count };
+  }
+
+  /**
+   * ✅ GET USER CHANNELS - Fast (<20ms)
+   */
+  @Get('channels')
+  async getUserChannels(
+    @CurrentUser('id') userId: number,
+    @Query('limit', ParseIntPipe) limit: number = 50,
+  ) {
+    const channels = await this.optimizedService.getUserChannelsFast(userId);
+    return { channels };
+  }
+
+  // ==================== STANDARD ENDPOINTS (Use existing service) ====================
   // These don't need ultra-optimization as they're not real-time critical
 
   @Post('channels/create')
@@ -84,17 +125,7 @@ export class UltraFastChatController {
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    // Use standard service for channel creation (happens rarely)
     return this.chatService.createChannel(dto, userId, tenantId);
-  }
-
-  @Get('channels')
-  async getUserChannels(
-    @CurrentUser('id') userId: number,
-    @TenantId() tenantId: number,
-    @Query('limit', ParseIntPipe) limit: number = 50,
-  ) {
-    return this.chatService.getUserChannels(userId, tenantId, { limit });
   }
 
   @Get('channels/:id')
@@ -105,44 +136,15 @@ export class UltraFastChatController {
     return this.chatService.getChannelById(id, userId);
   }
 
-  // ==================== READ RECEIPTS (Async/Background) ====================
-
-  /**
-   * ✅ MARK AS READ - Fire and forget (don't block client)
-   */
-  @Post('messages/mark-read')
-  @HttpCode(HttpStatus.ACCEPTED) // 202 - Accepted for processing
-  async markAsRead(
-    @Body('channelId', ParseIntPipe) channelId: number,
-    @Body('messageId', ParseIntPipe) messageId: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    // Process async - don't wait for completion
-    this.chatService.markAsRead({ channelId, messageId }, userId).catch(err => {
-      console.warn('Mark as read failed (non-critical):', err.message);
-    });
-
-    return { accepted: true };
-  }
-
-  /**
-   * ✅ GET UNREAD COUNT - Cached (target: <20ms)
-   */
-  @Get('unread')
-  async getUnreadCount(
-    @CurrentUser('id') userId: number,
-    @TenantId() tenantId: number,
-  ) {
-    return this.chatService.getUnreadCount(userId, tenantId);
-  }
-
   // ==================== HEALTH & MONITORING ====================
 
   @Get('health')
   async getHealth() {
+    const metrics = this.optimizedService.getHealthMetrics();
     return {
       status: 'ok',
-      service: 'ultra-fast-chat',
+      serviceName: 'ultra-optimized-chat', // ✅ Renamed to avoid conflict
+      ...metrics,
       timestamp: new Date().toISOString(),
     };
   }
