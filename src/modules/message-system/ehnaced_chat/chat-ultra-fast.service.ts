@@ -1,6 +1,6 @@
 // ============================================
-// src/modules/message-system/chat-ultra-fast.service.ts
-// ULTRA-OPTIMIZED: Target <80ms message delivery
+// src/modules/message-system/ehnaced_chat/chat-ultra-fast.service.ts
+// ULTRA-OPTIMIZED: <50ms for all operations
 // ============================================
 import { Injectable, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { SqlServerService } from '../../../core/database/sql-server.service';
@@ -17,13 +17,9 @@ export class UltraFastChatService {
   ) { }
 
   /**
-   * ✅ ULTRA-FAST MESSAGE SEND: <80ms target
-   * 
-   * Optimizations:
-   * 1. Single combined validation query (10ms)
-   * 2. Minimal atomic transaction - ONLY message insert (30ms)
-   * 3. Async non-blocking operations (audit, receipts, cache)
-   * 4. Redis-based delivery tracking
+   * ✅ ULTRA-FAST MESSAGE SEND: <30ms target
+   * Removed: encryption validation, async processing, separate validation
+   * Added: inline membership check, direct return
    */
   async sendMessageUltraFast(
     dto: SendMessageDto,
@@ -33,227 +29,105 @@ export class UltraFastChatService {
     const startTime = Date.now();
 
     try {
-      // ✅ STEP 1: SINGLE COMBINED VALIDATION (10ms with cache)
-      const validation = await this.validateMessageSend(dto.channelId, userId);
+      // ✅ SINGLE ATOMIC OPERATION - membership check + insert
+      const result = await this.sqlService.query(
+        `
+        SET NOCOUNT ON;
+        
+        DECLARE @messageId BIGINT;
+        DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
+        DECLARE @isMember BIT = 0;
 
-      if (!validation.isMember) {
-        throw new ForbiddenException('Not a channel member');
+        -- Check membership (inline)
+        IF EXISTS (
+          SELECT 1 FROM chat_participants WITH (NOLOCK)
+          WHERE channel_id = @channelId 
+          AND user_id = @userId 
+          AND is_active = 1
+        )
+          SET @isMember = 1;
+
+        IF @isMember = 0
+        BEGIN
+          SELECT 0 as success, 'Not a channel member' as error;
+          RETURN;
+        END;
+
+        BEGIN TRANSACTION;
+
+        -- Insert message
+        INSERT INTO messages (
+          channel_id, sender_tenant_id, sender_user_id, message_type,
+          encrypted_content, encryption_iv, encryption_auth_tag,
+          encryption_key_version, has_attachments, has_mentions,
+          reply_to_message_id, thread_id, sent_at, created_at, created_by
+        )
+        VALUES (
+          @channelId, @tenantId, @userId, @messageType,
+          @encryptedContent, @encryptionIv, @encryptionAuthTag,
+          1, @hasAttachments, @hasMentions,
+          @replyToMessageId, @threadId, @now, @now, @userId
+        );
+
+        SET @messageId = SCOPE_IDENTITY();
+
+        -- Update channel stats
+        UPDATE chat_channels WITH (ROWLOCK)
+        SET message_count = message_count + 1,
+            last_message_at = @now,
+            last_activity_at = @now
+        WHERE id = @channelId;
+
+        COMMIT TRANSACTION;
+
+        -- Return for broadcast
+        SELECT 
+          1 as success,
+          @messageId as id,
+          @channelId as channel_id,
+          @userId as sender_user_id,
+          @messageType as message_type,
+          @now as sent_at;
+        `,
+        {
+          channelId: dto.channelId,
+          tenantId,
+          userId,
+          messageType: dto.messageType || 'text',
+          encryptedContent: dto.encryptedContent,
+          encryptionIv: dto.encryptionIv,
+          encryptionAuthTag: dto.encryptionAuthTag,
+          hasAttachments: dto.attachments && dto.attachments?.length > 0 ? 1 : 0,
+          hasMentions: dto.mentions && dto.mentions?.length > 0 ? 1 : 0,
+          replyToMessageId: dto.replyToMessageId || null,
+          threadId: dto.threadId || null,
+        }
+      );
+
+      if (!result[0]?.success) {
+        throw new ForbiddenException(result[0]?.error || 'Not a channel member');
       }
 
-      // ✅ STEP 2: MINIMAL TRANSACTION - ONLY INSERT MESSAGE (30ms)
-      const message = await this.insertMessageAtomic(dto, userId, tenantId, validation.channelKeyVersion);
-
-      // ✅ STEP 3: ASYNC NON-BLOCKING OPERATIONS (don't await)
-      this.processMessageAsync(message.id, dto.channelId, userId, validation.participantIds).catch(err => {
-        this.logger.warn('Async processing failed (non-critical):', err.message);
-      });
-
       const elapsed = Date.now() - startTime;
-      this.logger.log(`✅ Message sent in ${elapsed}ms`);
+      if (elapsed > 50) {
+        this.logger.warn(`⚠️ Slow send: ${elapsed}ms (target: <50ms)`);
+      }
 
-      return message;
+      return result[0];
 
     } catch (error) {
       const elapsed = Date.now() - startTime;
-      this.logger.error(`❌ Message failed after ${elapsed}ms:`, error);
+      this.logger.error(`❌ Send failed after ${elapsed}ms:`, error.message);
       throw error;
     }
   }
 
   /**
-   * ✅ OPTIMIZED: Single query with all validation data (10ms cached)
-   */
-  private async validateMessageSend(channelId: number, userId: number) {
-    const cacheKey = `validate:${channelId}:${userId}`;
-
-    // Try cache first (2ms)
-    try {
-      const cached = await this.redisService.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
-      }
-    } catch { }
-
-    // Single query to get everything we need
-    const result = await this.sqlService.query(
-      `SELECT 
-        1 as isMember,
-        c.encryption_version,
-        STRING_AGG(CAST(cp.user_id AS NVARCHAR(MAX)), ',') as participant_ids
-       FROM chat_channels c WITH (NOLOCK)
-       INNER JOIN chat_participants cp WITH (NOLOCK) 
-         ON c.id = cp.channel_id AND cp.is_active = 1
-       WHERE c.id = @channelId
-       AND EXISTS (
-         SELECT 1 FROM chat_participants WITH (NOLOCK)
-         WHERE channel_id = @channelId 
-         AND user_id = @userId 
-         AND is_active = 1
-       )
-       GROUP BY c.encryption_version`,
-      { channelId, userId }
-    );
-
-    if (result.length === 0) {
-      return { isMember: false };
-    }
-
-    const validation = {
-      isMember: true,
-      channelKeyVersion: parseInt(result[0].encryption_version?.substring(1) || '1'),
-      participantIds: result[0].participant_ids?.split(',').map(Number) || []
-    };
-
-    // Cache for 60 seconds (non-blocking)
-    this.redisService.set(cacheKey, JSON.stringify(validation), 60).catch(() => { });
-
-    return validation;
-  }
-
-  /**
-   * ✅ MINIMAL ATOMIC INSERT - Only what's absolutely required (30ms)
-   */
-  private async insertMessageAtomic(
-    dto: SendMessageDto,
-    userId: number,
-    tenantId: number,
-    channelKeyVersion: number
-  ) {
-    const now = new Date().toISOString();
-
-    const result = await this.sqlService.query(
-      `SET NOCOUNT ON;
-      
-      DECLARE @messageId BIGINT;
-      DECLARE @now DATETIME2(7) = GETUTCDATE();
-
-      BEGIN TRANSACTION;
-
-      -- 1. Insert message (20ms)
-      INSERT INTO messages (
-        channel_id, sender_tenant_id, sender_user_id, message_type,
-        encrypted_content, encryption_iv, encryption_auth_tag,
-        encryption_key_version, has_attachments, has_mentions,
-        reply_to_message_id, thread_id, sent_at, created_at, created_by
-      )
-      VALUES (
-        @channelId, @tenantId, @userId, @messageType,
-        @encryptedContent, @encryptionIv, @encryptionAuthTag,
-        @keyVersion, @hasAttachments, @hasMentions,
-        @replyToMessageId, @threadId, @now, @now, @userId
-      );
-
-      SET @messageId = SCOPE_IDENTITY();
-
-      -- 2. Update channel stats ONLY (5ms)
-      UPDATE chat_channels WITH (ROWLOCK)
-      SET message_count = message_count + 1,
-          last_message_at = @now,
-          last_activity_at = @now
-      WHERE id = @channelId;
-
-      COMMIT TRANSACTION;
-
-      -- Return minimal data for broadcast
-      SELECT @messageId as id, @channelId as channel_id, 
-             @userId as sender_user_id, @now as sent_at;
-      `,
-      {
-        channelId: dto.channelId,
-        tenantId,
-        userId,
-        messageType: dto.messageType || 'text',
-        encryptedContent: dto.encryptedContent,
-        encryptionIv: dto.encryptionIv,
-        encryptionAuthTag: dto.encryptionAuthTag,
-        keyVersion: channelKeyVersion,
-        hasAttachments: dto.attachments && dto.attachments?.length > 0 ? 1 : 0,
-        hasMentions: dto.mentions && dto.mentions?.length > 0 ? 1 : 0,
-        replyToMessageId: dto.replyToMessageId || null,
-        threadId: dto.threadId || null,
-      }
-    );
-
-    return result[0];
-  }
-
-  /**
-   * ✅ ASYNC NON-BLOCKING OPERATIONS (runs in background)
-   * This does NOT block message delivery
-   */
-  private async processMessageAsync(
-    messageId: number,
-    channelId: number,
-    senderId: number,
-    participantIds: number[]
-  ) {
-    // Run all async operations in parallel
-    await Promise.allSettled([
-      // Create read receipts (bulk insert, ~50ms)
-      this.createReadReceiptsBulk(messageId, channelId, senderId, participantIds),
-
-      // Update Redis for real-time tracking (5ms)
-      this.updateRedisDeliveryTracking(messageId, participantIds),
-
-      // Invalidate relevant caches (10ms)
-      this.invalidateCachesAsync(channelId, participantIds),
-    ]);
-  }
-
-  /**
-   * ✅ BULK READ RECEIPTS - Single INSERT for all participants
-   */
-  private async createReadReceiptsBulk(
-    messageId: number,
-    channelId: number,
-    senderId: number,
-    participantIds: number[]
-  ) {
-    const recipients = participantIds.filter(id => id !== senderId);
-
-    if (recipients.length === 0) return;
-
-    // Generate VALUES clause for bulk insert
-    const values = recipients.map(id => `(${messageId}, ${id}, 'sent', GETUTCDATE())`).join(',');
-
-    await this.sqlService.query(
-      `INSERT INTO message_read_receipts (message_id, user_id, status, created_at)
-       VALUES ${values}`,
-      {}
-    );
-  }
-
-  /**
-   * ✅ REDIS DELIVERY TRACKING (for real-time status)
-   */
-  private async updateRedisDeliveryTracking(messageId: number, participantIds: number[]) {
-    const key = `msg:${messageId}:delivery`;
-    const data = {
-      total: participantIds.length,
-      delivered: 0,
-      read: 0,
-      timestamp: Date.now()
-    };
-
-    await this.redisService.set(key, JSON.stringify(data), 3600); // 1 hour TTL
-  }
-
-  /**
-   * ✅ SMART CACHE INVALIDATION - Only what's necessary
-   */
-  private async invalidateCachesAsync(channelId: number, participantIds: number[]) {
-    const patterns = [
-      `validate:${channelId}:*`,
-      ...participantIds.slice(0, 10).map(id => `user:${id}:unread`) // Limit to avoid overload
-    ];
-
-    await Promise.allSettled(
-      patterns.map(pattern => this.redisService.del(pattern))
-    );
-  }
-
-  /**
-   * ✅ OPTIMIZED MESSAGE FETCH - Single query, aggressive caching
+   * ✅ ULTRA-FAST MESSAGE LIST: <25ms target
+   * Features:
+   * - Auto mark-as-read (merged, no separate API call)
+   * - Single optimized query with user info
+   * - Redis caching (5s TTL for near real-time)
    */
   async getMessagesUltraFast(
     channelId: number,
@@ -261,69 +135,243 @@ export class UltraFastChatService {
     limit: number = 50,
     beforeId?: number
   ) {
+    const startTime = Date.now();
     const cacheKey = `msgs:${channelId}:${limit}:${beforeId || 'latest'}`;
 
-    // Try cache (5ms hit)
     try {
+      // Try cache (2-5ms hit)
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
+        // Auto mark as read (async, non-blocking)
+        this.markLastAsReadAsync(channelId, userId, JSON.parse(cached)[0]?.id).catch(() => { });
+
+        const elapsed = Date.now() - startTime;
+        this.logger.debug(`✅ Cache hit: ${elapsed}ms`);
         return JSON.parse(cached);
       }
     } catch { }
 
     // Single optimized query
     const messages = await this.sqlService.query(
-      `SELECT TOP (@limit)
-        m.id, m.sender_user_id, m.message_type,
-        m.encrypted_content, m.encryption_iv, m.encryption_auth_tag,
-        m.encryption_key_version, m.sent_at,
-        u.first_name, u.last_name, u.avatar_url
-       FROM messages m WITH (NOLOCK)
-       INNER JOIN users u WITH (NOLOCK) ON m.sender_user_id = u.id
-       WHERE m.channel_id = @channelId
-       AND m.is_deleted = 0
-       ${beforeId ? 'AND m.id < @beforeId' : ''}
-       ORDER BY m.sent_at DESC`,
-      { channelId, limit: Number(limit), beforeId: beforeId || null }
+      `
+      SELECT TOP (@limit)
+        m.id,
+        m.sender_user_id,
+        m.message_type,
+        m.encrypted_content,
+        m.encryption_iv,
+        m.encryption_auth_tag,
+        m.encryption_key_version,
+        m.has_attachments,
+        m.has_mentions,
+        m.reply_to_message_id,
+        m.thread_id,
+        m.sent_at,
+        m.is_edited,
+        m.edited_at,
+        u.first_name,
+        u.last_name,
+        u.avatar_url,
+        (SELECT COUNT(*) FROM message_reactions WITH (NOLOCK) WHERE message_id = m.id) as reaction_count
+      FROM messages m WITH (NOLOCK)
+      INNER JOIN users u WITH (NOLOCK) ON m.sender_user_id = u.id
+      WHERE m.channel_id = @channelId
+      AND m.is_deleted = 0
+      ${beforeId ? 'AND m.id < @beforeId' : ''}
+      ORDER BY m.sent_at DESC
+      `,
+      {
+        channelId,
+        limit: Number(limit),
+        beforeId: beforeId || null
+      }
     );
 
-    // Cache for 30 seconds
-    this.redisService.set(cacheKey, JSON.stringify(messages), 30).catch(() => { });
+    // Cache for 5 seconds (near real-time)
+    this.redisService.set(cacheKey, JSON.stringify(messages), 5).catch(() => { });
+
+    // ✅ Auto mark-as-read (async, non-blocking)
+    if (messages.length > 0) {
+      this.markLastAsReadAsync(channelId, userId, messages[0].id).catch(() => { });
+    }
+
+    const elapsed = Date.now() - startTime;
+    if (elapsed > 50) {
+      this.logger.warn(`⚠️ Slow list: ${elapsed}ms (target: <50ms)`);
+    }
 
     return messages;
   }
 
   /**
-   * ✅ BATCH OPERATIONS - For multiple messages
+   * ✅ ASYNC MARK-AS-READ - Non-blocking background operation
+   * Merged into list API, no separate endpoint needed
    */
-  async sendMessageBatch(messages: SendMessageDto[], userId: number, tenantId: number) {
-    const results = await Promise.all(
-      messages.map(dto => this.sendMessageUltraFast(dto, userId, tenantId))
-    );
-
-    return {
-      sent: results.length,
-      messages: results
-    };
+  private async markLastAsReadAsync(channelId: number, userId: number, messageId: number) {
+    try {
+      await this.sqlService.query(
+        `
+        UPDATE chat_participants WITH (ROWLOCK)
+        SET last_read_message_id = @messageId,
+            last_read_at = SYSUTCDATETIME()
+        WHERE channel_id = @channelId 
+        AND user_id = @userId
+        `,
+        { channelId, userId, messageId }
+      );
+    } catch (error) {
+      // Silent fail - non-critical
+      this.logger.debug('Mark-as-read failed (non-critical):', error.message);
+    }
   }
 
   /**
-   * ✅ GET ONLINE PARTICIPANTS (cached, for WebSocket routing)
+   * ✅ GET CHANNEL LIST: <30ms target
+   * Optimized: single query, essential data only
    */
-  async getOnlineParticipants(channelId: number): Promise<number[]> {
-    const cacheKey = `channel:${channelId}:online`;
+  async getUserChannelsUltraFast(userId: number, tenantId: number, limit: number = 50) {
+    const startTime = Date.now();
+    const cacheKey = `user:${userId}:channels`;
 
     try {
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
+        this.logger.debug(`✅ Channels cache hit: ${Date.now() - startTime}ms`);
         return JSON.parse(cached);
       }
     } catch { }
 
-    // Fallback: Get from presence keys
-    const pattern = `presence:*:*`;
-    // This would need implementation based on your presence tracking
+    const channels = await this.sqlService.query(
+      `
+      SELECT TOP (@limit)
+        c.id,
+        c.name,
+        c.channel_type,
+        c.is_private,
+        c.last_activity_at,
+        c.message_count,
+        cp.role as user_role,
+        cp.encrypted_channel_key,
+        cp.last_read_message_id,
+        (SELECT COUNT(*) 
+         FROM messages m WITH (NOLOCK)
+         WHERE m.channel_id = c.id 
+         AND m.is_deleted = 0
+         AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)
+        ) as unread_count
+      FROM chat_channels c WITH (NOLOCK)
+      INNER JOIN chat_participants cp WITH (NOLOCK) 
+        ON c.id = cp.channel_id
+      WHERE cp.user_id = @userId
+      AND cp.is_active = 1
+      AND c.created_by_tenant_id = @tenantId
+      AND c.is_archived = 0
+      ORDER BY c.last_activity_at DESC
+      `,
+      { userId, tenantId, limit: Number(limit) }
+    );
 
-    return [];
+    // Cache for 30 seconds
+    this.redisService.set(cacheKey, JSON.stringify(channels), 30).catch(() => { });
+
+    const elapsed = Date.now() - startTime;
+    this.logger.log(`✅ Channels fetched in ${elapsed}ms`);
+
+    return channels;
+  }
+
+  /**
+   * ✅ GET ONLINE PARTICIPANTS - For WebSocket routing
+   */
+  async getChannelMembersUltraFast(channelId: number): Promise<number[]> {
+    const cacheKey = `channel:${channelId}:members`;
+
+    try {
+      const cached = await this.redisService.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch { }
+
+    const members = await this.sqlService.query(
+      `SELECT user_id 
+       FROM chat_participants WITH (NOLOCK)
+       WHERE channel_id = @channelId AND is_active = 1`,
+      { channelId }
+    );
+
+    const userIds = members.map(m => m.user_id);
+
+    // Cache for 5 minutes
+    this.redisService.set(cacheKey, JSON.stringify(userIds), 300).catch(() => { });
+
+    return userIds;
+  }
+
+  /**
+   * ✅ CREATE CHANNEL - Standard speed (not real-time critical)
+   */
+  async createChannelUltraFast(
+    dto: any,
+    userId: number,
+    tenantId: number
+  ) {
+    const channelKey = this.generateChannelKey();
+
+    const result = await this.sqlService.query(
+      `
+      DECLARE @channelId BIGINT;
+      DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
+
+      BEGIN TRANSACTION;
+
+      INSERT INTO chat_channels (
+        created_by_tenant_id, name, channel_type, is_private,
+        is_encrypted, encryption_version, encryption_algorithm,
+        last_activity_at, created_by, created_at
+      )
+      VALUES (
+        @tenantId, @name, @channelType, @isPrivate,
+        1, 'v1', 'AES-256-GCM',
+        @now, @userId, @now
+      );
+
+      SET @channelId = SCOPE_IDENTITY();
+
+      -- Add creator
+      INSERT INTO chat_participants (
+        channel_id, tenant_id, user_id, role,
+        encrypted_channel_key, is_active,
+        joined_at, created_by, created_at
+      )
+      VALUES (
+        @channelId, @tenantId, @userId, 'owner',
+        @channelKey, 1,
+        @now, @userId, @now
+      );
+
+      COMMIT TRANSACTION;
+
+      SELECT @channelId as id, @name as name, @channelType as channel_type;
+      `,
+      {
+        tenantId,
+        userId,
+        name: dto.name,
+        channelType: dto.channelType || 'group',
+        isPrivate: dto.isPrivate !== false,
+        channelKey,
+      }
+    );
+
+    // Invalidate cache
+    this.redisService.del(`user:${userId}:channels`).catch(() => { });
+
+    return result[0];
+  }
+
+  /**
+   * ✅ HELPER: Generate channel key
+   */
+  private generateChannelKey(): string {
+    return require('crypto').randomBytes(32).toString('hex');
   }
 }
