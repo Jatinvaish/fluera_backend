@@ -2,8 +2,17 @@
 // src/modules/auth/auth.controller.ts - V3.0 COMPLETE
 // ============================================
 import {
-  Controller, Post, Body, HttpCode, HttpStatus, Get,
-  UseGuards, Req, Query, Res
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Get,
+  UseGuards,
+  Req,
+  Query,
+  Res,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { InvitationService } from './invitation.service';
@@ -19,13 +28,17 @@ import {
   ResetPasswordRequestDto,
   ResetPasswordDto,
 } from './dto/auth.dto';
-import { Public, CurrentUser, TenantId, Unencrypted } from '../../core/decorators';
+import {
+  Public,
+  CurrentUser,
+  TenantId,
+  Unencrypted,
+} from '../../core/decorators';
 import { VerificationService } from '../../common/verification.service';
 import axios from 'axios';
 import type { FastifyReply } from 'fastify';
 import { RateLimit } from '../../core/guards/rate-limit.guard';
 import { SendInvitationDto, AcceptInvitationDto } from '../rbac/dto/rbac.dto';
-
 
 @Controller('auth')
 export class AuthController {
@@ -33,7 +46,7 @@ export class AuthController {
     private authService: AuthService,
     private verificationService: VerificationService,
     private invitationService: InvitationService,
-  ) { }
+  ) {}
 
   // ============================================
   // MANUAL REGISTRATION & VERIFICATION
@@ -82,7 +95,9 @@ export class AuthController {
   @Unencrypted() // IMPORTANT: Disable encryption for refresh endpoint
   async refresh(@Body() refreshDto: RefreshTokenDto) {
     try {
-      const result = await this.authService.refreshToken(refreshDto.refreshToken);
+      const result = await this.authService.refreshToken(
+        refreshDto.refreshToken,
+      );
 
       // Return in a simple format without encryption wrapper
       return {
@@ -124,7 +139,7 @@ export class AuthController {
   @Post('create-agency')
   async createAgency(
     @Body() dto: CreateAgencyDto,
-    @CurrentUser('id') userId: number
+    @CurrentUser('id') userId: number,
   ) {
     return this.authService.createAgency(dto, userId);
   }
@@ -132,7 +147,7 @@ export class AuthController {
   @Post('create-brand')
   async createBrand(
     @Body() dto: CreateBrandDto,
-    @CurrentUser('id') userId: number
+    @CurrentUser('id') userId: number,
   ) {
     return this.authService.createBrand(dto, userId);
   }
@@ -140,7 +155,7 @@ export class AuthController {
   @Post('create-creator')
   async createCreator(
     @Body() dto: CreateCreatorDto,
-    @CurrentUser('id') userId: number
+    @CurrentUser('id') userId: number,
   ) {
     return this.authService.createCreator(dto, userId);
   }
@@ -148,6 +163,14 @@ export class AuthController {
   // ============================================
   // INVITATION SYSTEM
   // ============================================
+
+  @Post('invitation/resend')
+  async reSendInvitation(
+    @Body('invitationId', ParseIntPipe) invitationId: number,
+    @TenantId() tenantId: number
+  ) {
+    return this.invitationService.resendInvitation(invitationId, tenantId);
+  }
 
   @Post('invitation/send')
   async sendInvitation(
@@ -161,11 +184,10 @@ export class AuthController {
   @Post('invitation/accept')
   @Public()
   async acceptInvitation(@Body() dto: AcceptInvitationDto) {
-    return this.invitationService.acceptInvitation(
-      dto.token,
-      dto.password,
-      { firstName: dto.firstName, lastName: dto.lastName }
-    );
+    return this.invitationService.acceptInvitation(dto.token, dto.password, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+    });
   }
 
   // ============================================
@@ -176,7 +198,8 @@ export class AuthController {
   @Public()
   async googleLogin(@Res() res: FastifyReply) {
     const redirectUri = `${process.env.APP_URL}/api/v1/auth/google/callback`;
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+    const authUrl =
+      `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${process.env.GOOGLE_CLIENT_ID}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&response_type=code` +
@@ -193,12 +216,12 @@ export class AuthController {
     @Query('code') code: string,
     @Query('error') error: string,
     @Res() res: FastifyReply,
-    @Req() req: any
+    @Req() req: any,
   ) {
     if (error || !code) {
       return res.redirect(
         `${process.env.FRONTEND_URL}/sign-in?error=google_auth_cancelled`,
-        302
+        302,
       );
     }
 
@@ -206,38 +229,46 @@ export class AuthController {
       const redirectUri = `${process.env.APP_URL}/api/v1/auth/google/callback`;
 
       // Exchange code for tokens
-      const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
-        code,
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-      });
+      const tokenResponse = await axios.post(
+        'https://oauth2.googleapis.com/token',
+        {
+          code,
+          client_id: process.env.GOOGLE_CLIENT_ID,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+        },
+      );
 
       const { access_token, refresh_token } = tokenResponse.data;
 
       // Get user info
       const userInfoResponse = await axios.get(
         'https://www.googleapis.com/oauth2/v2/userinfo',
-        { headers: { Authorization: `Bearer ${access_token}` } }
+        { headers: { Authorization: `Bearer ${access_token}` } },
       );
 
       const profile = userInfoResponse.data;
       const deviceInfo = this.extractDeviceInfo(req);
 
       // Handle social login
-      const result = await this.authService.loginWithSocial('google', {
-        providerId: profile.id,
-        email: profile.email,
-        firstName: profile.given_name,
-        lastName: profile.family_name,
-        avatar: profile.picture,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-      }, deviceInfo);
+      const result = await this.authService.loginWithSocial(
+        'google',
+        {
+          providerId: profile.id,
+          email: profile.email,
+          firstName: profile.given_name,
+          lastName: profile.family_name,
+          avatar: profile.picture,
+          accessToken: access_token,
+          refreshToken: refresh_token,
+        },
+        deviceInfo,
+      );
 
       // Redirect to frontend with tokens
-      const redirectUrl = `${process.env.FRONTEND_URL}/auth/google/callback?` +
+      const redirectUrl =
+        `${process.env.FRONTEND_URL}/auth/google/callback?` +
         `accessToken=${result.accessToken}` +
         `&refreshToken=${result.refreshToken}` +
         `&user=${encodeURIComponent(JSON.stringify(result.user))}`;
@@ -247,7 +278,7 @@ export class AuthController {
       console.error('Google auth failed:', err.response?.data || err.message);
       return res.redirect(
         `${process.env.FRONTEND_URL}/sign-in?error=google_auth_failed`,
-        302
+        302,
       );
     }
   }
@@ -256,13 +287,13 @@ export class AuthController {
   // MICROSOFT OAUTH FLOW
   // ============================================
 
-
   @Get('microsoft')
   @Public()
   async microsoftLogin(@Res() res: FastifyReply) {
     const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
     const redirectUri = `${process.env.APP_URL}/api/v1/auth/microsoft/callback`;
-    const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?` +
+    const authUrl =
+      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?` +
       `client_id=${process.env.MICROSOFT_CLIENT_ID}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&response_type=code` +
@@ -278,12 +309,12 @@ export class AuthController {
     @Query('code') code: string,
     @Query('error') error: string,
     @Res() res: FastifyReply,
-    @Req() req: any
+    @Req() req: any,
   ) {
     if (error || !code) {
       return res.redirect(
         `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_cancelled`,
-        302
+        302,
       );
     }
 
@@ -301,7 +332,7 @@ export class AuthController {
           redirect_uri: redirectUri,
           grant_type: 'authorization_code',
         }),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
       );
 
       const { access_token, refresh_token } = tokenResponse.data;
@@ -309,34 +340,42 @@ export class AuthController {
       // Get user info
       const userInfoResponse = await axios.get(
         'https://graph.microsoft.com/v1.0/me',
-        { headers: { Authorization: `Bearer ${access_token}` } }
+        { headers: { Authorization: `Bearer ${access_token}` } },
       );
 
       const profile = userInfoResponse.data;
       const deviceInfo = this.extractDeviceInfo(req);
 
       // Handle social login
-      const result = await this.authService.loginWithSocial('microsoft', {
-        providerId: profile.id,
-        email: profile.mail || profile.userPrincipalName,
-        firstName: profile.givenName,
-        lastName: profile.surname,
-        avatar: null,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-      }, deviceInfo);
+      const result = await this.authService.loginWithSocial(
+        'microsoft',
+        {
+          providerId: profile.id,
+          email: profile.mail || profile.userPrincipalName,
+          firstName: profile.givenName,
+          lastName: profile.surname,
+          avatar: null,
+          accessToken: access_token,
+          refreshToken: refresh_token,
+        },
+        deviceInfo,
+      );
 
-      const redirectUrl = `${process.env.FRONTEND_URL}/auth/microsoft/callback?` +
+      const redirectUrl =
+        `${process.env.FRONTEND_URL}/auth/microsoft/callback?` +
         `accessToken=${result.accessToken}` +
         `&refreshToken=${result.refreshToken}` +
         `&user=${encodeURIComponent(JSON.stringify(result.user))}`;
 
       return res.redirect(redirectUrl, 302);
     } catch (err: any) {
-      console.error('Microsoft auth failed:', err.response?.data || err.message);
+      console.error(
+        'Microsoft auth failed:',
+        err.response?.data || err.message,
+      );
       return res.redirect(
         `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_failed`,
-        302
+        302,
       );
     }
   }
@@ -350,7 +389,8 @@ export class AuthController {
   // ============================================
   private extractDeviceInfo(req: any) {
     const userAgent = req.headers['user-agent'] || '';
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress;
+    const ip =
+      req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress;
 
     return {
       deviceFingerprint: req.headers['x-device-fingerprint'] || null,

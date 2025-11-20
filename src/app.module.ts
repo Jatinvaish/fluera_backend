@@ -53,6 +53,8 @@ import { UltraFastChatController } from './modules/message-system/ehnaced_chat/c
 
 import { JwtService } from '@nestjs/jwt';
 import { ResourcePermissionGuard } from './core/guards/permissions.guard';
+import { TenantsController } from './modules/tenants/tenant.controller';
+import { TenantsModule } from './modules/tenants/tenant.module';
 
 @Module({
   imports: [
@@ -77,6 +79,7 @@ import { ResourcePermissionGuard } from './core/guards/permissions.guard';
     RbacModule,
     EmailModule,
     ChatModule,
+    TenantsModule, //(Assuming TenantsModule is imported elsewhere if needed)
   ],
 
   providers: [
@@ -101,6 +104,7 @@ import { ResourcePermissionGuard } from './core/guards/permissions.guard';
 
   controllers: [
      UltraFastChatController,
+    //  TenantsController,
     // ChatController,
     // CollaborationController,
   ],
