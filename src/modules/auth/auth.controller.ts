@@ -27,6 +27,7 @@ import {
   CreateCreatorDto,
   ResetPasswordRequestDto,
   ResetPasswordDto,
+  ReSendInvitationDto,
 } from './dto/auth.dto';
 import {
   Public,
@@ -41,6 +42,7 @@ import { RateLimit } from '../../core/guards/rate-limit.guard';
 import { SendInvitationDto, AcceptInvitationDto } from '../rbac/dto/rbac.dto';
 
 @Controller('auth')
+@Unencrypted() // Default: all endpoints unencrypted unless specified
 export class AuthController {
   constructor(
     private authService: AuthService,
@@ -166,10 +168,14 @@ export class AuthController {
 
   @Post('invitation/resend')
   async reSendInvitation(
-    @Body('invitationId', ParseIntPipe) invitationId: number,
-    @TenantId() tenantId: number
+    @Body() dto: ReSendInvitationDto,
+    @TenantId() tenantId: number,
   ) {
-    return this.invitationService.resendInvitation(invitationId, tenantId);
+    console.log('Received resend invitation request:', dto);
+    return this.invitationService.resendInvitation(
+      Number(dto.invitationId),
+      tenantId,
+    );
   }
 
   @Post('invitation/send')

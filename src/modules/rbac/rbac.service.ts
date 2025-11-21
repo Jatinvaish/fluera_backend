@@ -1,11 +1,21 @@
 // modules/rbac/rbac.service.ts
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
 import { RbacPermissionFilterService } from './rbac-permission-filter.service';
+import { use } from 'passport';
 
 @Injectable()
 export class RbacService {
-  constructor(private sqlService: SqlServerService, private filterService: RbacPermissionFilterService) { }
+  constructor(
+    private sqlService: SqlServerService,
+    private filterService: RbacPermissionFilterService,
+  ) {}
 
   // ============================================
   // ROLES MANAGEMENT
@@ -37,21 +47,28 @@ export class RbacService {
   }
 
   async getRoleById(roleId: number, userType: string, tenantId: number) {
-    console.log('roleIdasaaaaaaaaaaa', roleId)
+    console.log('roleIdasaaaaaaaaaaa', roleId);
     const result: any = await this.sqlService.query(
       `SELECT r.*,
         (SELECT COUNT(*) FROM user_roles WHERE role_id = r.id AND is_active = 1) as users_count,
         (SELECT COUNT(*) FROM role_permissions WHERE role_id = r.id) as permissions_count
        FROM roles r WHERE r.id = @roleId`,
-      { roleId }
+      { roleId },
     );
 
     if (result.length === 0) {
       throw new NotFoundException('Role not found');
     }
 
-    if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
-      if (result[0].tenant_id && Number(result[0].tenant_id) !== Number(tenantId)) {
+    if (
+      userType !== 'owner' &&
+      userType !== 'superadmin' &&
+      userType !== 'super_admin'
+    ) {
+      if (
+        result[0].tenant_id &&
+        Number(result[0].tenant_id) !== Number(tenantId)
+      ) {
         throw new ForbiddenException('Access denied to this role');
       }
     }
@@ -59,7 +76,12 @@ export class RbacService {
     return { success: true, data: result[0] };
   }
 
-  async createRole(dto: any, userId: number, tenantId: number, userType: string) {
+  async createRole(
+    dto: any,
+    userId: number,
+    tenantId: number,
+    userType: string,
+  ) {
     if (dto.isSystemRole && userType !== 'owner' && userType !== 'superadmin') {
       throw new ForbiddenException('Only super admins can create system roles');
     }
@@ -78,22 +100,39 @@ export class RbacService {
           isDefault: dto.isDefault || false,
           hierarchyLevel: dto.hierarchyLevel || 0,
           userId,
-        }
+        },
       );
 
-      return { success: true, data: result[0], message: 'Role created successfully' };
+      return {
+        success: true,
+        data: result[0],
+        message: 'Role created successfully',
+      };
     } catch (error: any) {
-      if (error.message?.includes('UNIQUE') || error.message?.includes('duplicate')) {
+      if (
+        error.message?.includes('UNIQUE') ||
+        error.message?.includes('duplicate')
+      ) {
         throw new ConflictException('Role with this name already exists');
       }
       throw error;
     }
   }
 
-  async updateRole(roleId: number, dto: any, userId: number, userType: string, tenantId: number) {
+  async updateRole(
+    roleId: number,
+    dto: any,
+    userId: number,
+    userType: string,
+    tenantId: number,
+  ) {
     const role = await this.getRoleById(roleId, userType, tenantId);
 
-    if (role.data.is_system_role && userType !== 'owner' && userType !== 'superadmin') {
+    if (
+      role.data.is_system_role &&
+      userType !== 'owner' &&
+      userType !== 'superadmin'
+    ) {
       throw new ForbiddenException('Cannot modify system roles');
     }
 
@@ -112,17 +151,26 @@ export class RbacService {
         description: dto.description,
         hierarchyLevel: dto.hierarchyLevel,
         userId,
-      }
+      },
     );
 
     if (result.length === 0) {
       throw new NotFoundException('Role not found');
     }
 
-    return { success: true, data: result[0], message: 'Role updated successfully' };
+    return {
+      success: true,
+      data: result[0],
+      message: 'Role updated successfully',
+    };
   }
 
-  async deleteRole(roleId: number, userId: number, userType: string, tenantId: number) {
+  async deleteRole(
+    roleId: number,
+    userId: number,
+    userType: string,
+    tenantId: number,
+  ) {
     const role = await this.getRoleById(roleId, userType, tenantId);
 
     if (role.data.is_system_role) {
@@ -131,18 +179,23 @@ export class RbacService {
 
     const usersCount: any = await this.sqlService.query(
       `SELECT COUNT(*) as count FROM user_roles WHERE role_id = @roleId AND is_active = 1`,
-      { roleId }
+      { roleId },
     );
 
     if (usersCount[0]?.count > 0) {
-      throw new BadRequestException(`Cannot delete role: ${usersCount[0].count} users are currently assigned`);
+      throw new BadRequestException(
+        `Cannot delete role: ${usersCount[0].count} users are currently assigned`,
+      );
     }
 
-    await this.sqlService.query(`DELETE FROM role_permissions WHERE role_id = @roleId`, { roleId });
+    await this.sqlService.query(
+      `DELETE FROM role_permissions WHERE role_id = @roleId`,
+      { roleId },
+    );
 
     const result: any = await this.sqlService.query(
       `DELETE FROM roles OUTPUT DELETED.* WHERE id = @roleId`,
-      { roleId }
+      { roleId },
     );
 
     if (result.length === 0) {
@@ -176,7 +229,7 @@ export class RbacService {
   async getPermissionById(id: number) {
     const result: any = await this.sqlService.query(
       `SELECT * FROM permissions WHERE id = @id`,
-      { id }
+      { id },
     );
 
     if (result.length === 0) {
@@ -187,7 +240,8 @@ export class RbacService {
   }
 
   async createPermission(dto: any, userId: number, userType: string) {
-    const isSystemPermission = userType === 'owner' || userType === 'superadmin';
+    const isSystemPermission =
+      userType === 'owner' || userType === 'superadmin';
 
     try {
       const result: any = await this.sqlService.query(
@@ -202,12 +256,19 @@ export class RbacService {
           category: dto.category || null,
           isSystemPermission,
           userId,
-        }
+        },
       );
 
-      return { success: true, data: result[0], message: 'Permission created successfully' };
+      return {
+        success: true,
+        data: result[0],
+        message: 'Permission created successfully',
+      };
     } catch (error: any) {
-      if (error.message?.includes('UNIQUE') || error.message?.includes('duplicate')) {
+      if (
+        error.message?.includes('UNIQUE') ||
+        error.message?.includes('duplicate')
+      ) {
         throw new ConflictException('Permission already exists');
       }
       throw error;
@@ -215,11 +276,14 @@ export class RbacService {
   }
 
   async deletePermission(id: number, userType: string) {
-    const systemCheck = userType === 'owner' || userType === 'superadmin' ? '' : 'AND is_system_permission = 0';
+    const systemCheck =
+      userType === 'owner' || userType === 'superadmin'
+        ? ''
+        : 'AND is_system_permission = 0';
 
     const result: any = await this.sqlService.query(
       `DELETE FROM permissions OUTPUT DELETED.* WHERE id = @id ${systemCheck}`,
-      { id }
+      { id },
     );
 
     if (result.length === 0) {
@@ -233,13 +297,18 @@ export class RbacService {
   // ROLE-PERMISSIONS
   // ============================================
 
-  async getRolePermissionsTree(roleId: number, userType: string, tenantId: number,
-    userId: number // ✅ ADD userId parameter
+  async getRolePermissionsTree(
+    roleId: number,
+    userType: string,
+    tenantId: number,
+    userId: number,
   ) {
-    await this.getRoleById(roleId, userType, tenantId);
+    let permissions: any[] = [];
 
-    const permissions = await this.sqlService.query(
-      `SELECT 
+    if (userType === 'owner' || userType === 'super_admin') {
+      // Super admin sees all permissions
+      permissions = await this.sqlService.query(
+        `SELECT 
         p.id as permission_id,
         p.permission_key,
         p.resource,
@@ -251,8 +320,30 @@ export class RbacService {
        FROM permissions p
        LEFT JOIN role_permissions rp ON p.id = rp.permission_id AND rp.role_id = @roleId
        ORDER BY p.category, p.resource, p.action`,
-      { roleId }
-    );
+        { roleId },
+      );
+    } else {
+      // Regular users see only permissions they themselves have
+      permissions = await this.sqlService.query(
+        `SELECT DISTINCT
+        p.id as permission_id,
+        p.permission_key,
+        p.resource,
+        p.action,
+        p.description,
+        p.category,
+        p.is_system_permission,
+        CASE WHEN target_rp.permission_id IS NOT NULL THEN 1 ELSE 0 END as is_checked
+       FROM permissions p
+       INNER JOIN role_permissions user_rp ON p.id = user_rp.permission_id
+       INNER JOIN user_roles ur ON user_rp.role_id = ur.role_id
+       LEFT JOIN role_permissions target_rp ON p.id = target_rp.permission_id AND target_rp.role_id = @roleId
+       WHERE ur.user_id = @userId 
+         AND ur.is_active = 1
+       ORDER BY p.category, p.resource, p.action`,
+        { roleId, userId },
+      );
+    }
 
     const grouped = this.groupPermissionsHierarchically(permissions);
 
@@ -263,7 +354,9 @@ export class RbacService {
         permissions_tree: grouped,
         summary: {
           total_permissions: permissions.length,
-          assigned_permissions: permissions.filter((p: any) => p.is_checked === 1).length,
+          assigned_permissions: permissions.filter(
+            (p: any) => p.is_checked === 1,
+          ).length,
           total_categories: grouped.length,
         },
       },
@@ -302,16 +395,28 @@ export class RbacService {
     return result;
   }
 
-  async assignPermissions(roleId: number, permissionKeys: string[], userId: number, userType: string, tenantId: number) {
+  async assignPermissions(
+    roleId: number,
+    permissionKeys: string[],
+    userId: number,
+    userType: string,
+    tenantId: number,
+  ) {
     const role = await this.getRoleById(roleId, userType, tenantId);
 
-    if (role.data.is_system_role && userType !== 'owner' && userType !== 'superadmin') {
-      throw new ForbiddenException('Cannot modify permissions for system roles');
+    if (
+      role.data.is_system_role &&
+      userType !== 'owner' &&
+      userType !== 'superadmin'
+    ) {
+      throw new ForbiddenException(
+        'Cannot modify permissions for system roles',
+      );
     }
 
     const permissions = await this.sqlService.query(
       `SELECT id FROM permissions WHERE permission_key IN (${permissionKeys.map(() => '?').join(',')})`,
-      permissionKeys
+      permissionKeys,
     );
 
     let assignedCount = 0;
@@ -320,7 +425,7 @@ export class RbacService {
         await this.sqlService.query(
           `INSERT INTO role_permissions (role_id, permission_id, created_by)
            VALUES (@roleId, @permissionId, @userId)`,
-          { roleId, permissionId: perm.id, userId }
+          { roleId, permissionId: perm.id, userId },
         );
         assignedCount++;
       } catch (error: any) {
@@ -335,11 +440,23 @@ export class RbacService {
     };
   }
 
-  async bulkAssignPermissions(roleId: number, changes: any[], userId: number, userType: string, tenantId: number) {
+  async bulkAssignPermissions(
+    roleId: number,
+    changes: any[],
+    userId: number,
+    userType: string,
+    tenantId: number,
+  ) {
     const role = await this.getRoleById(roleId, userType, tenantId);
 
-    if (role.data.is_system_role && userType !== 'owner' && userType !== 'super_admin') {
-      throw new ForbiddenException('Cannot modify permissions for system roles');
+    if (
+      role.data.is_system_role &&
+      userType !== 'owner' &&
+      userType !== 'super_admin'
+    ) {
+      throw new ForbiddenException(
+        'Cannot modify permissions for system roles',
+      );
     }
 
     let assignedCount = 0;
@@ -353,7 +470,7 @@ export class RbacService {
           await this.sqlService.query(
             `INSERT INTO role_permissions (role_id, permission_id, created_by)
              VALUES (@roleId, @permissionId, @userId)`,
-            { roleId, permissionId, userId }
+            { roleId, permissionId, userId },
           );
           assignedCount++;
         } catch (error: any) {
@@ -362,7 +479,7 @@ export class RbacService {
       } else if (change.mode === 'D') {
         await this.sqlService.query(
           `DELETE FROM role_permissions WHERE role_id = @roleId AND permission_id = @permissionId`,
-          { roleId, permissionId }
+          { roleId, permissionId },
         );
         deletedCount++;
       }
@@ -370,7 +487,7 @@ export class RbacService {
 
     const totalResult: any = await this.sqlService.query(
       `SELECT COUNT(*) as total FROM role_permissions WHERE role_id = @roleId`,
-      { roleId }
+      { roleId },
     );
 
     return {
@@ -385,17 +502,29 @@ export class RbacService {
     };
   }
 
-  async removePermissions(roleId: number, permissionIds: number[], userId: number, userType: string, tenantId: number) {
+  async removePermissions(
+    roleId: number,
+    permissionIds: number[],
+    userId: number,
+    userType: string,
+    tenantId: number,
+  ) {
     const role = await this.getRoleById(roleId, userType, tenantId);
 
-    if (role.data.is_system_role && userType !== 'owner' && userType !== 'superadmin') {
-      throw new ForbiddenException('Cannot modify permissions for system roles');
+    if (
+      role.data.is_system_role &&
+      userType !== 'owner' &&
+      userType !== 'superadmin'
+    ) {
+      throw new ForbiddenException(
+        'Cannot modify permissions for system roles',
+      );
     }
 
     await this.sqlService.query(
       `DELETE FROM role_permissions 
        WHERE role_id = @roleId AND permission_id IN (${permissionIds.join(',')})`,
-      { roleId }
+      { roleId },
     );
 
     return {
@@ -411,10 +540,14 @@ export class RbacService {
   private async checkRoleHierarchy(
     assignerId: number,
     targetRoleId: number,
-    assignerType: string
+    assignerType: string,
   ): Promise<void> {
     // Super admins can assign any role
-    if (assignerType === 'owner' || assignerType === 'superadmin' || assignerType === 'super_admin') {
+    if (
+      assignerType === 'owner' ||
+      assignerType === 'superadmin' ||
+      assignerType === 'super_admin'
+    ) {
       return;
     }
 
@@ -424,7 +557,7 @@ export class RbacService {
      FROM user_roles ur
      JOIN roles r ON ur.role_id = r.id
      WHERE ur.user_id = @userId AND ur.is_active = 1`,
-      { userId: assignerId }
+      { userId: assignerId },
     );
 
     const assignerHierarchy = assignerRoles[0]?.max_hierarchy || 0;
@@ -432,7 +565,7 @@ export class RbacService {
     // Get target role hierarchy
     const targetRole: any = await this.sqlService.query(
       `SELECT hierarchy_level FROM roles WHERE id = @roleId`,
-      { roleId: targetRoleId }
+      { roleId: targetRoleId },
     );
 
     const targetHierarchy = targetRole[0]?.hierarchy_level || 0;
@@ -440,7 +573,7 @@ export class RbacService {
     // Check hierarchy
     if (targetHierarchy > assignerHierarchy) {
       throw new ForbiddenException(
-        `Cannot assign role with hierarchy ${targetHierarchy}. Your maximum hierarchy is ${assignerHierarchy}`
+        `Cannot assign role with hierarchy ${targetHierarchy}. Your maximum hierarchy is ${assignerHierarchy}`,
       );
     }
   }
@@ -453,7 +586,7 @@ export class RbacService {
     roleId: number,
     assignedBy: number,
     assignerType: string,
-    assignerTenantId: number
+    assignerTenantId: number,
   ) {
     // ✅ ADD HIERARCHY CHECK
     await this.checkRoleHierarchy(assignedBy, roleId, assignerType);
@@ -463,7 +596,7 @@ export class RbacService {
      FROM users u
      LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
      WHERE u.id = @userId`,
-      { userId }
+      { userId },
     );
 
     if (targetUser.length === 0) {
@@ -472,10 +605,16 @@ export class RbacService {
 
     await this.getRoleById(roleId, assignerType, assignerTenantId);
 
-    if (assignerType !== 'owner' && assignerType !== 'superadmin' && assignerType !== 'super_admin') {
+    if (
+      assignerType !== 'owner' &&
+      assignerType !== 'superadmin' &&
+      assignerType !== 'super_admin'
+    ) {
       const userTenantId = targetUser[0].tenant_id;
       if (userTenantId && Number(userTenantId) !== Number(assignerTenantId)) {
-        throw new ForbiddenException('Cannot assign roles to users outside your tenant');
+        throw new ForbiddenException(
+          'Cannot assign roles to users outside your tenant',
+        );
       }
     }
 
@@ -484,7 +623,7 @@ export class RbacService {
         `INSERT INTO user_roles (user_id, role_id, is_active, created_by) 
        OUTPUT INSERTED.* 
        VALUES (@userId, @roleId, 1, @assignedBy)`,
-        { userId, roleId, assignedBy }
+        { userId, roleId, assignedBy },
       );
 
       return {
@@ -493,21 +632,31 @@ export class RbacService {
         message: 'Role assigned to user successfully',
       };
     } catch (error: any) {
-      if (error.message?.includes('UNIQUE') || error.message?.includes('duplicate')) {
+      if (
+        error.message?.includes('UNIQUE') ||
+        error.message?.includes('duplicate')
+      ) {
         throw new ConflictException('User already has this role assigned');
       }
       throw error;
     }
   }
 
-
-  async getUserRoles(userId: number, requestorType: string, requestorTenantId: number) {
-    if (requestorType !== 'owner' && requestorType !== 'superadmin' && requestorType !== 'super_admin') {
+  async getUserRoles(
+    userId: number,
+    requestorType: string,
+    requestorTenantId: number,
+  ) {
+    if (
+      requestorType !== 'owner' &&
+      requestorType !== 'superadmin' &&
+      requestorType !== 'super_admin'
+    ) {
       const targetUser: any = await this.sqlService.query(
         `SELECT tm.tenant_id FROM users u
          LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
          WHERE u.id = @userId`,
-        { userId }
+        { userId },
       );
 
       if (targetUser.length === 0) {
@@ -537,7 +686,7 @@ export class RbacService {
        JOIN roles r ON ur.role_id = r.id
        WHERE ur.user_id = @userId
        ORDER BY r.hierarchy_level DESC, ur.assigned_at DESC`,
-      { userId }
+      { userId },
     );
 
     return {
@@ -546,13 +695,22 @@ export class RbacService {
     };
   }
 
-  async removeRoleFromUser(userId: number, roleId: number, requestorType: string, requestorTenantId: number) {
-    if (requestorType !== 'owner' && requestorType !== 'superadmin' && requestorType !== 'super_admin') {
+  async removeRoleFromUser(
+    userId: number,
+    roleId: number,
+    requestorType: string,
+    requestorTenantId: number,
+  ) {
+    if (
+      requestorType !== 'owner' &&
+      requestorType !== 'superadmin' &&
+      requestorType !== 'super_admin'
+    ) {
       const targetUser: any = await this.sqlService.query(
         `SELECT tm.tenant_id FROM users u
          LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
          WHERE u.id = @userId`,
-        { userId }
+        { userId },
       );
 
       if (targetUser.length === 0) {
@@ -569,7 +727,7 @@ export class RbacService {
       `DELETE FROM user_roles 
        OUTPUT DELETED.*
        WHERE user_id = @userId AND role_id = @roleId`,
-      { userId, roleId }
+      { userId, roleId },
     );
 
     if (result.length === 0) {
@@ -582,8 +740,16 @@ export class RbacService {
     };
   }
 
-  async getUserEffectivePermissions(userId: number, requestorType: string, requestorTenantId: number) {
-    const roles = await this.getUserRoles(userId, requestorType, requestorTenantId);
+  async getUserEffectivePermissions(
+    userId: number,
+    requestorType: string,
+    requestorTenantId: number,
+  ) {
+    const roles = await this.getUserRoles(
+      userId,
+      requestorType,
+      requestorTenantId,
+    );
 
     const permissions = await this.sqlService.query(
       `SELECT DISTINCT
@@ -598,7 +764,7 @@ export class RbacService {
        JOIN permissions p ON rp.permission_id = p.id
        WHERE ur.user_id = @userId AND ur.is_active = 1
        ORDER BY p.category, p.permission_key`,
-      { userId }
+      { userId },
     );
 
     return {
@@ -615,9 +781,21 @@ export class RbacService {
   // MENU-PERMISSIONS
   // ============================================
 
-  async linkMenuPermission(menuKey: string, permissionId: number, isRequired: boolean, createdBy: number, userType: string) {
-    if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
-      throw new ForbiddenException('Only super admins can manage menu permissions');
+  async linkMenuPermission(
+    menuKey: string,
+    permissionId: number,
+    isRequired: boolean,
+    createdBy: number,
+    userType: string,
+  ) {
+    if (
+      userType !== 'owner' &&
+      userType !== 'superadmin' &&
+      userType !== 'super_admin'
+    ) {
+      throw new ForbiddenException(
+        'Only super admins can manage menu permissions',
+      );
     }
 
     try {
@@ -625,7 +803,7 @@ export class RbacService {
         `INSERT INTO menu_permissions (menu_key, permission_id, is_required, created_by, created_at)
          OUTPUT INSERTED.*
          VALUES (@menuKey, @permissionId, @isRequired, @createdBy, GETUTCDATE())`,
-        { menuKey, permissionId, isRequired, createdBy }
+        { menuKey, permissionId, isRequired, createdBy },
       );
 
       return {
@@ -634,13 +812,16 @@ export class RbacService {
         message: 'Menu permission linked successfully',
       };
     } catch (error: any) {
-      if (error.message?.includes('UNIQUE') || error.message?.includes('duplicate')) {
+      if (
+        error.message?.includes('UNIQUE') ||
+        error.message?.includes('duplicate')
+      ) {
         const updateResult: any = await this.sqlService.query(
           `UPDATE menu_permissions 
            SET is_required = @isRequired, updated_at = GETUTCDATE()
            OUTPUT INSERTED.*
            WHERE menu_key = @menuKey AND permission_id = @permissionId`,
-          { menuKey, permissionId, isRequired }
+          { menuKey, permissionId, isRequired },
         );
 
         return {
@@ -653,15 +834,28 @@ export class RbacService {
     }
   }
 
-  async bulkLinkMenuPermissions(mappings: any[], createdBy: number, userType: string) {
-    if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
-      throw new ForbiddenException('Only super admins can manage menu permissions');
+  async bulkLinkMenuPermissions(
+    mappings: any[],
+    createdBy: number,
+    userType: string,
+  ) {
+    if (
+      userType !== 'owner' &&
+      userType !== 'superadmin' &&
+      userType !== 'super_admin'
+    ) {
+      throw new ForbiddenException(
+        'Only super admins can manage menu permissions',
+      );
     }
 
     const menuKeys = [...new Set(mappings.map((m) => m.menuKey))];
 
     for (const menuKey of menuKeys) {
-      await this.sqlService.query(`DELETE FROM menu_permissions WHERE menu_key = @menuKey`, { menuKey });
+      await this.sqlService.query(
+        `DELETE FROM menu_permissions WHERE menu_key = @menuKey`,
+        { menuKey },
+      );
     }
 
     const results: any[] = [];
@@ -676,7 +870,7 @@ export class RbacService {
             permissionId: Number(mapping.permissionId),
             isRequired: mapping.isRequired ?? true,
             createdBy,
-          }
+          },
         );
         results.push(result[0]);
       } catch (error) {
@@ -693,16 +887,26 @@ export class RbacService {
     };
   }
 
-  async unlinkMenuPermission(menuKey: string, permissionId: number, userType: string) {
-    if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
-      throw new ForbiddenException('Only super admins can manage menu permissions');
+  async unlinkMenuPermission(
+    menuKey: string,
+    permissionId: number,
+    userType: string,
+  ) {
+    if (
+      userType !== 'owner' &&
+      userType !== 'superadmin' &&
+      userType !== 'super_admin'
+    ) {
+      throw new ForbiddenException(
+        'Only super admins can manage menu permissions',
+      );
     }
 
     const result: any = await this.sqlService.query(
       `DELETE FROM menu_permissions 
        OUTPUT DELETED.* 
        WHERE menu_key = @menuKey AND permission_id = @permissionId`,
-      { menuKey, permissionId }
+      { menuKey, permissionId },
     );
 
     if (result.length === 0) {
@@ -733,7 +937,7 @@ export class RbacService {
        INNER JOIN permissions p ON mp.permission_id = p.id
        WHERE mp.menu_key = @menuKey
        ORDER BY p.category, p.permission_key`,
-      { menuKey }
+      { menuKey },
     );
 
     return {
@@ -744,15 +948,18 @@ export class RbacService {
   }
 
   async listMenuPermissions(dto: any) {
-    const result: any = await this.sqlService.execute('sp_ListMenuPermissions', {
-      page: dto.page || 1,
-      limit: dto.limit || 50,
-      search: dto.search || null,
-      menuKey: dto.menuKey || null,
-      category: dto.category || null,
-      sortBy: dto.sortBy || 'created_at',
-      sortOrder: dto.sortOrder || 'DESC',
-    });
+    const result: any = await this.sqlService.execute(
+      'sp_ListMenuPermissions',
+      {
+        page: dto.page || 1,
+        limit: dto.limit || 50,
+        search: dto.search || null,
+        menuKey: dto.menuKey || null,
+        category: dto.category || null,
+        sortBy: dto.sortBy || 'created_at',
+        sortOrder: dto.sortOrder || 'DESC',
+      },
+    );
 
     return {
       success: true,
@@ -765,7 +972,10 @@ export class RbacService {
   }
 
   async getUserAccessibleMenus(userId: number) {
-    const result: any = await this.sqlService.execute('sp_GetUserAccessibleMenus', { userId });
+    const result: any = await this.sqlService.execute(
+      'sp_GetUserAccessibleMenus',
+      { userId },
+    );
 
     return {
       success: true,
@@ -794,7 +1004,7 @@ export class RbacService {
                AND rp.permission_id = mp.permission_id
                AND ur.is_active = 1
            )`,
-        { userId, menuKey }
+        { userId, menuKey },
       );
 
       const missingCount = result[0]?.missingCount || 0;
@@ -808,11 +1018,25 @@ export class RbacService {
   // RESOURCE-PERMISSIONS
   // ============================================
 
-  async grantResourcePermission(dto: any, grantedBy: number, userType?: string, tenantId?: number) {
-    const canGrant = await this.checkAccess(grantedBy, dto.resourceType, Number(dto.resourceId), 'share', userType, tenantId);
+  async grantResourcePermission(
+    dto: any,
+    grantedBy: number,
+    userType?: string,
+    tenantId?: number,
+  ) {
+    const canGrant = await this.checkAccess(
+      grantedBy,
+      dto.resourceType,
+      Number(dto.resourceId),
+      'share',
+      userType,
+      tenantId,
+    );
 
     if (!canGrant && userType !== 'owner' && userType !== 'superadmin') {
-      throw new ForbiddenException('You do not have permission to grant access to this resource');
+      throw new ForbiddenException(
+        'You do not have permission to grant access to this resource',
+      );
     }
 
     try {
@@ -831,7 +1055,7 @@ export class RbacService {
           permissionType: dto.permissionType,
           grantedBy,
           expiresAt: dto.expiresAt || null,
-        }
+        },
       );
 
       return {
@@ -840,19 +1064,36 @@ export class RbacService {
         message: 'Resource permission granted successfully',
       };
     } catch (error: any) {
-      if (error.message?.includes('UNIQUE') || error.message?.includes('duplicate')) {
+      if (
+        error.message?.includes('UNIQUE') ||
+        error.message?.includes('duplicate')
+      ) {
         throw new ConflictException('This permission already exists');
       }
       throw error;
     }
   }
 
-  async revokeResourcePermission(dto: any, revokedBy?: number, userType?: string, tenantId?: number) {
+  async revokeResourcePermission(
+    dto: any,
+    revokedBy?: number,
+    userType?: string,
+    tenantId?: number,
+  ) {
     if (revokedBy) {
-      const canRevoke = await this.checkAccess(revokedBy, dto.resourceType, Number(dto.resourceId), 'share', userType, tenantId);
+      const canRevoke = await this.checkAccess(
+        revokedBy,
+        dto.resourceType,
+        Number(dto.resourceId),
+        'share',
+        userType,
+        tenantId,
+      );
 
       if (!canRevoke && userType !== 'owner' && userType !== 'superadmin') {
-        throw new ForbiddenException('You do not have permission to revoke access to this resource');
+        throw new ForbiddenException(
+          'You do not have permission to revoke access to this resource',
+        );
       }
     }
 
@@ -870,7 +1111,7 @@ export class RbacService {
           entityType: dto.entityType,
           entityId: Number(dto.entityId),
           permissionType: dto.permissionType || null,
-        }
+        },
       );
 
       return { success: true, message: 'Permission revoked successfully' };
@@ -879,7 +1120,13 @@ export class RbacService {
     }
   }
 
-  async checkResourcePermission(userId: number, tenantId: number, resourceType: string, resourceId: number, permissionType: string): Promise<boolean> {
+  async checkResourcePermission(
+    userId: number,
+    tenantId: number,
+    resourceType: string,
+    resourceId: number,
+    permissionType: string,
+  ): Promise<boolean> {
     const result = await this.sqlService.execute('sp_CheckResourcePermission', {
       userId,
       tenantId,
@@ -904,7 +1151,7 @@ export class RbacService {
           tenantId,
           check.resourceType,
           Number(check.resourceId),
-          check.permissionType
+          check.permissionType,
         );
 
         return {
@@ -913,7 +1160,7 @@ export class RbacService {
           permissionType: check.permissionType,
           hasPermission,
         };
-      })
+      }),
     );
 
     return {
@@ -927,7 +1174,7 @@ export class RbacService {
     resourceId: number,
     requestorId: number,
     userType: string,
-    tenantId: number
+    tenantId: number,
   ) {
     const canView = await this.checkAccess(
       requestorId,
@@ -935,11 +1182,18 @@ export class RbacService {
       resourceId,
       'read',
       userType,
-      tenantId
+      tenantId,
     );
 
-    if (!canView && userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
-      throw new ForbiddenException('You do not have permission to view permissions for this resource');
+    if (
+      !canView &&
+      userType !== 'owner' &&
+      userType !== 'superadmin' &&
+      userType !== 'super_admin'
+    ) {
+      throw new ForbiddenException(
+        'You do not have permission to view permissions for this resource',
+      );
     }
 
     const result = await this.sqlService.query(
@@ -963,7 +1217,7 @@ export class RbacService {
        WHERE rp.resource_type = @resourceType 
          AND rp.resource_id = @resourceId
        ORDER BY rp.created_at DESC`,
-      { resourceType, resourceId }
+      { resourceType, resourceId },
     );
 
     return {
@@ -978,10 +1232,14 @@ export class RbacService {
     resourceId: number,
     permissionType: string,
     userType?: string,
-    tenantId?: number
+    tenantId?: number,
   ): Promise<boolean> {
     // Super admins have access to everything
-    if (userType === 'owner' || userType === 'superadmin' || userType === 'super_admin') {
+    if (
+      userType === 'owner' ||
+      userType === 'superadmin' ||
+      userType === 'super_admin'
+    ) {
       return true;
     }
 
@@ -991,7 +1249,7 @@ export class RbacService {
       tenantId!,
       resourceType,
       resourceId,
-      permissionType
+      permissionType,
     );
 
     return hasResourcePermission;
@@ -1002,14 +1260,18 @@ export class RbacService {
   // ============================================
 
   async createRoleLimit(dto: any, createdBy: number, userType: string) {
-    if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
+    if (
+      userType !== 'owner' &&
+      userType !== 'superadmin' &&
+      userType !== 'super_admin'
+    ) {
       throw new ForbiddenException('Only super admins can create role limits');
     }
 
     // Verify role exists
     const roleExists: any = await this.sqlService.query(
       `SELECT id FROM roles WHERE id = @roleId`,
-      { roleId: Number(dto.roleId) }
+      { roleId: Number(dto.roleId) },
     );
 
     if (roleExists.length === 0) {
@@ -1033,7 +1295,7 @@ export class RbacService {
           limitValue: dto.limitValue,
           resetPeriod: dto.resetPeriod || 'never',
           createdBy,
-        }
+        },
       );
 
       return {
@@ -1042,15 +1304,24 @@ export class RbacService {
         message: 'Role limit created successfully',
       };
     } catch (error: any) {
-      if (error.message?.includes('UNIQUE') || error.message?.includes('duplicate')) {
-        throw new ConflictException('A limit for this role and type already exists');
+      if (
+        error.message?.includes('UNIQUE') ||
+        error.message?.includes('duplicate')
+      ) {
+        throw new ConflictException(
+          'A limit for this role and type already exists',
+        );
       }
       throw error;
     }
   }
 
   async updateRoleLimit(dto: any, updatedBy: number, userType: string) {
-    if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
+    if (
+      userType !== 'owner' &&
+      userType !== 'superadmin' &&
+      userType !== 'super_admin'
+    ) {
       throw new ForbiddenException('Only super admins can update role limits');
     }
 
@@ -1068,7 +1339,7 @@ export class RbacService {
         limitValue: dto.limitValue,
         resetPeriod: dto.resetPeriod,
         updatedBy,
-      }
+      },
     );
 
     if (result.length === 0) {
@@ -1092,7 +1363,7 @@ export class RbacService {
        INNER JOIN roles r ON rl.role_id = r.id
        WHERE rl.role_id = @roleId
        ORDER BY rl.limit_type`,
-      { roleId }
+      { roleId },
     );
 
     return {
@@ -1106,7 +1377,7 @@ export class RbacService {
       `SELECT limit_value, current_usage, reset_period, last_reset_at
        FROM role_limits
        WHERE role_id = @roleId AND limit_type = @limitType`,
-      { roleId, limitType }
+      { roleId, limitType },
     );
 
     if (result.length === 0) {
@@ -1119,7 +1390,7 @@ export class RbacService {
     if (limit.reset_period !== 'never' && limit.last_reset_at) {
       const shouldReset = this.shouldResetLimit(
         new Date(limit.last_reset_at),
-        limit.reset_period
+        limit.reset_period,
       );
 
       if (shouldReset) {
@@ -1137,7 +1408,7 @@ export class RbacService {
        SET current_usage = current_usage + 1,
            updated_at = GETUTCDATE()
        WHERE role_id = @roleId AND limit_type = @limitType`,
-      { roleId, limitType }
+      { roleId, limitType },
     );
   }
 
@@ -1148,7 +1419,7 @@ export class RbacService {
            last_reset_at = GETUTCDATE(),
            updated_at = GETUTCDATE()
        WHERE role_id = @roleId AND limit_type = @limitType`,
-      { roleId, limitType }
+      { roleId, limitType },
     );
   }
 
@@ -1175,12 +1446,16 @@ export class RbacService {
   // HELPER METHODS FOR INVITATION FLOW
   // ============================================
 
-  async validateRoleForInvitation(roleId: number, inviterType: string, inviterTenantId: number) {
+  async validateRoleForInvitation(
+    roleId: number,
+    inviterType: string,
+    inviterTenantId: number,
+  ) {
     const role: any = await this.sqlService.query(
       `SELECT id, name, display_name, tenant_id, is_system_role, hierarchy_level
        FROM roles 
        WHERE id = @roleId`,
-      { roleId }
+      { roleId },
     );
 
     if (role.length === 0) {
@@ -1190,13 +1465,22 @@ export class RbacService {
     const roleData = role[0];
 
     // Super admins can assign any role
-    if (inviterType === 'owner' || inviterType === 'superadmin' || inviterType === 'super_admin') {
+    if (
+      inviterType === 'owner' ||
+      inviterType === 'superadmin' ||
+      inviterType === 'super_admin'
+    ) {
       return roleData;
     }
 
     // For tenant users, they can only assign roles from their own tenant
-    if (roleData.tenant_id && Number(roleData.tenant_id) !== Number(inviterTenantId)) {
-      throw new ForbiddenException('You can only assign roles from your own tenant');
+    if (
+      roleData.tenant_id &&
+      Number(roleData.tenant_id) !== Number(inviterTenantId)
+    ) {
+      throw new ForbiddenException(
+        'You can only assign roles from your own tenant',
+      );
     }
 
     // Cannot assign system roles unless you're a super admin
@@ -1237,7 +1521,7 @@ export class RbacService {
        ORDER BY 
          CASE WHEN tenant_id = @tenantId THEN 0 ELSE 1 END,
          hierarchy_level DESC`,
-      { tenantId: tenantId || null }
+      { tenantId: tenantId || null },
     );
 
     if (result.length === 0) {
@@ -1247,7 +1531,10 @@ export class RbacService {
     return result[0];
   }
   async getAssignablePermissionsForUser(userId: number, userType: string) {
-    const permissions = await this.filterService.getAssignablePermissions(userId, userType);
+    const permissions = await this.filterService.getAssignablePermissions(
+      userId,
+      userType,
+    );
 
     // Group by category
     const grouped = permissions.reduce((acc: any, perm: any) => {
@@ -1268,5 +1555,4 @@ export class RbacService {
       message: 'Assignable permissions retrieved successfully',
     };
   }
-
 }

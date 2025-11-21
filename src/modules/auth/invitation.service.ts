@@ -373,6 +373,8 @@ export class InvitationService {
   }
 
   async resendInvitation(invitationId: number, tenantId: number) {
+
+    console.log('Resending invitation:', { invitationId, tenantId });
     const invitation = await this.sqlService.query(
       `SELECT * FROM invitations 
        WHERE id = @invitationId 
@@ -397,6 +399,29 @@ export class InvitationService {
        OUTPUT INSERTED.*
        WHERE id = @invitationId`,
       { invitationId, token: newToken, expiresAt: newExpiresAt },
+    );
+
+    const inviteLink = `${process.env.FRONTEND_URL}/accept-invitation?token=${newToken}`;
+
+    const inviterInfo = await this.sqlService.query(
+      `SELECT u.first_name, u.last_name FROM users u
+   JOIN invitations i ON i.invited_by = u.id
+   WHERE i.id = @invitationId`,
+      { invitationId },
+    );
+
+    const tenantInfo = await this.sqlService.query(
+      `SELECT name FROM tenants WHERE id = @tenantId`,
+      { tenantId },
+    );
+
+    const inviterName = `${inviterInfo[0].first_name} ${inviterInfo[0].last_name}`;
+
+    await this.emailService.sendInvitationEmail(
+      result[0].invitee_email,
+      inviterName,
+      tenantInfo[0].name,
+      inviteLink,
     );
 
     return {
