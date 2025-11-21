@@ -12,17 +12,17 @@ import {
   Query,
   BadRequestException,
 } from '@nestjs/common';
-import { OptimizedChatService } from './chat-optimized.service';
 import { CurrentUser, TenantId } from 'src/core/decorators';
 import { JwtAuthGuard } from 'src/core/guards/jwt-auth.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ChatService } from './chat.service';
 
 @ApiTags('Team Collaboration')
 @ApiBearerAuth()
 @Controller('collaboration')
 @UseGuards(JwtAuthGuard)
 export class CollaborationController {
-  constructor(private chatService: OptimizedChatService) {}
+  constructor(private chatService: ChatService) {}
 
   /**
    * ✅ Get all team members for @mention or direct messaging
