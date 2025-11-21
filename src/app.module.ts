@@ -84,21 +84,13 @@ import { TenantsModule } from './modules/tenants/tenant.module';
 
 
     ChatService,
-
     PresenceService,
-
     JwtService,
   ],
 
-  controllers: [
-    //  UltraFastChatController,
-    //  TenantsController,
-    // ChatController,
-    // CollaborationController,
-  ],
+ 
 
   exports: [
-    // UltraFastChatService,
     ChatService,
     PresenceService,
   ],
