@@ -1,398 +1,119 @@
-// modules/chat/chat.controller.ts - COMPLETE VERSION
-
-import {
-  Controller,
-  Post,
-  Body,
-  UseGuards,
-  HttpCode,
-  HttpStatus,
-  ParseIntPipe,
-} from '@nestjs/common';
+// ============================================
+// src/modules/message-system/chat.controller.ts
+// MINIMAL ENDPOINTS - ULTRA FAST
+// ============================================
+import { Controller, Post, Get, Body, Query, UseGuards, HttpCode, HttpStatus, ParseIntPipe } from '@nestjs/common';
+import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
+import { JwtAuthGuard } from 'src/core/guards';
 import { ChatService } from './chat.service';
-import { CurrentUser, TenantId } from 'src/core/decorators';
-import { JwtAuthGuard } from 'src/core/guards/jwt-auth.guard';
-import { EncryptionGuard, RequireEncryption } from 'src/core/guards/encryption.guard';
-import { RateLimit, RateLimitGuard } from 'src/core/guards/rate-limit.guard';
-import * as Dto from '../global-modules/dto/chat.dto';
+import { SendMessageDto, CreateChannelDto, MarkAsReadDto } from './dto/chat.dto';
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
+@Unencrypted()
 export class ChatController {
   constructor(private chatService: ChatService) {}
 
-  // ==================== CHANNELS ====================
-
-  @Post('channels/list')
-  @HttpCode(HttpStatus.OK)
-  async getUserChannels(
-    @CurrentUser('id') userId: number,
-    @TenantId() tenantId: number,
-    @Body() dto: Dto.GetChannelsDto,
-  ) {
-    return this.chatService.getUserChannels(userId, tenantId, dto);
-  }
-
-  @Post('channels/get-by-id')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(EncryptionGuard)
-  @RequireEncryption()
-  async getChannelById(
-    @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.getChannelById(id, userId);
-  }
-
-  @Post('channels/create')
-  @UseGuards(EncryptionGuard, RateLimitGuard)
-  @RequireEncryption()
-  @RateLimit(10, 60)
-  async createChannel(
-    @Body() dto: Dto.CreateChannelDto,
-    @CurrentUser('id') userId: number,
-    @TenantId() tenantId: number,
-  ) {
-    return this.chatService.createChannel(dto, userId, tenantId);
-  }
-
-  @Post('channels/update')
-  @HttpCode(HttpStatus.OK)
-  async updateChannel(
-    @Body() dto: Dto.UpdateChannelDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.updateChannel(dto.channelId, dto, userId);
-  }
-
-  @Post('channels/archive')
-  @HttpCode(HttpStatus.OK)
-  async archiveChannel(
-    @Body() dto: Dto.ArchiveChannelDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.archiveChannel(dto.channelId, dto.isArchived, userId);
-  }
-
-  @Post('channels/delete')
-  @HttpCode(HttpStatus.OK)
-  async deleteChannel(
-    @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.deleteChannel(id, userId);
-  }
-
-  @Post('channels/rotate-key')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(EncryptionGuard)
-  @RequireEncryption()
-  async rotateChannelKey(
-    @Body() dto: Dto.RotateChannelKeyDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.rotateChannelKey(dto.channelId, dto.reason, userId);
-  }
-
-  @Post('channels/settings/get')
-  @HttpCode(HttpStatus.OK)
-  async getChannelSettings(
-    @Body('channelId', ParseIntPipe) channelId: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.getChannelSettings(channelId, userId);
-  }
-
-  @Post('channels/settings/update')
-  @HttpCode(HttpStatus.OK)
-  async updateChannelSettings(
-    @Body('channelId', ParseIntPipe) channelId: number,
-    @Body('settings') settings: any,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.updateChannelSettings(channelId, settings, userId);
-  }
-
-  @Post('channels/pinned-messages')
-  @HttpCode(HttpStatus.OK)
-  async getPinnedMessages(
-    @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.getPinnedMessages(id, userId);
-  }
-
-  @Post('channels/files/list')
-  @HttpCode(HttpStatus.OK)
-  async getChannelFiles(
-    @Body('channelId', ParseIntPipe) id: number,
-    @Body('limit') limit: number,
-    @Body('offset') offset: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.getChannelFiles(id, userId, limit || 50, offset || 0);
-  }
-
-  // ==================== CHANNEL MEMBERS ====================
-
-  @Post('channels/members/list')
-  @HttpCode(HttpStatus.OK)
-  async getChannelMembers(
-    @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.getChannelMembers(id, userId);
-  }
-
-  @Post('channels/members/add')
-  @UseGuards(RateLimitGuard)
-  @RateLimit(20, 60)
-  async addChannelMembers(
-    @Body() dto: Dto.AddChannelMembersDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.addChannelMembers(dto.channelId, dto, userId);
-  }
-
-  @Post('channels/members/remove')
-  @HttpCode(HttpStatus.OK)
-  async removeChannelMember(
-    @Body('channelId', ParseIntPipe) channelId: number,
-    @Body('userId', ParseIntPipe) memberId: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.removeChannelMember(channelId, memberId, userId);
-  }
-
-  @Post('channels/members/update-role')
-  @HttpCode(HttpStatus.OK)
-  async updateMemberRole(
-    @Body() dto: Dto.UpdateMemberRoleDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.updateMemberRole(dto.channelId, dto, userId);
-  }
-
-  @Post('channels/notifications/update')
-  @HttpCode(HttpStatus.OK)
-  async updateMemberNotification(
-    @Body() dto: Dto.UpdateMemberNotificationDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.updateMemberNotification(dto.channelId, dto, userId);
-  }
-
-  @Post('channels/leave')
-  @HttpCode(HttpStatus.OK)
-  async leaveChannel(
-    @Body('channelId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.removeChannelMember(id, userId, userId);
-  }
-
-  // ==================== MESSAGES ====================
-
-  @Post('messages')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(EncryptionGuard)
-  @RequireEncryption()
-  async getMessages(
-    @CurrentUser('id') userId: number,
-    @Body() dto: Dto.GetMessagesDto,
-  ) {
-    return this.chatService.getMessages(dto.channelId, userId, dto);
-  }
+  // ==================== CORE ENDPOINTS ====================
 
   @Post('messages/send')
-  @UseGuards(EncryptionGuard, RateLimitGuard)
-  @RequireEncryption()
-  @RateLimit(60, 60)
+  @HttpCode(HttpStatus.OK)
   async sendMessage(
-    @Body() dto: Dto.SendMessageDto,
+    @Body() dto: SendMessageDto,
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
     return this.chatService.sendMessage(dto, userId, tenantId);
   }
 
-  @Post('messages/edit')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(EncryptionGuard)
-  @RequireEncryption()
-  async editMessage(
-    @Body() dto: Dto.EditMessageDto,
+  @Get('messages')
+  async getMessages(
+    @Query('channelId', ParseIntPipe) channelId: number,
+    @Query('limit', ParseIntPipe) limit: number = 50,
+    @Query('beforeId') beforeId: string,
     @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.editMessage(dto.messageId, dto, userId);
+    return this.chatService.getMessages(channelId, userId, limit, beforeId ? parseInt(beforeId) : undefined);
   }
 
-  @Post('messages/delete')
-  @HttpCode(HttpStatus.OK)
-  async deleteMessage(
-    @Body('messageId', ParseIntPipe) id: number,
-    @Body('hardDelete') hardDelete: boolean,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.deleteMessage(id, userId, hardDelete);
+  @Post('messages/mark-read')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async markAsRead(@Body() dto: MarkAsReadDto, @CurrentUser('id') userId: number) {
+    return this.chatService.markAsRead(dto.channelId, dto.messageId, userId);
   }
 
-  @Post('messages/bulk-delete')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(RateLimitGuard)
-  @RateLimit(10, 60)
-  async bulkDeleteMessages(
-    @Body('messageIds') messageIds: number[],
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.bulkDeleteMessages(messageIds, userId);
+  @Get('unread')
+  async getUnreadCount(@CurrentUser('id') userId: number) {
+    const count = await this.chatService.getUnreadCount(userId);
+    return { unread: count };
   }
 
-  @Post('messages/forward')
+  // ==================== REACTIONS ====================
+
+  @Post('messages/reaction')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(EncryptionGuard, RateLimitGuard)
-  @RequireEncryption()
-  @RateLimit(30, 60)
-  async forwardMessage(
-    @Body() dto: Dto.ForwardMessageDto,
+  async addReaction(
+    @Body() dto: { messageId: number; emoji: string },
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    return this.chatService.forwardMessage(dto.messageId, dto.targetChannelIds, userId, tenantId);
+    return this.chatService.addReaction(dto.messageId, userId, tenantId, dto.emoji);
   }
 
-  @Post('messages/reactions/add')
-  @UseGuards(RateLimitGuard)
-  @RateLimit(100, 60)
-  async reactToMessage(
-    @Body() dto: Dto.ReactToMessageDto,
+  @Post('messages/reaction/remove')
+  @HttpCode(HttpStatus.OK)
+  async removeReaction(
+    @Body() dto: { messageId: number; emoji: string },
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.removeReaction(dto.messageId, userId, dto.emoji);
+  }
+
+  // ==================== CHANNELS ====================
+
+  @Post('channels/create')
+  async createChannel(
+    @Body() dto: CreateChannelDto,
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    return this.chatService.reactToMessage(dto.messageId, dto.emoji, userId, tenantId);
+    return this.chatService.createChannel(dto, userId, tenantId);
   }
 
-  @Post('messages/reactions/list')
-  @HttpCode(HttpStatus.OK)
-  async getMessageReactions(
-    @Body('messageId', ParseIntPipe) id: number,
+  @Get('channels')
+  async getUserChannels(
+    @CurrentUser('id') userId: number,
+    @Query('limit', ParseIntPipe) limit: number = 50,
+  ) {
+    const channels = await this.chatService.getUserChannels(userId, limit);
+    return { channels };
+  }
+
+  @Get('channels/:id')
+  async getChannelById(
+    @Query('id', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.getMessageReactions(id, userId);
+    return this.chatService.getChannelById(id, userId);
   }
 
-  @Post('messages/pin')
-  @HttpCode(HttpStatus.OK)
-  async pinMessage(
-    @Body() dto: Dto.PinMessageDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.pinMessage(dto.messageId, dto.isPinned, userId);
-  }
+  // ==================== TEAM COLLABORATION ====================
 
-  @Post('messages/status')
-  @HttpCode(HttpStatus.OK)
-  async getMessageStatus(
-    @Body('messageId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.getMessageStatus(id, userId);
-  }
-
-  @Post('messages/status/bulk')
-  @HttpCode(HttpStatus.OK)
-  async getBulkMessageStatus(
-    @Body('messageIds') messageIds: number[],
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.getMessagesDeliveryStatus(messageIds, userId);
-  }
-
-  // ==================== THREADS ====================
-
-  @Post('threads/messages')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(EncryptionGuard)
-  @RequireEncryption()
-  async getThreadMessages(
-    @Body('threadId', ParseIntPipe) id: number,
-    @CurrentUser('id') userId: number,
-    @Body() dto: Dto.GetThreadMessagesDto,
-  ) {
-    return this.chatService.getThreadMessages(id, userId, dto.limit, dto.offset);
-  }
-
-  // ==================== DIRECT MESSAGES ====================
-
-  @Post('direct/send')
-  @UseGuards(EncryptionGuard, RateLimitGuard)
-  @RequireEncryption()
-  @RateLimit(60, 60)
-  async createDirectMessage(
-    @Body() dto: Dto.CreateDirectMessageDto,
+  @Get('team/members')
+  async getTeamMembers(
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    return this.chatService.createDirectMessage(dto, userId, tenantId);
+    return this.chatService.getTeamMembers(tenantId, userId);
   }
 
-  // ==================== READ RECEIPTS ====================
-
-  @Post('mark-read')
+  @Post('team/start-chat')
   @HttpCode(HttpStatus.OK)
-  async markAsRead(
-    @Body() dto: Dto.MarkAsReadDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.markAsRead(dto, userId);
-  }
-
-  @Post('mark-read/bulk')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(RateLimitGuard)
-  @RateLimit(30, 60)
-  async bulkMarkAsRead(
-    @Body() dto: Dto.BulkMarkAsReadDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.bulkMarkAsRead(dto.channelId, dto.messageIds, userId);
-  }
-
-  @Post('unread/count')
-  @HttpCode(HttpStatus.OK)
-  async getUnreadCount(
+  async startTeamChat(
+    @Body() dto: { memberIds: number[]; name?: string },
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    return this.chatService.getUnreadCount(userId, tenantId);
-  }
-
-  // ==================== SEARCH ====================
-
-  @Post('search')
-  @HttpCode(HttpStatus.OK)
-  async searchMessages(
-    @Body() dto: Dto.SearchMessagesDto,
-    @CurrentUser('id') userId: number,
-    @TenantId() tenantId: number,
-  ) {
-    return this.chatService.searchMessages(userId, tenantId, dto);
-  }
-
-  // ==================== USER PRESENCE ====================
-
-  @Post('presence/update')
-  @HttpCode(HttpStatus.OK)
-  async updatePresence(
-    @Body('status') status: 'online' | 'away' | 'offline',
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.updateUserPresence(userId, status);
-  }
-
-  @Post('presence/online')
-  @HttpCode(HttpStatus.OK)
-  async getOnlineUsers(@TenantId() tenantId: number) {
-    return this.chatService.getOnlineUsers(tenantId);
+    return this.chatService.createTeamCollaboration(dto, userId, tenantId);
   }
 }

@@ -39,17 +39,11 @@ import { ChatModule } from './modules/message-system/chat.module';
 
 // Chat components
 import { ChatService } from './modules/message-system/chat.service';
-import { OptimizedChatService } from './modules/message-system/chat-optimized.service';
-import { OptimizedChatGateway } from './modules/message-system/chat.gateway';
-import { MessageQueueService } from './modules/message-system/message-queue.service';
 import { PresenceService } from './modules/message-system/presence.service';
 import { ChatController } from './modules/message-system/chat.controller';
 import { CollaborationController } from './modules/message-system/collaboration.controller';
 
 // Ultra-fast chat
-import { UltraFastChatService } from './modules/message-system/ehnaced_chat/chat-ultra-fast.service';
-import { UltraFastChatGateway } from './modules/message-system/ehnaced_chat/chat-ultra-fast.gateway';
-import { UltraFastChatController } from './modules/message-system/ehnaced_chat/chat-ultra-fast.controller';
 
 import { JwtService } from '@nestjs/jwt';
 import { ResourcePermissionGuard } from './core/guards/permissions.guard';
@@ -88,29 +82,23 @@ import { TenantsModule } from './modules/tenants/tenant.module';
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ResourcePermissionGuard },
 
-    // Chat services
-    UltraFastChatService,
-    UltraFastChatGateway,
 
     ChatService,
-    OptimizedChatService,
-    OptimizedChatGateway,
 
     PresenceService,
-    MessageQueueService,
 
     JwtService,
   ],
 
   controllers: [
-     UltraFastChatController,
+    //  UltraFastChatController,
     //  TenantsController,
     // ChatController,
     // CollaborationController,
   ],
 
   exports: [
-    UltraFastChatService,
+    // UltraFastChatService,
     ChatService,
     PresenceService,
   ],

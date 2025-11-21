@@ -1,17 +1,13 @@
 // ============================================
-// src/modules/message-system/chat.module.ts - COMPLETE v5.0
+// src/modules/message-system/chat.module.ts
+// SIMPLIFIED - NO ENCRYPTION
 // ============================================
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ChatController } from './chat.controller';
-import { CollaborationController } from './collaboration.controller';
-import { PresenceService } from './presence.service';
-import { OptimizedChatService } from './chat-optimized.service';
-import { MessageQueueService } from './message-queue.service';
-import { OptimizedChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
-import { UltraFastChatService } from './ehnaced_chat/chat-ultra-fast.service';
-import { UltraFastChatGateway } from './ehnaced_chat/chat-ultra-fast.gateway';
+import { PresenceService } from './presence.service';
+import { ChatGateway } from './chat.gateway';
 
 @Module({
   imports: [
@@ -20,16 +16,12 @@ import { UltraFastChatGateway } from './ehnaced_chat/chat-ultra-fast.gateway';
       signOptions: { expiresIn: '7d' },
     }),
   ],
-  controllers: [ChatController, CollaborationController],
+  controllers: [ChatController],
   providers: [
-    OptimizedChatService,
-    UltraFastChatService,
     ChatService,
-    OptimizedChatGateway,
-    UltraFastChatGateway,
+    ChatGateway,
     PresenceService,
-    MessageQueueService,
   ],
-  exports: [OptimizedChatService, ChatService,OptimizedChatGateway,UltraFastChatGateway,UltraFastChatService, PresenceService],
+  exports: [ChatService, ChatGateway, PresenceService],
 })
 export class ChatModule {}
