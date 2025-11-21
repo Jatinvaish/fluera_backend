@@ -28,6 +28,7 @@ import {
   ResetPasswordRequestDto,
   ResetPasswordDto,
   ReSendInvitationDto,
+  CancelInvitationDto,
 } from './dto/auth.dto';
 import {
   Public,
@@ -194,6 +195,25 @@ export class AuthController {
       firstName: dto.firstName,
       lastName: dto.lastName,
     });
+  }
+
+  @Post('invitation/cancel')
+  async cancelInvitation(
+    @Body() dto: CancelInvitationDto,
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
+    console.log(
+      'Received cancel invitation request:',
+      Number(dto.invitationId),
+      userId,
+      tenantId,
+    );
+    return this.invitationService.cancelInvitation(
+      Number(dto.invitationId),
+      userId,
+      tenantId,
+    );
   }
 
   // ============================================

@@ -1290,6 +1290,7 @@ export class RbacEnhancedService {
     maxLevel?: number,
     userType?: string
   ) {
+    console.log('Getting roles by hierarchy for tenant:', tenantId, 'minLevel:', minLevel, 'maxLevel:', maxLevel);
     let conditions = ['(r.tenant_id = @tenantId OR r.is_system_role = 1)'];
     const params: any = { tenantId };
 
