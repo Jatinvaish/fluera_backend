@@ -3,7 +3,7 @@
 // src/modules/tenants/tenants.controller.ts
 // ============================================
 import { Controller, Get, Put, Body, Param, ParseIntPipe, Post } from '@nestjs/common';
-import { CurrentUser, Roles, TenantId } from '../../core/decorators';
+import { CurrentUser, Roles, TenantId, Unencrypted } from '../../core/decorators';
 import { UpdateTenantDto } from './dto/tenant.dto';
 import { TenantsService } from './tenant.service';
 
@@ -34,6 +34,7 @@ export class TenantsController {
   }
 
   @Get(':id/members')
+  @Unencrypted()
   async getTenantMembers(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser('id') userId: number

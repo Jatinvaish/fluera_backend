@@ -116,6 +116,7 @@ export class TenantsService {
    * Get tenant members
    */
   async getTenantMembers(tenantId: number, userId: number) {
+    console.log("Getting members for tenant:", tenantId, "by user:", userId);
     const hasAccess = await this.verifyUserAccess(userId, tenantId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this tenant');

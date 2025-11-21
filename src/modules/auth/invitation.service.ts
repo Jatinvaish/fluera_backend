@@ -1,10 +1,16 @@
 // ============================================
 // src/modules/auth/invitation.service.ts
 // ============================================
-import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
 import { HashingService } from '../../common/hashing.service';
 import { RbacService } from '../rbac/rbac.service';
+import { EmailService } from '../email-templates/email.service';
 
 @Injectable()
 export class InvitationService {
@@ -12,17 +18,14 @@ export class InvitationService {
     private sqlService: SqlServerService,
     private hashingService: HashingService,
     private rbacService: RbacService,
+    private emailService: EmailService,
   ) {}
 
-  async sendInvitation(
-    tenantId: number, 
-    invitedBy: number, 
-    dto: any
-  ) {
+  async sendInvitation(tenantId: number, invitedBy: number, dto: any) {
     // Get inviter's user type for role validation
     const inviterInfo: any = await this.sqlService.query(
-      `SELECT user_type FROM users WHERE id = @userId`,
-      { userId: invitedBy }
+      `SELECT user_type,first_name, last_name FROM users WHERE id = @userId`,
+      { userId: invitedBy },
     );
 
     if (inviterInfo.length === 0) {
@@ -43,7 +46,7 @@ export class InvitationService {
     await this.rbacService.validateRoleForInvitation(
       Number(dto.roleId),
       inviterType,
-      tenantId
+      tenantId,
     );
 
     // ✅ Step 3: Check for existing pending invitation
@@ -52,7 +55,7 @@ export class InvitationService {
        WHERE tenant_id = @tenantId 
          AND invitee_email = @email 
          AND status = 'pending'`,
-      { tenantId, email: dto.inviteeEmail }
+      { tenantId, email: dto.inviteeEmail },
     );
 
     if (existing.length > 0) {
@@ -63,7 +66,7 @@ export class InvitationService {
     try {
       const canInvite = await this.rbacService.checkRoleLimit(
         Number(dto.roleId),
-        'invitations'
+        'invitations',
       );
 
       if (!canInvite) {
@@ -94,18 +97,36 @@ export class InvitationService {
         token,
         message: dto.invitationMessage || null,
         expiresAt,
-      }
+      },
     );
 
     // ✅ Step 7: Increment role limit usage
     try {
       await this.rbacService.incrementRoleLimitUsage(
         Number(dto.roleId),
-        'invitations'
+        'invitations',
       );
     } catch (error) {
       // If no limit tracking, ignore
     }
+
+    // ✅ Step 8: Send invitation email
+    // In sendInvitation method, after creating invitation (after Step 7):
+    const inviteLink = `${process.env.FRONTEND_URL}/accept-invitation?token=${token}`;
+
+    const inviterName = `${inviterInfo[0].first_name} ${inviterInfo[0].last_name}`;
+
+    const tenantInfo = await this.sqlService.query(
+      `SELECT name FROM tenants WHERE id = @tenantId`,
+      { tenantId },
+    );
+
+    await this.emailService.sendInvitationEmail(
+      dto.inviteeEmail,
+      inviterName,
+      tenantInfo[0].name,
+      inviteLink,
+    );
 
     return {
       success: true,
@@ -124,7 +145,7 @@ export class InvitationService {
        WHERE i.invitation_token = @token 
          AND i.status = 'pending' 
          AND i.expires_at > GETUTCDATE()`,
-      { token }
+      { token },
     );
 
     if (invitation.length === 0) {
@@ -135,27 +156,33 @@ export class InvitationService {
 
     // ✅ Step 2: Validate that role still exists and is valid
     if (!invite.role_id) {
-      throw new BadRequestException('Invitation does not have a valid role assigned');
+      throw new BadRequestException(
+        'Invitation does not have a valid role assigned',
+      );
     }
 
     try {
       await this.rbacService.getRoleById(
         Number(invite.role_id),
         'system', // System context for invitation acceptance
-        Number(invite.tenant_id)
+        Number(invite.tenant_id),
       );
     } catch (error) {
-      throw new BadRequestException('The role assigned to this invitation is no longer valid');
+      throw new BadRequestException(
+        'The role assigned to this invitation is no longer valid',
+      );
     }
 
     // ✅ Step 3: Check if email is already registered
     const existingUser = await this.sqlService.query(
       `SELECT id FROM users WHERE email = @email`,
-      { email: invite.invitee_email }
+      { email: invite.invitee_email },
     );
 
     if (existingUser.length > 0) {
-      throw new BadRequestException('An account with this email already exists');
+      throw new BadRequestException(
+        'An account with this email already exists',
+      );
     }
 
     // ✅ Step 4: Hash password
@@ -164,13 +191,21 @@ export class InvitationService {
     // ✅ Step 5: Execute transaction to create user and assign role
     return this.sqlService.transaction(async (transaction) => {
       // Create user account
-      const userResult = await transaction.request()
+      const userResult = await transaction
+        .request()
         .input('email', invite.invitee_email)
         .input('passwordHash', passwordHash)
-        .input('firstName', userData.firstName || invite.invitee_name?.split(' ')[0] || 'User')
-        .input('lastName', userData.lastName || invite.invitee_name?.split(' ').slice(1).join(' ') || '')
-        .input('userType', invite.invitee_type || 'staff')
-        .query(`
+        .input(
+          'firstName',
+          userData.firstName || invite.invitee_name?.split(' ')[0] || 'User',
+        )
+        .input(
+          'lastName',
+          userData.lastName ||
+            invite.invitee_name?.split(' ').slice(1).join(' ') ||
+            '',
+        )
+        .input('userType', invite.invitee_type || 'staff').query(`
           INSERT INTO users (
             email, password_hash, first_name, last_name,
             user_type, status, email_verified_at, created_at
@@ -182,31 +217,31 @@ export class InvitationService {
       const user = userResult.recordset[0];
 
       // ✅ Assign role to user via RBAC system
-      await transaction.request()
+      await transaction
+        .request()
         .input('userId', user.id)
         .input('roleId', invite.role_id)
-        .input('assignedBy', invite.invited_by)
-        .query(`
+        .input('assignedBy', invite.invited_by).query(`
           INSERT INTO user_roles (user_id, role_id, is_active, created_by, created_at) 
           VALUES (@userId, @roleId, 1, @assignedBy, GETUTCDATE())
         `);
 
       // Add user to tenant
-      await transaction.request()
+      await transaction
+        .request()
         .input('tenantId', invite.tenant_id)
         .input('userId', user.id)
         .input('roleId', invite.role_id)
-        .input('memberType', invite.invitee_type || 'staff')
-        .query(`
+        .input('memberType', invite.invitee_type || 'staff').query(`
           INSERT INTO tenant_members (tenant_id, user_id, role_id, member_type, is_active, created_at)
           VALUES (@tenantId, @userId, @roleId, @memberType, 1, GETUTCDATE())
         `);
 
       // Mark invitation as accepted
-      await transaction.request()
+      await transaction
+        .request()
         .input('invitationId', invite.id)
-        .input('acceptedBy', user.id)
-        .query(`
+        .input('acceptedBy', user.id).query(`
           UPDATE invitations 
           SET status = 'accepted', 
               accepted_at = GETUTCDATE(),
@@ -235,7 +270,8 @@ export class InvitationService {
             displayName: invite.role_display_name,
           },
         },
-        message: 'Invitation accepted successfully. Your account has been created.',
+        message:
+          'Invitation accepted successfully. Your account has been created.',
       };
     });
   }
@@ -251,7 +287,7 @@ export class InvitationService {
        JOIN tenants t ON i.tenant_id = t.id
        LEFT JOIN roles r ON i.role_id = r.id
        WHERE i.invitation_token = @token`,
-      { token }
+      { token },
     );
 
     if (result.length === 0) {
@@ -266,7 +302,7 @@ export class InvitationService {
     const offset = (page - 1) * limit;
 
     let whereClause = 'WHERE i.tenant_id = @tenantId';
-    
+
     if (status) {
       whereClause += ' AND i.status = @status';
     }
@@ -285,12 +321,12 @@ export class InvitationService {
        ${whereClause}
        ORDER BY i.created_at DESC
        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
-      { tenantId, status: status || null, offset, limit }
+      { tenantId, status: status || null, offset, limit },
     );
 
     const countResult: any = await this.sqlService.query(
       `SELECT COUNT(*) as total FROM invitations i ${whereClause}`,
-      { tenantId, status: status || null }
+      { tenantId, status: status || null },
     );
 
     return {
@@ -307,7 +343,11 @@ export class InvitationService {
     };
   }
 
-  async cancelInvitation(invitationId: number, cancelledBy: number, tenantId: number) {
+  async cancelInvitation(
+    invitationId: number,
+    cancelledBy: number,
+    tenantId: number,
+  ) {
     const result = await this.sqlService.query(
       `UPDATE invitations 
        SET status = 'cancelled', 
@@ -316,11 +356,13 @@ export class InvitationService {
        WHERE id = @invitationId 
          AND tenant_id = @tenantId 
          AND status = 'pending'`,
-      { invitationId, tenantId }
+      { invitationId, tenantId },
     );
 
     if (result.length === 0) {
-      throw new NotFoundException('Invitation not found or cannot be cancelled');
+      throw new NotFoundException(
+        'Invitation not found or cannot be cancelled',
+      );
     }
 
     return {
@@ -331,12 +373,14 @@ export class InvitationService {
   }
 
   async resendInvitation(invitationId: number, tenantId: number) {
+
+    console.log('Resending invitation:', { invitationId, tenantId });
     const invitation = await this.sqlService.query(
       `SELECT * FROM invitations 
        WHERE id = @invitationId 
          AND tenant_id = @tenantId 
          AND status = 'pending'`,
-      { invitationId, tenantId }
+      { invitationId, tenantId },
     );
 
     if (invitation.length === 0) {
@@ -354,7 +398,30 @@ export class InvitationService {
            updated_at = GETUTCDATE()
        OUTPUT INSERTED.*
        WHERE id = @invitationId`,
-      { invitationId, token: newToken, expiresAt: newExpiresAt }
+      { invitationId, token: newToken, expiresAt: newExpiresAt },
+    );
+
+    const inviteLink = `${process.env.FRONTEND_URL}/accept-invitation?token=${newToken}`;
+
+    const inviterInfo = await this.sqlService.query(
+      `SELECT u.first_name, u.last_name FROM users u
+   JOIN invitations i ON i.invited_by = u.id
+   WHERE i.id = @invitationId`,
+      { invitationId },
+    );
+
+    const tenantInfo = await this.sqlService.query(
+      `SELECT name FROM tenants WHERE id = @tenantId`,
+      { tenantId },
+    );
+
+    const inviterName = `${inviterInfo[0].first_name} ${inviterInfo[0].last_name}`;
+
+    await this.emailService.sendInvitationEmail(
+      result[0].invitee_email,
+      inviterName,
+      tenantInfo[0].name,
+      inviteLink,
     );
 
     return {

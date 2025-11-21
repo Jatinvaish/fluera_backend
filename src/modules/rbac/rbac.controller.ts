@@ -140,6 +140,7 @@ export class RbacController {
 
   @Post('roles/permissions/tree')
   @Permissions('role-permissions:read')
+  @Unencrypted()
   async getRolePermissionsTree(
     @Body() dto: GetRolePermissionsTreeDto,
     @CurrentUser('userType') userType: string,

@@ -137,3 +137,8 @@ export class ResetPasswordDto {
   @MinLength(8)
   newPassword: string;
 }
+
+export class ReSendInvitationDto {
+  @IsNotEmpty()
+  invitationId: any;
+}
