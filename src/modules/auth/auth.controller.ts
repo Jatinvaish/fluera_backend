@@ -192,10 +192,40 @@ export class AuthController {
   @Public()
   async acceptInvitation(@Body() dto: AcceptInvitationDto) {
     console.log("🚀 ~ AuthController ~ acceptInvitation ~ dto:", dto)
-    return this.invitationService.acceptInvitation(dto.token, dto.password, {
+    const result = await this.invitationService.acceptInvitation(dto.token, dto.password, {
       firstName: dto.firstName,
       lastName: dto.lastName,
     });
+
+    // ✅ Generate tokens for auto-login
+    const tokens = await this.authService['generateTokens']({
+      id: parseInt(result.data.user.id),
+      email: result.data.user.email,
+      userType: result.data.user.userType,
+      tenantId: parseInt(result.data.tenant.id),
+      onboardingRequired: false, // ✅ CRITICAL: Set to false
+    });
+
+    // ✅ Create session
+    await this.authService['createSession'](
+      parseInt(result.data.user.id),
+      tokens.refreshToken,
+      undefined,
+      parseInt(result.data.tenant.id),
+    );
+
+    return {
+      success: true,
+      message: 'Invitation accepted successfully',
+      user: {
+        ...result.data.user,
+        tenantId: result.data.tenant.id,
+        onboardingRequired: false, // ✅ Explicitly set
+        onboardingCompleted: true,
+      },
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
   @Get('invitation/details')
   @Public()

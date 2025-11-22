@@ -19,7 +19,7 @@ export class InvitationService {
     private hashingService: HashingService,
     private rbacService: RbacService,
     private emailService: EmailService,
-  ) {}
+  ) { }
 
   async sendInvitation(tenantId: number, invitedBy: number, dto: any) {
     // Get inviter's user type for role validation
@@ -204,17 +204,19 @@ export class InvitationService {
         .input(
           'lastName',
           userData.lastName ||
-            invite.invitee_name?.split(' ').slice(1).join(' ') ||
-            '',
+          invite.invitee_name?.split(' ').slice(1).join(' ') ||
+          '',
         )
         .input('userType', invite.invitee_type || 'staff').query(`
-          INSERT INTO users (
-            email, password_hash, first_name, last_name,
-            user_type, status, email_verified_at, created_at
-          ) OUTPUT INSERTED.*
-          VALUES (@email, @passwordHash, @firstName, @lastName,
-                  @userType, 'active', GETUTCDATE(), GETUTCDATE())
-        `);
+      INSERT INTO users (
+        email, password_hash, first_name, last_name,
+        user_type, status, email_verified_at, 
+        onboarding_completed_at, created_at
+      ) OUTPUT INSERTED.*
+      VALUES (@email, @passwordHash, @firstName, @lastName,
+              @userType, 'active', GETUTCDATE(), 
+              GETUTCDATE(), GETUTCDATE())
+    `);
 
       const user = userResult.recordset[0];
 
@@ -260,6 +262,8 @@ export class InvitationService {
             firstName: user.first_name,
             lastName: user.last_name,
             userType: user.user_type,
+            onboardingRequired: false,
+            onboardingCompleted: true,
           },
           tenant: {
             id: invite.tenant_id.toString(),
