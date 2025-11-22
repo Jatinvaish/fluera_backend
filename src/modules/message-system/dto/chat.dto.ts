@@ -1,8 +1,7 @@
-// ============================================
-// src/modules/global-modules/dto/chat.dto.ts
-// SIMPLIFIED - NO ENCRYPTION
-// ============================================
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsEnum, MaxLength } from 'class-validator';
+// src/modules/message-system/dto/chat.dto.ts - COMPLETE DTOs
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsEnum, MaxLength, IsBoolean, IsDateString } from 'class-validator';
+
+// ==================== MESSAGE DTOs ====================
 
 export class SendMessageDto {
   @IsNumber()
@@ -11,12 +10,12 @@ export class SendMessageDto {
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(10000) // ✅ Plain text message (max 10k chars)
+  @MaxLength(10000)
   content: string;
 
   @IsString()
   @IsOptional()
-  @IsEnum(['text', 'file', 'image', 'video', 'audio'])
+  @IsEnum(['text', 'file', 'image', 'video', 'audio', 'system'])
   messageType?: string;
 
   @IsArray()
@@ -36,6 +35,44 @@ export class SendMessageDto {
   threadId?: number;
 }
 
+export class EditMessageDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10000)
+  content: string;
+}
+
+export class MarkAsReadDto {
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  messageId: number;
+}
+
+export class PinMessageDto {
+  @IsNumber()
+  @IsNotEmpty()
+  messageId: number;
+
+  @IsBoolean()
+  isPinned: boolean;
+}
+
+export class ForwardMessageDto {
+  @IsNumber()
+  @IsNotEmpty()
+  messageId: number;
+
+  @IsArray()
+  @IsNotEmpty()
+  targetChannelIds: number[];
+}
+
+// ==================== CHANNEL DTOs ====================
+
 export class CreateChannelDto {
   @IsString()
   @IsOptional()
@@ -49,12 +86,16 @@ export class CreateChannelDto {
 
   @IsString()
   @IsOptional()
-  @IsEnum(['direct', 'group', 'campaign'])
+  @IsEnum(['direct', 'group', 'campaign', 'project'])
   channelType?: string;
 
   @IsArray()
   @IsNotEmpty()
   participantIds: number[];
+
+  @IsBoolean()
+  @IsOptional()
+  isPrivate?: boolean;
 
   @IsString()
   @IsOptional()
@@ -63,45 +104,6 @@ export class CreateChannelDto {
   @IsNumber()
   @IsOptional()
   relatedId?: number;
-}
-
-export class GetMessagesDto {
-  @IsNumber()
-  @IsNotEmpty()
-  channelId: number;
-
-  @IsNumber()
-  @IsOptional()
-  limit?: number;
-
-  @IsNumber()
-  @IsOptional()
-  beforeId?: number;
-}
-
-export class MarkAsReadDto {
-  @IsNumber()
-  @IsNotEmpty()
-  channelId: number;
-
-  @IsNumber()
-  @IsNotEmpty()
-  messageId: number;
-}
-
-export class AddParticipantDto {
-  @IsNumber()
-  @IsNotEmpty()
-  channelId: number;
-
-  @IsNumber()
-  @IsNotEmpty()
-  userId: number;
-
-  @IsString()
-  @IsOptional()
-  @IsEnum(['admin', 'member'])
-  role?: string;
 }
 
 export class UpdateChannelDto {
@@ -115,6 +117,104 @@ export class UpdateChannelDto {
   @MaxLength(1000)
   description?: string;
 
+  @IsBoolean()
   @IsOptional()
-  settings?: any;
+  isPrivate?: boolean;
+}
+
+export class MuteChannelDto {
+  @IsBoolean()
+  isMuted: boolean;
+
+  @IsDateString()
+  @IsOptional()
+  muteUntil?: string;
+}
+
+// ==================== MEMBER DTOs ====================
+
+export class AddMemberDto {
+  @IsArray()
+  @IsNotEmpty()
+  userIds: number[];
+
+  @IsString()
+  @IsOptional()
+  @IsEnum(['admin', 'member'])
+  role?: string;
+}
+
+export class UpdateMemberRoleDto {
+  @IsString()
+  @IsNotEmpty()
+  @IsEnum(['admin', 'member', 'owner'])
+  role: string;
+}
+
+// ==================== SEARCH DTOs ====================
+
+export class SearchDto {
+  @IsString()
+  @IsNotEmpty()
+  query: string;
+
+  @IsNumber()
+  @IsOptional()
+  channelId?: number;
+
+  @IsString()
+  @IsOptional()
+  @IsEnum(['messages', 'channels', 'members', 'all'])
+  type?: string;
+
+  @IsNumber()
+  @IsOptional()
+  limit?: number;
+}
+
+// ==================== REACTION DTOs ====================
+
+export class AddReactionDto {
+  @IsNumber()
+  @IsNotEmpty()
+  messageId: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10)
+  emoji: string;
+}
+
+// ==================== TYPING DTOs ====================
+
+export class TypingDto {
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
+}
+
+// ==================== FILE DTOs ====================
+
+export class UploadFileDto {
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+}
+
+// ==================== PRESENCE DTOs ====================
+
+export class UpdatePresenceDto {
+  @IsString()
+  @IsNotEmpty()
+  @IsEnum(['online', 'away', 'busy', 'offline'])
+  status: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  statusMessage?: string;
 }
