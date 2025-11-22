@@ -147,6 +147,7 @@ export class InvitationService {
          AND i.expires_at > GETUTCDATE()`,
       { token },
     );
+    console.log("🚀 ~ InvitationService ~ acceptInvitation ~ invitation:", invitation)
 
     if (invitation.length === 0) {
       throw new BadRequestException('Invalid or expired invitation');
@@ -178,6 +179,7 @@ export class InvitationService {
       `SELECT id FROM users WHERE email = @email`,
       { email: invite.invitee_email },
     );
+    console.log("🚀 ~ InvitationService ~ acceptInvitation ~ existingUser:", existingUser)
 
     if (existingUser.length > 0) {
       throw new BadRequestException(
@@ -241,12 +243,11 @@ export class InvitationService {
       await transaction
         .request()
         .input('invitationId', invite.id)
-        .input('acceptedBy', user.id).query(`
+        .query(`
           UPDATE invitations 
           SET status = 'accepted', 
-              accepted_at = GETUTCDATE(),
-              accepted_by = @acceptedBy,
-              updated_at = GETUTCDATE()
+               accepted_at = GETUTCDATE(),
+               updated_at = GETUTCDATE()
           WHERE id = @invitationId
         `);
 
