@@ -1,3062 +1,6018 @@
-
--- =====================================================
--- FLUERA - Complete Multi-Tenant SaaS Database Schema
--- Supporting: Agency, Brand, Creator modules + Super Admin
--- Version: 3.0 - E2E Encryption + Enhanced RBAC
--- =====================================================
-
--- ==================== CORE TENANT SYSTEM ====================
-
-CREATE TABLE [dbo].[tenants] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_type] NVARCHAR(20) NOT NULL CHECK ([tenant_type] IN ('agency', 'brand', 'creator')),
-    [name] NVARCHAR(255) NOT NULL,
-    [slug] NVARCHAR(100) UNIQUE NOT NULL,
-    [owner_user_id] BIGINT NOT NULL,
-    
-    -- Branding
-    [logo_url] NVARCHAR(MAX),
-    [subdomain] NVARCHAR(100),
-    [custom_domain] NVARCHAR(255),
-    [domain_verified_at] DATETIME2(7),
-    
-    -- Settings
-    [timezone] NVARCHAR(50) DEFAULT 'UTC',
-    [locale] NVARCHAR(10) DEFAULT 'en-US',
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [settings] NVARCHAR(MAX), -- JSON
-    [metadata] NVARCHAR(MAX), -- JSON
-    
-    -- Subscription
-    [subscription_plan_id] BIGINT,
-    [subscription_status] NVARCHAR(20) DEFAULT 'trial',
-    [is_trial] BIT DEFAULT 1,
-    [trial_started_at] DATETIME2(7),
-    [trial_ends_at] DATETIME2(7),
-    [subscription_started_at] DATETIME2(7),
-    [subscription_expires_at] DATETIME2(7),
-    
-    -- Usage limits
-    [max_staff] INT DEFAULT 5,
-    [max_storage_gb] INT DEFAULT 10,
-    [max_campaigns] INT DEFAULT 10,
-    [max_invitations] INT DEFAULT 20,
-    [max_creators] INT DEFAULT 100,
-    [max_brands] INT DEFAULT 50,
-    
-    -- Current usage
-    [current_staff] INT DEFAULT 0,
-    [current_storage_gb] DECIMAL(10,2) DEFAULT 0,
-    [current_campaigns] INT DEFAULT 0,
-    [current_invitations] INT DEFAULT 0,
-    [current_creators] INT DEFAULT 0,
-    [current_brands] INT DEFAULT 0,
-    
-    -- E2E Encryption Keys (per tenant)
-    [public_key] NVARCHAR(MAX), -- RSA public key for tenant
-    [encrypted_private_key] NVARCHAR(MAX), -- Encrypted with master key
-    [key_version] INT DEFAULT 1,
-    [key_created_at] DATETIME2(7),
-    [key_rotated_at] DATETIME2(7),
-    
-    [status] NVARCHAR(20) DEFAULT 'active',
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== BRAND PROFILES ====================
-
-CREATE TABLE [dbo].[brand_profiles] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL UNIQUE,
-    [website_url] NVARCHAR(MAX),
-    [industry] NVARCHAR(100),
-    [description] NVARCHAR(MAX),
-    [brand_guidelines_url] NVARCHAR(MAX),
-    [target_demographics] NVARCHAR(MAX),
-    [budget_range] NVARCHAR(MAX),
-    [campaign_objectives] NVARCHAR(MAX),
-    [brand_values] NVARCHAR(MAX),
-    [content_restrictions] NVARCHAR(MAX),
-    
-    [primary_contact_name] NVARCHAR(255),
-    [primary_contact_email] NVARCHAR(320),
-    [primary_contact_phone] NVARCHAR(20),
-    [billing_address] NVARCHAR(MAX),
-    
-    [content_approval_required] BIT DEFAULT 1,
-    [auto_approve_creators] BIT DEFAULT 0,
-    [blacklisted_creators] NVARCHAR(MAX),
-    [preferred_creators] NVARCHAR(MAX),
-    [payment_terms] INT DEFAULT 30,
-    [preferred_payment_method] NVARCHAR(50),
-    
-    [rating] DECIMAL(3,2) DEFAULT 5.0,
-    [rating_count] INT DEFAULT 0,
-    [total_campaigns] INT DEFAULT 0,
-    [total_spent] DECIMAL(12,2) DEFAULT 0,
-    
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== CAMPAIGNS ====================
-
-CREATE TABLE [dbo].[campaign_types] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [name] NVARCHAR(100) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [default_duration_days] INT DEFAULT 30,
-    [default_workflow] NVARCHAR(MAX),
-    [required_deliverables] NVARCHAR(MAX),
-    [pricing_model] NVARCHAR(50),
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[campaigns] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [created_by_tenant_id] BIGINT NOT NULL,
-    [brand_tenant_id] BIGINT,
-    [campaign_type_id] BIGINT,
-    [name] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [brief_document_url] NVARCHAR(MAX),
-    [objectives] NVARCHAR(MAX),
-    [target_audience] NVARCHAR(MAX),
-    [hashtags] NVARCHAR(MAX),
-    [mentions] NVARCHAR(MAX),
-    [content_requirements] NVARCHAR(MAX),
-    [deliverables] NVARCHAR(MAX),
-    
-    [budget_total] DECIMAL(12,2),
-    [budget_allocated] DECIMAL(12,2) DEFAULT 0,
-    [budget_spent] DECIMAL(12,2) DEFAULT 0,
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    
-    [creator_count_target] INT,
-    [creator_count_assigned] INT DEFAULT 0,
-    
-    [start_date] DATE,
-    [end_date] DATE,
-    [content_submission_deadline] DATE,
-    [approval_deadline] DATE,
-    [go_live_date] DATE,
-    
-    [campaign_manager_id] BIGINT,
-    [account_manager_id] BIGINT,
-    
-    [approval_workflow] NVARCHAR(MAX),
-    [auto_approve_content] BIT DEFAULT 0,
-    [content_approval_required] BIT DEFAULT 1,
-    [legal_approval_required] BIT DEFAULT 0,
-    
-    [usage_rights_duration] INT DEFAULT 90,
-    [exclusivity_period] INT DEFAULT 0,
-    
-    [visibility] NVARCHAR(20) DEFAULT 'private',
-    [shared_with_tenants] NVARCHAR(MAX),
-    
-    [performance_metrics] NVARCHAR(MAX),
-    [success_criteria] NVARCHAR(MAX),
-    [status] NVARCHAR(20) DEFAULT 'draft',
-    [priority] NVARCHAR(20) DEFAULT 'medium',
-    [tags] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_campaigns_tenant] ON [dbo].[campaigns] ([created_by_tenant_id], [status]);
-CREATE INDEX [IX_campaigns_brand] ON [dbo].[campaigns] ([brand_tenant_id]) WHERE [brand_tenant_id] IS NOT NULL;
-
-CREATE TABLE [dbo].[campaign_participants] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [campaign_id] BIGINT NOT NULL,
-    [creator_tenant_id] BIGINT NOT NULL,
-    [status] NVARCHAR(20) DEFAULT 'invited',
-    [invitation_sent_at] DATETIME2(7),
-    [response_deadline] DATETIME2(7),
-    [accepted_at] DATETIME2(7),
-    [declined_at] DATETIME2(7),
-    [decline_reason] NVARCHAR(MAX),
-    [deliverables] NVARCHAR(MAX),
-    [agreed_rate] DECIMAL(10,2),
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [bonus_amount] DECIMAL(10,2) DEFAULT 0,
-    [payment_status] NVARCHAR(20) DEFAULT 'pending',
-    [payment_due_date] DATE,
-    [content_submitted_at] DATETIME2(7),
-    [content_approved_at] DATETIME2(7),
-    [content_rejected_at] DATETIME2(7),
-    [rejection_reason] NVARCHAR(MAX),
-    [revision_count] INT DEFAULT 0,
-    [performance_metrics] NVARCHAR(MAX),
-    [rating] DECIMAL(3,2),
-    [feedback] NVARCHAR(MAX),
-    [notes] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([campaign_id], [creator_tenant_id])
-);
-
-CREATE INDEX [IX_campaign_participants_campaign] ON [dbo].[campaign_participants] ([campaign_id], [status]);
-CREATE INDEX [IX_campaign_participants_creator] ON [dbo].[campaign_participants] ([creator_tenant_id], [status]);
-
-CREATE TABLE [dbo].[campaign_tasks] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [campaign_id] BIGINT NOT NULL,
-    [creator_tenant_id] BIGINT,
-    [assigned_to] BIGINT,
-    [task_type] NVARCHAR(50) NOT NULL,
-    [title] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [priority] NVARCHAR(20) DEFAULT 'medium',
-    [status] NVARCHAR(20) DEFAULT 'todo',
-    [due_date] DATETIME2(7),
-    [completed_at] DATETIME2(7),
-    [estimated_hours] DECIMAL(4,2),
-    [actual_hours] DECIMAL(4,2),
-    [dependencies] NVARCHAR(MAX),
-    [attachments] NVARCHAR(MAX),
-    [comments_count] INT DEFAULT 0,
-    [checklist] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== CONTENT MANAGEMENT ====================
-
-CREATE TABLE [dbo].[content_submissions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [campaign_id] BIGINT NOT NULL,
-    [submission_type] NVARCHAR(50) NOT NULL,
-    [title] NVARCHAR(255),
-    [description] NVARCHAR(MAX),
-    [content_type] NVARCHAR(50) NOT NULL,
-    [platform] NVARCHAR(50) NOT NULL,
-    [file_urls] NVARCHAR(MAX) NOT NULL,
-    [thumbnail_url] NVARCHAR(MAX),
-    [caption] NVARCHAR(MAX),
-    [hashtags] NVARCHAR(MAX),
-    [mentions] NVARCHAR(MAX),
-    [duration_seconds] INT,
-    [dimensions] NVARCHAR(MAX),
-    [file_sizes] NVARCHAR(MAX),
-    [mime_types] NVARCHAR(MAX),
-    [scheduled_publish_time] DATETIME2(7),
-    [submission_notes] NVARCHAR(MAX),
-    
-    [version] INT DEFAULT 1,
-    [parent_submission_id] BIGINT,
-    [review_round] INT DEFAULT 1,
-    [max_review_rounds] INT DEFAULT 3,
-    
-    [watermark_applied] BIT DEFAULT 0,
-    [drm_protected] BIT DEFAULT 0,
-    [download_protection] BIT DEFAULT 1,
-    [screenshot_protected] BIT DEFAULT 1,
-    
-    [view_count] INT DEFAULT 0,
-    [download_count] INT DEFAULT 0,
-    [share_count] INT DEFAULT 0,
-    
-    [shared_with_tenants] NVARCHAR(MAX),
-    
-    [status] NVARCHAR(20) DEFAULT 'submitted',
-    [submitted_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [reviewed_at] DATETIME2(7),
-    [approved_at] DATETIME2(7),
-    [rejected_at] DATETIME2(7),
-    [published_at] DATETIME2(7),
-    [reviewer_id] BIGINT,
-    [approval_notes] NVARCHAR(MAX),
-    [rejection_reason] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_content_submissions_tenant] ON [dbo].[content_submissions] ([tenant_id], [status]);
-CREATE INDEX [IX_content_submissions_campaign] ON [dbo].[content_submissions] ([campaign_id], [status]);
-
-CREATE TABLE [dbo].[content_reviews] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [submission_id] BIGINT NOT NULL,
-    [tenant_id] BIGINT NOT NULL,
-    [reviewer_id] BIGINT NOT NULL,
-    [review_type] NVARCHAR(20) NOT NULL,
-    [status] NVARCHAR(20) NOT NULL,
-    [overall_rating] INT CHECK ([overall_rating] >= 1 AND [overall_rating] <= 5),
-    [brand_alignment_rating] INT CHECK ([brand_alignment_rating] >= 1 AND [brand_alignment_rating] <= 5),
-    [quality_rating] INT CHECK ([quality_rating] >= 1 AND [quality_rating] <= 5),
-    [creativity_rating] INT CHECK ([creativity_rating] >= 1 AND [creativity_rating] <= 5),
-    [feedback] NVARCHAR(MAX),
-    [revision_notes] NVARCHAR(MAX),
-    [approval_conditions] NVARCHAR(MAX),
-    [review_checklist] NVARCHAR(MAX),
-    [time_spent_minutes] INT,
-    [reviewed_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[content_review_comments] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [submission_id] BIGINT NOT NULL,
-    [review_id] BIGINT,
-    [commenter_id] BIGINT NOT NULL,
-    [comment_text] NVARCHAR(MAX) NOT NULL,
-    [comment_type] NVARCHAR(20) DEFAULT 'general',
-    [comment_category] NVARCHAR(50),
-    [timestamp_seconds] DECIMAL(8,3),
-    [start_timestamp_seconds] DECIMAL(8,3),
-    [end_timestamp_seconds] DECIMAL(8,3),
-    [coordinates] NVARCHAR(MAX),
-    [is_resolved] BIT DEFAULT 0,
-    [resolved_by] BIGINT,
-    [resolved_at] DATETIME2(7),
-    [parent_comment_id] BIGINT,
-    [attachments] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[content_performance] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [submission_id] BIGINT NOT NULL,
-    [platform] NVARCHAR(50) NOT NULL,
-    [post_url] NVARCHAR(MAX),
-    [platform_post_id] NVARCHAR(255),
-    [published_at] DATETIME2(7),
-    [likes] INT DEFAULT 0,
-    [comments] INT DEFAULT 0,
-    [shares] INT DEFAULT 0,
-    [saves] INT DEFAULT 0,
-    [views] INT DEFAULT 0,
-    [reach] INT DEFAULT 0,
-    [impressions] INT DEFAULT 0,
-    [engagement_rate] DECIMAL(5,2),
-    [click_through_rate] DECIMAL(5,2),
-    [conversion_rate] DECIMAL(5,2),
-    [cost_per_engagement] DECIMAL(8,2),
-    [cost_per_click] DECIMAL(8,2),
-    [roi] DECIMAL(8,2),
-    [sentiment_score] DECIMAL(3,2),
-    [top_comments] NVARCHAR(MAX),
-    [performance_grade] NVARCHAR(2),
-    [last_updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== CONTRACT MANAGEMENT ====================
-
-CREATE TABLE [dbo].[contract_templates] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [template_type] NVARCHAR(50) NOT NULL,
-    [category] NVARCHAR(100),
-    [description] NVARCHAR(MAX),
-    [template_content] NVARCHAR(MAX) NOT NULL,
-    [variables] NVARCHAR(MAX),
-    [version] NVARCHAR(20) DEFAULT '1.0',
-    [is_default] BIT DEFAULT 0,
-    [requires_legal_review] BIT DEFAULT 0,
-    [auto_renewal] BIT DEFAULT 0,
-    [renewal_period] INT,
-    [is_active] BIT DEFAULT 1,
-    [usage_count] INT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[contracts] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [template_id] BIGINT,
-    [contract_number] NVARCHAR(100) UNIQUE NOT NULL,
-    [title] NVARCHAR(255) NOT NULL,
-    [contract_type] NVARCHAR(50) NOT NULL,
-    [party_a_type] NVARCHAR(20) NOT NULL,
-    [party_a_tenant_id] BIGINT,
-    [party_a_name] NVARCHAR(255) NOT NULL,
-    [party_a_email] NVARCHAR(320),
-    [party_b_type] NVARCHAR(20) NOT NULL,
-    [party_b_tenant_id] BIGINT,
-    [party_b_name] NVARCHAR(255) NOT NULL,
-    [party_b_email] NVARCHAR(320),
-    [related_campaign_id] BIGINT,
-    [content] NVARCHAR(MAX) NOT NULL,
-    [variables_data] NVARCHAR(MAX),
-    [contract_value] DECIMAL(12,2),
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [start_date] DATE,
-    [end_date] DATE,
-    [auto_renewal] BIT DEFAULT 0,
-    [renewal_period] INT,
-    [renewal_count] INT DEFAULT 0,
-    [status] NVARCHAR(20) DEFAULT 'draft',
-    [signature_required_from] NVARCHAR(MAX),
-    [signatures_completed] INT DEFAULT 0,
-    [signatures_required] INT DEFAULT 2,
-    [fully_signed_at] DATETIME2(7),
-    [docusign_envelope_id] NVARCHAR(255),
-    [document_urls] NVARCHAR(MAX),
-    [legal_reviewed] BIT DEFAULT 0,
-    [legal_reviewer_id] BIGINT,
-    [legal_reviewed_at] DATETIME2(7),
-    [legal_notes] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_contracts_tenant] ON [dbo].[contracts] ([tenant_id], [status]);
-
-CREATE TABLE [dbo].[contract_signatures] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [contract_id] BIGINT NOT NULL,
-    [signer_type] NVARCHAR(20) NOT NULL,
-    [signer_tenant_id] BIGINT,
-    [signer_user_id] BIGINT,
-    [signer_name] NVARCHAR(255) NOT NULL,
-    [signer_email] NVARCHAR(320) NOT NULL,
-    [signer_role] NVARCHAR(100),
-    [signature_type] NVARCHAR(20) NOT NULL,
-    [signature_method] NVARCHAR(50),
-    [signature_image_url] NVARCHAR(MAX),
-    [ip_address] NVARCHAR(45),
-    [user_agent] NVARCHAR(MAX),
-    [signed_at] DATETIME2(7),
-    [status] NVARCHAR(20) DEFAULT 'pending',
-    [sent_at] DATETIME2(7),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== PORTFOLIO MANAGEMENT ====================
-
-CREATE TABLE [dbo].[portfolios] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [creator_tenant_ids] NVARCHAR(MAX),
-    [brand_categories] NVARCHAR(MAX),
-    [target_audience] NVARCHAR(MAX),
-    [total_reach] INT DEFAULT 0,
-    [avg_engagement_rate] DECIMAL(5,2),
-    [template_id] BIGINT,
-    [cover_image_url] NVARCHAR(MAX),
-    [is_public] BIT DEFAULT 0,
-    [share_token] NVARCHAR(255) UNIQUE,
-    [share_expires_at] DATETIME2(7),
-    [view_count] INT DEFAULT 0,
-    [download_count] INT DEFAULT 0,
-    [status] NVARCHAR(20) DEFAULT 'draft',
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_portfolios_tenant] ON [dbo].[portfolios] ([tenant_id], [status]);
-
--- ==================== E2E ENCRYPTED CHAT SYSTEM ====================
-
-CREATE TABLE [dbo].[chat_channels] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [created_by_tenant_id] BIGINT NOT NULL,
-    [name] NVARCHAR(255),
-    [description] NVARCHAR(MAX),
-    [channel_type] NVARCHAR(20) DEFAULT 'group',
-    [related_type] NVARCHAR(50),
-    [related_id] BIGINT,
-    [participant_tenant_ids] NVARCHAR(MAX),
-    [is_private] BIT DEFAULT 1,
-    [is_archived] BIT DEFAULT 0,
-    
-    -- E2E Encryption
-    [is_encrypted] BIT DEFAULT 1,
-    [encryption_version] NVARCHAR(20) DEFAULT 'v1',
-    [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-    
-    [member_count] INT DEFAULT 0,
-    [message_count] INT DEFAULT 0,
-    [last_message_at] DATETIME2(7),
-    [last_activity_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [settings] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_channels_tenant] ON [dbo].[chat_channels] ([created_by_tenant_id]);
-
-CREATE TABLE [dbo].[chat_participants] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [channel_id] BIGINT NOT NULL,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [role] NVARCHAR(20) DEFAULT 'member',
-    [joined_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [left_at] DATETIME2(7),
-    [last_read_message_id] BIGINT,
-    [last_read_at] DATETIME2(7),
-    
-    -- E2E Encryption Keys
-    [encrypted_channel_key] NVARCHAR(MAX), -- Channel key encrypted with user's public key
-    [key_version] INT DEFAULT 1,
-    [key_fingerprint] NVARCHAR(64),
-    
-    [notification_settings] NVARCHAR(MAX),
-    [is_muted] BIT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([channel_id], [user_id])
-);
-
-CREATE INDEX [IX_chat_participants_channel] ON [dbo].[chat_participants] ([channel_id], [is_active]);
-CREATE INDEX [IX_chat_participants_user] ON [dbo].[chat_participants] ([user_id], [is_active]);
-
-CREATE TABLE [dbo].[messages] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [channel_id] BIGINT NOT NULL,
-    [sender_tenant_id] BIGINT NOT NULL,
-    [sender_user_id] BIGINT NOT NULL,
-    [message_type] NVARCHAR(20) DEFAULT 'text',
-    
-    -- E2E Encrypted Content
-    [encrypted_content] NVARCHAR(MAX) NOT NULL, -- AES-256-GCM encrypted message
-    [encryption_iv] NVARCHAR(MAX) NOT NULL, -- Initialization vector
-    [encryption_auth_tag] NVARCHAR(MAX) NOT NULL, -- Authentication tag for GCM
-    [content_hash] NVARCHAR(64), -- SHA-256 hash for integrity
-    [encryption_key_version] INT DEFAULT 1,
-    
-    -- Metadata (not encrypted for indexing)
-    [has_attachments] BIT DEFAULT 0,
-    [has_mentions] BIT DEFAULT 0,
-    [reply_to_message_id] BIGINT,
-    [thread_id] BIGINT,
-    
-    [is_edited] BIT DEFAULT 0,
-    [edited_at] DATETIME2(7),
-    [is_deleted] BIT DEFAULT 0,
-    [deleted_at] DATETIME2(7),
-    [deleted_by] BIGINT,
-    [is_pinned] BIT DEFAULT 0,
-    [pinned_at] DATETIME2(7),
-    [pinned_by] BIGINT,
-    
-    [metadata] NVARCHAR(MAX),
-    [sent_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_messages_channel] ON [dbo].[messages] ([channel_id], [sent_at] DESC);
-CREATE INDEX [IX_messages_sender] ON [dbo].[messages] ([sender_user_id]);
-CREATE INDEX [IX_messages_thread] ON [dbo].[messages] ([thread_id]) WHERE [thread_id] IS NOT NULL;
-
-CREATE TABLE [dbo].[message_attachments] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [message_id] BIGINT NOT NULL,
-    [tenant_id] BIGINT NOT NULL,
-    
-    -- E2E Encrypted File Data
-    [encrypted_file_url] NVARCHAR(MAX) NOT NULL, -- URL to encrypted file
-    [encrypted_filename] NVARCHAR(MAX) NOT NULL, -- Encrypted filename
-    [encrypted_file_key] NVARCHAR(MAX) NOT NULL, -- File encryption key (encrypted with channel key)
-    [encryption_iv] NVARCHAR(MAX) NOT NULL,
-    [encryption_auth_tag] NVARCHAR(MAX) NOT NULL,
-    
-    -- Metadata (not encrypted)
-    [file_size] BIGINT NOT NULL,
-    [mime_type] NVARCHAR(200) NOT NULL,
-    [file_hash] NVARCHAR(64),
-    [thumbnail_url] NVARCHAR(MAX),
-    [virus_scan_status] NVARCHAR(20) DEFAULT 'pending',
-    [virus_scan_result] NVARCHAR(MAX),
-    [download_count] INT DEFAULT 0,
-    [is_deleted] BIT DEFAULT 0,
-    
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_message_attachments] ON [dbo].[message_attachments] ([message_id]);
-
-CREATE TABLE [dbo].[message_reactions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [message_id] BIGINT NOT NULL,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [emoji] NVARCHAR(50) NOT NULL,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([message_id], [user_id], [emoji])
-);
-
-CREATE TABLE message_read_receipts (
-    id INT PRIMARY KEY IDENTITY(1,1),
-    message_id INT NOT NULL,
-    user_id INT NOT NULL,
-    status VARCHAR(20) NOT NULL, -- 'sent', 'delivered', 'read'
-    delivered_at DATETIME2 NULL,
-    read_at DATETIME2 NULL,
-    created_at DATETIME2 DEFAULT GETUTCDATE(),
-    FOREIGN KEY (message_id) REFERENCES messages(id),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    INDEX idx_message_receipts (message_id, user_id),
-    INDEX idx_user_unread (user_id, status)
-);
-
-CREATE INDEX [IX_read_receipts] ON [dbo].[message_read_receipts] ([message_id]);
-
--- Channel key rotation history
-CREATE TABLE [dbo].[channel_key_rotations] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [channel_id] BIGINT NOT NULL,
-    [old_key_version] INT NOT NULL,
-    [new_key_version] INT NOT NULL,
-    [rotated_by] BIGINT NOT NULL,
-    [rotation_reason] NVARCHAR(MAX),
-    [affected_participants] INT DEFAULT 0,
-    [rotated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_key_rotations] ON [dbo].[channel_key_rotations] ([channel_id], [rotated_at] DESC);
-
--- ==================== E2E ENCRYPTED EMAIL SYSTEM ====================
-
-CREATE TABLE [dbo].[email_accounts] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [provider] NVARCHAR(50) NOT NULL,
-    [email_address] NVARCHAR(320) NOT NULL,
-    [display_name] NVARCHAR(255),
-    [imap_host] NVARCHAR(255),
-    [imap_port] INT DEFAULT 993,
-    [imap_encryption] NVARCHAR(10) DEFAULT 'ssl',
-    [smtp_host] NVARCHAR(255),
-    [smtp_port] INT DEFAULT 587,
-    [smtp_encryption] NVARCHAR(10) DEFAULT 'tls',
-    [access_token] NVARCHAR(MAX),
-    [refresh_token] NVARCHAR(MAX),
-    [token_expires_at] DATETIME2(7),
-    [credentials_encrypted] NVARCHAR(MAX),
-    [sync_enabled] BIT DEFAULT 1,
-    [last_sync_at] DATETIME2(7),
-    [sync_status] NVARCHAR(20) DEFAULT 'active',
-    [error_message] NVARCHAR(MAX),
-    [settings] NVARCHAR(MAX),
-    [is_primary] BIT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [email_address])
-);
-
-CREATE INDEX [IX_email_accounts_tenant] ON [dbo].[email_accounts] ([tenant_id], [is_active]);
-
-CREATE TABLE [dbo].[email_folders] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [email_account_id] BIGINT NOT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [display_name] NVARCHAR(255),
-    [folder_type] NVARCHAR(50),
-    [parent_folder_id] BIGINT,
-    [message_count] INT DEFAULT 0,
-    [unread_count] INT DEFAULT 0,
-    [sort_order] INT DEFAULT 0,
-    [is_selectable] BIT DEFAULT 1,
-    [attributes] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([email_account_id], [name])
-);
-
-CREATE TABLE [dbo].[email_messages] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [email_account_id] BIGINT NOT NULL,
-    [message_id] NVARCHAR(255),
-    [thread_id] NVARCHAR(255),
-    [parent_message_id] BIGINT,
-    
-    -- E2E Encrypted Content
-    [encrypted_subject] NVARCHAR(MAX),
-    [encrypted_body_text] NVARCHAR(MAX),
-    [encrypted_body_html] NVARCHAR(MAX),
-    [encryption_iv] NVARCHAR(MAX),
-    [encryption_auth_tag] NVARCHAR(MAX),
-    [encryption_key_version] INT DEFAULT 1,
-    [is_encrypted] BIT DEFAULT 1,
-    
-    -- Metadata (searchable, not encrypted)
-    [sender_email] NVARCHAR(320),
-    [sender_name] NVARCHAR(255),
-    [reply_to_email] NVARCHAR(320),
-    [reply_to_name] NVARCHAR(255),
-    [recipients_to] NVARCHAR(MAX),
-    [recipients_cc] NVARCHAR(MAX),
-    [recipients_bcc] NVARCHAR(MAX),
-    [snippet] NVARCHAR(500), -- Unencrypted preview for search
-    [size_bytes] INT,
-    [attachments_count] INT DEFAULT 0,
-    
-    [is_read] BIT DEFAULT 0,
-    [is_important] BIT DEFAULT 0,
-    [is_starred] BIT DEFAULT 0,
-    [is_draft] BIT DEFAULT 0,
-    [is_sent] BIT DEFAULT 0,
-    [is_spam] BIT DEFAULT 0,
-    [is_trash] BIT DEFAULT 0,
-    [is_inquiry] BIT DEFAULT 0,
-    [inquiry_confidence] DECIMAL(3,2),
-    [sentiment_score] DECIMAL(3,2),
-    [priority_level] INT DEFAULT 0,
-    [assigned_to] BIGINT,
-    [labels] NVARCHAR(MAX),
-    [headers] NVARCHAR(MAX),
-    
-    [shared_with_tenants] NVARCHAR(MAX),
-    [sharing_settings] NVARCHAR(MAX),
-    
-    [received_at] DATETIME2(7),
-    [sent_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_emails_tenant] ON [dbo].[email_messages] ([tenant_id], [received_at] DESC);
-CREATE INDEX [IX_emails_account] ON [dbo].[email_messages] ([email_account_id], [received_at] DESC);
-CREATE INDEX [IX_emails_inquiry] ON [dbo].[email_messages] ([tenant_id], [is_inquiry], [assigned_to]);
-
-CREATE TABLE [dbo].[email_attachments] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [message_id] BIGINT NOT NULL,
-    [tenant_id] BIGINT NOT NULL,
-    
-    -- E2E Encrypted File
-    [encrypted_filename] NVARCHAR(MAX),
-    [encrypted_file_url] NVARCHAR(MAX),
-    [encrypted_file_key] NVARCHAR(MAX),
-    [encryption_iv] NVARCHAR(MAX),
-    [encryption_auth_tag] NVARCHAR(MAX),
-    [is_encrypted] BIT DEFAULT 1,
-    
-    [content_type] NVARCHAR(200),
-    [size_bytes] INT,
-    [attachment_id] NVARCHAR(255),
-    [file_hash] NVARCHAR(64),
-    [is_inline] BIT DEFAULT 0,
-    [virus_scan_status] NVARCHAR(20) DEFAULT 'pending',
-    [virus_scan_result] NVARCHAR(MAX),
-    
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_email_attachments] ON [dbo].[email_attachments] ([message_id]);
-
-CREATE TABLE [dbo].[email_templates] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [category] NVARCHAR(100),
-    [subject] NVARCHAR(500),
-    [body_html] NVARCHAR(MAX),
-    [body_text] NVARCHAR(MAX),
-    [variables] NVARCHAR(MAX),
-    [usage_count] INT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[email_rules] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [email_account_id] BIGINT,
-    [name] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [conditions] NVARCHAR(MAX) NOT NULL,
-    [actions] NVARCHAR(MAX) NOT NULL,
-    [priority] INT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [execution_count] INT DEFAULT 0,
-    [last_executed_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
- 
--- ==================== PAYMENT & FINANCIAL ====================
-
-CREATE TABLE [dbo].[payment_methods] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT,
-    [method_type] NVARCHAR(50) NOT NULL,
-    [provider] NVARCHAR(50),
-    [account_name] NVARCHAR(255),
-    [account_number_encrypted] NVARCHAR(MAX),
-    [routing_number_encrypted] NVARCHAR(MAX),
-    [iban_encrypted] NVARCHAR(MAX),
-    [swift_code] NVARCHAR(20),
-    [bank_name] NVARCHAR(255),
-    [bank_address] NVARCHAR(MAX),
-    [paypal_email] NVARCHAR(320),
-    [crypto_wallet_address] NVARCHAR(MAX),
-    [crypto_network] NVARCHAR(50),
-    [provider_customer_id] NVARCHAR(255),
-    [provider_payment_method_id] NVARCHAR(255),
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [is_default] BIT DEFAULT 0,
-    [is_verified] BIT DEFAULT 0,
-    [verified_at] DATETIME2(7),
-    [last_used_at] DATETIME2(7),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_payment_methods_tenant] ON [dbo].[payment_methods] ([tenant_id], [is_default]);
-
-CREATE TABLE [dbo].[invoices] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [invoice_number] NVARCHAR(100) UNIQUE NOT NULL,
-    [invoice_type] NVARCHAR(20) NOT NULL,
-    [related_type] NVARCHAR(50),
-    [related_id] BIGINT,
-    [recipient_type] NVARCHAR(20) NOT NULL,
-    [recipient_tenant_id] BIGINT,
-    [recipient_name] NVARCHAR(255) NOT NULL,
-    [recipient_email] NVARCHAR(320),
-    [recipient_address] NVARCHAR(MAX),
-    [bill_to_address] NVARCHAR(MAX),
-    [ship_to_address] NVARCHAR(MAX),
-    [subtotal] DECIMAL(12,2) NOT NULL DEFAULT 0,
-    [tax_amount] DECIMAL(12,2) DEFAULT 0,
-    [discount_amount] DECIMAL(12,2) DEFAULT 0,
-    [total_amount] DECIMAL(12,2) NOT NULL,
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [exchange_rate] DECIMAL(10,4) DEFAULT 1,
-    [payment_terms] INT DEFAULT 30,
-    [due_date] DATE,
-    [issue_date] DATE DEFAULT CAST(GETUTCDATE() AS DATE),
-    [service_period_start] DATE,
-    [service_period_end] DATE,
-    [notes] NVARCHAR(MAX),
-    [terms_conditions] NVARCHAR(MAX),
-    [status] NVARCHAR(20) DEFAULT 'draft',
-    [sent_at] DATETIME2(7),
-    [paid_at] DATETIME2(7),
-    [payment_method] NVARCHAR(50),
-    [payment_reference] NVARCHAR(255),
-    [late_fee_amount] DECIMAL(10,2) DEFAULT 0,
-    [reminder_sent_count] INT DEFAULT 0,
-    [last_reminder_sent_at] DATETIME2(7),
-    [pdf_url] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_invoices_tenant] ON [dbo].[invoices] ([tenant_id], [status]);
-CREATE INDEX [IX_invoices_recipient] ON [dbo].[invoices] ([recipient_tenant_id]) WHERE [recipient_tenant_id] IS NOT NULL;
-
-CREATE TABLE [dbo].[invoice_items] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [invoice_id] BIGINT NOT NULL,
-    [line_number] INT NOT NULL,
-    [item_type] NVARCHAR(50) NOT NULL,
-    [description] NVARCHAR(500) NOT NULL,
-    [quantity] DECIMAL(10,2) DEFAULT 1,
-    [unit_price] DECIMAL(10,2) NOT NULL,
-    [discount_percent] DECIMAL(5,2) DEFAULT 0,
-    [discount_amount] DECIMAL(10,2) DEFAULT 0,
-    [tax_rate] DECIMAL(5,2) DEFAULT 0,
-    [tax_amount] DECIMAL(10,2) DEFAULT 0,
-    [line_total] DECIMAL(12,2) NOT NULL,
-    [sku] NVARCHAR(100),
-    [category] NVARCHAR(100),
-    [campaign_id] BIGINT,
-    [creator_tenant_id] BIGINT,
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[payments] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [invoice_id] BIGINT,
-    [payment_type] NVARCHAR(20) NOT NULL,
-    [transaction_type] NVARCHAR(50) NOT NULL,
-    [payer_type] NVARCHAR(20),
-    [payer_tenant_id] BIGINT,
-    [payer_name] NVARCHAR(255),
-    [payee_type] NVARCHAR(20),
-    [payee_tenant_id] BIGINT,
-    [payee_name] NVARCHAR(255),
-    [amount] DECIMAL(12,2) NOT NULL,
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [exchange_rate] DECIMAL(10,4) DEFAULT 1,
-    [base_amount] DECIMAL(12,2),
-    [fee_amount] DECIMAL(10,2) DEFAULT 0,
-    [net_amount] DECIMAL(12,2),
-    [payment_method_id] BIGINT,
-    [payment_gateway] NVARCHAR(50),
-    [gateway_transaction_id] NVARCHAR(255),
-    [gateway_fee] DECIMAL(10,2) DEFAULT 0,
-    [reference_number] NVARCHAR(255),
-    [description] NVARCHAR(MAX),
-    [status] NVARCHAR(20) DEFAULT 'pending',
-    [initiated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [processed_at] DATETIME2(7),
-    [completed_at] DATETIME2(7),
-    [failed_at] DATETIME2(7),
-    [failure_reason] NVARCHAR(MAX),
-    [retry_count] INT DEFAULT 0,
-    [next_retry_at] DATETIME2(7),
-    [webhook_data] NVARCHAR(MAX),
-    [reconciliation_status] NVARCHAR(20) DEFAULT 'pending',
-    [reconciled_at] DATETIME2(7),
-    [bank_statement_reference] NVARCHAR(255),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_payments_tenant] ON [dbo].[payments] ([tenant_id], [created_at] DESC);
-CREATE INDEX [IX_payments_payer] ON [dbo].[payments] ([payer_tenant_id]) WHERE [payer_tenant_id] IS NOT NULL;
-CREATE INDEX [IX_payments_payee] ON [dbo].[payments] ([payee_tenant_id]) WHERE [payee_tenant_id] IS NOT NULL;
-
-CREATE TABLE [dbo].[payout_batches] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [batch_number] NVARCHAR(100) UNIQUE NOT NULL,
-    [batch_type] NVARCHAR(20) DEFAULT 'creator_payout',
-    [total_amount] DECIMAL(12,2) NOT NULL,
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [payment_count] INT DEFAULT 0,
-    [successful_payments] INT DEFAULT 0,
-    [failed_payments] INT DEFAULT 0,
-    [processing_fee] DECIMAL(10,2) DEFAULT 0,
-    [status] NVARCHAR(20) DEFAULT 'draft',
-    [scheduled_at] DATETIME2(7),
-    [started_at] DATETIME2(7),
-    [completed_at] DATETIME2(7),
-    [gateway_batch_id] NVARCHAR(255),
-    [notes] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[batch_payments] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [batch_id] BIGINT NOT NULL,
-    [payment_id] BIGINT NOT NULL,
-    [sequence_number] INT,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([batch_id], [payment_id])
-);
-
-CREATE TABLE [dbo].[financial_reports] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [report_type] NVARCHAR(50) NOT NULL,
-    [report_name] NVARCHAR(255) NOT NULL,
-    [period_type] NVARCHAR(20) NOT NULL,
-    [period_start] DATE NOT NULL,
-    [period_end] DATE NOT NULL,
-    [total_revenue] DECIMAL(12,2) DEFAULT 0,
-    [total_expenses] DECIMAL(12,2) DEFAULT 0,
-    [total_profit] DECIMAL(12,2) DEFAULT 0,
-    [creator_payments] DECIMAL(12,2) DEFAULT 0,
-    [platform_fees] DECIMAL(12,2) DEFAULT 0,
-    [tax_amount] DECIMAL(12,2) DEFAULT 0,
-    [report_data] NVARCHAR(MAX) NOT NULL,
-    [generated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [file_url] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [report_type], [period_start], [period_end])
-);
-
--- ==================== FILE MANAGEMENT ====================
-
-CREATE TABLE [dbo].[files] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [uploaded_by] BIGINT NOT NULL,
-    [filename] NVARCHAR(500) NOT NULL,
-    [original_filename] NVARCHAR(500) NOT NULL,
-    [file_path] NVARCHAR(1000) NOT NULL,
-    [file_url] NVARCHAR(MAX) NOT NULL,
-    [file_size] BIGINT NOT NULL,
-    [mime_type] NVARCHAR(200) NOT NULL,
-    [file_extension] NVARCHAR(20),
-    [file_hash] NVARCHAR(64) UNIQUE,
-    [dimensions] NVARCHAR(MAX),
-    [duration_seconds] INT,
-    [metadata] NVARCHAR(MAX),
-    [folder_path] NVARCHAR(1000) DEFAULT '/',
-    [tags] NVARCHAR(MAX),
-    [is_public] BIT DEFAULT 0,
-    [is_temporary] BIT DEFAULT 0,
-    [expires_at] DATETIME2(7),
-    [download_count] INT DEFAULT 0,
-    [virus_scan_status] NVARCHAR(20) DEFAULT 'pending',
-    [virus_scan_result] NVARCHAR(MAX),
-    [processing_status] NVARCHAR(20) DEFAULT 'pending',
-    [thumbnail_url] NVARCHAR(MAX),
-    [preview_url] NVARCHAR(MAX),
-    [compressed_url] NVARCHAR(MAX),
-    [watermarked_url] NVARCHAR(MAX),
-    
-    -- E2E Encryption for files
-    [encrypted_file_key] NVARCHAR(MAX),
-    [encryption_iv] NVARCHAR(MAX),
-    [encryption_auth_tag] NVARCHAR(MAX),
-    [is_encrypted] BIT DEFAULT 0,
-    
-    [shared_with_tenants] NVARCHAR(MAX),
-    
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_files_tenant] ON [dbo].[files] ([tenant_id], [created_at] DESC);
-CREATE INDEX [IX_files_hash] ON [dbo].[files] ([file_hash]);
-
-CREATE TABLE [dbo].[file_shares] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [file_id] BIGINT NOT NULL,
-    [share_type] NVARCHAR(20) NOT NULL,
-    [shared_with_user_id] BIGINT,
-    [shared_with_tenant_id] BIGINT,
-    [shared_with_email] NVARCHAR(320),
-    [access_token] NVARCHAR(255) UNIQUE,
-    [password_hash] NVARCHAR(255),
-    [permissions] NVARCHAR(MAX),
-    [expires_at] DATETIME2(7),
-    [max_downloads] INT,
-    [download_count] INT DEFAULT 0,
-    [last_accessed_at] DATETIME2(7),
-    [access_count] INT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[resource_shares] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [resource_type] NVARCHAR(50) NOT NULL,
-    [resource_id] BIGINT NOT NULL,
-    [share_token] NVARCHAR(255) UNIQUE NOT NULL,
-    [share_type] NVARCHAR(20) NOT NULL,
-    [recipient_email] NVARCHAR(320),
-    [recipient_user_id] BIGINT,
-    [recipient_tenant_id] BIGINT,
-    [password_protected] BIT DEFAULT 0,
-    [password_hash] NVARCHAR(255),
-    [requires_login] BIT DEFAULT 1,
-    [allow_download] BIT DEFAULT 0,
-    [expires_at] DATETIME2(7),
-    [max_views] INT,
-    [view_count] INT DEFAULT 0,
-    [revoked_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_resource_shares] ON [dbo].[resource_shares] ([resource_type], [resource_id]);
-CREATE INDEX [IX_resource_shares_token] ON [dbo].[resource_shares] ([share_token]);
-
-CREATE TABLE [dbo].[resource_access_logs] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [resource_type] NVARCHAR(50) NOT NULL,
-    [resource_id] BIGINT NOT NULL,
-    [user_id] BIGINT,
-    [tenant_id] BIGINT,
-    [action] NVARCHAR(50) NOT NULL,
-    [ip_address] NVARCHAR(45),
-    [user_agent] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [accessed_at] DATETIME2(7) DEFAULT GETUTCDATE()
-);
-
-CREATE INDEX [IX_resource_access_logs] ON [dbo].[resource_access_logs] ([resource_type], [resource_id], [accessed_at] DESC);
-
--- ==================== INTEGRATIONS -- DO NOT CONSIDER IT NOT IN USE ====================
--- DO NOT CONSIDER IT NOT IN USE 
-CREATE TABLE [dbo].[integrations] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [integration_type] NVARCHAR(50) NOT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [configuration] NVARCHAR(MAX),
-    [credentials_encrypted] NVARCHAR(MAX),
-    [status] NVARCHAR(20) DEFAULT 'active',
-    [last_sync_at] DATETIME2(7),
-    [sync_frequency_minutes] INT DEFAULT 60,
-    [error_message] NVARCHAR(MAX),
-    [error_count] INT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_integrations_tenant] ON [dbo].[integrations] ([tenant_id], [integration_type]);
-
-CREATE TABLE [dbo].[webhooks] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [url] NVARCHAR(MAX) NOT NULL,
-    [secret_key] NVARCHAR(255),
-    [events] NVARCHAR(MAX) NOT NULL,
-    [is_active] BIT DEFAULT 1,
-    [retry_attempts] INT DEFAULT 3,
-    [timeout_seconds] INT DEFAULT 30,
-    [last_triggered_at] DATETIME2(7),
-    [success_count] INT DEFAULT 0,
-    [failure_count] INT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_webhooks_tenant] ON [dbo].[webhooks] ([tenant_id], [is_active]);
-
-CREATE TABLE [dbo].[webhook_deliveries] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [webhook_id] BIGINT NOT NULL,
-    [event_type] NVARCHAR(100) NOT NULL,
-    [event_data] NVARCHAR(MAX) NOT NULL,
-    [http_status] INT,
-    [response_body] NVARCHAR(MAX),
-    [response_headers] NVARCHAR(MAX),
-    [delivery_duration_ms] INT,
-    [attempt_number] INT DEFAULT 1,
-    [max_attempts] INT DEFAULT 3,
-    [status] NVARCHAR(20) NOT NULL,
-    [error_message] NVARCHAR(MAX),
-    [next_retry_at] DATETIME2(7),
-    [delivered_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== WORKFLOW AUTOMATION -- DO NOT CONSIDER IT'S NOT IN USE ====================
-
-CREATE TABLE [dbo].[workflows] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [category] NVARCHAR(100),
-    [trigger_type] NVARCHAR(50) NOT NULL,
-    [trigger_conditions] NVARCHAR(MAX),
-    [workflow_definition] NVARCHAR(MAX) NOT NULL,
-    [variables] NVARCHAR(MAX),
-    [is_active] BIT DEFAULT 1,
-    [is_template] BIT DEFAULT 0,
-    [execution_count] INT DEFAULT 0,
-    [success_rate] DECIMAL(5,2),
-    [avg_execution_time_seconds] INT,
-    [last_executed_at] DATETIME2(7),
-    [version] INT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_workflows_tenant] ON [dbo].[workflows] ([tenant_id], [is_active]);
-
-CREATE TABLE [dbo].[workflow_executions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [workflow_id] BIGINT NOT NULL,
-    [tenant_id] BIGINT NOT NULL,
-    [execution_name] NVARCHAR(255),
-    [trigger_data] NVARCHAR(MAX),
-    [context_data] NVARCHAR(MAX),
-    [status] NVARCHAR(20) DEFAULT 'running',
-    [started_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [completed_at] DATETIME2(7),
-    [duration_seconds] INT,
-    [steps_total] INT DEFAULT 0,
-    [steps_completed] INT DEFAULT 0,
-    [steps_failed] INT DEFAULT 0,
-    [current_step_id] BIGINT,
-    [error_message] NVARCHAR(MAX),
-    [retry_count] INT DEFAULT 0,
-    [max_retries] INT DEFAULT 3,
-    [next_retry_at] DATETIME2(7),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[workflow_step_executions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [execution_id] BIGINT NOT NULL,
-    [step_id] NVARCHAR(100) NOT NULL,
-    [step_name] NVARCHAR(255),
-    [step_type] NVARCHAR(50) NOT NULL,
-    [input_data] NVARCHAR(MAX),
-    [output_data] NVARCHAR(MAX),
-    [status] NVARCHAR(20) DEFAULT 'pending',
-    [started_at] DATETIME2(7),
-    [completed_at] DATETIME2(7),
-    [duration_seconds] INT,
-    [error_message] NVARCHAR(MAX),
-    [retry_count] INT DEFAULT 0,
-    [sequence_number] INT,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== AI SYSTEM ====================
-
-CREATE TABLE [dbo].[ai_conversations] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [conversation_type] NVARCHAR(50) DEFAULT 'general',
-    [title] NVARCHAR(255),
-    [context] NVARCHAR(MAX),
-    [message_count] INT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [last_message_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_ai_conversations_tenant] ON [dbo].[ai_conversations] ([tenant_id], [user_id]);
-
-CREATE TABLE [dbo].[ai_messages] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [conversation_id] BIGINT NOT NULL,
-    [sender_type] NVARCHAR(10) NOT NULL CHECK ([sender_type] IN ('user', 'assistant')),
-    [message_content] NVARCHAR(MAX) NOT NULL,
-    [message_tokens] INT,
-    [response_time_ms] INT,
-    [model_used] NVARCHAR(100),
-    [confidence_score] DECIMAL(3,2),
-    [intent_detected] NVARCHAR(100),
-    [entities_extracted] NVARCHAR(MAX),
-    [actions_suggested] NVARCHAR(MAX),
-    [feedback_rating] INT CHECK ([feedback_rating] >= 1 AND [feedback_rating] <= 5),
-    [feedback_comment] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== NOTIFICATIONS ====================
-
-CREATE TABLE [dbo].[notification_templates] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [event_type] NVARCHAR(100) NOT NULL,
-    [channel] NVARCHAR(50) NOT NULL,
-    [subject_template] NVARCHAR(500),
-    [body_template] NVARCHAR(MAX) NOT NULL,
-    [variables] NVARCHAR(MAX),
-    [is_system_template] BIT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[notification_preferences] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [user_id] BIGINT NOT NULL,
-    [event_type] NVARCHAR(100) NOT NULL,
-    [email_enabled] BIT DEFAULT 1,
-    [sms_enabled] BIT DEFAULT 0,
-    [push_enabled] BIT DEFAULT 1,
-    [in_app_enabled] BIT DEFAULT 1,
-    [frequency] NVARCHAR(20) DEFAULT 'immediate',
-    [quiet_hours_start] TIME,
-    [quiet_hours_end] TIME,
-    [timezone] NVARCHAR(50),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([user_id], [event_type])
-);
-
-CREATE TABLE [dbo].[notifications] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [recipient_id] BIGINT NOT NULL,
-    [event_type] NVARCHAR(100) NOT NULL,
-    [channel] NVARCHAR(50) NOT NULL,
-    [priority] NVARCHAR(20) DEFAULT 'normal',
-    [subject] NVARCHAR(500),
-    [message] NVARCHAR(MAX) NOT NULL,
-    [data] NVARCHAR(MAX),
-    [template_id] BIGINT,
-    [scheduled_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [sent_at] DATETIME2(7),
-    [delivered_at] DATETIME2(7),
-    [read_at] DATETIME2(7),
-    [clicked_at] DATETIME2(7),
-    [status] NVARCHAR(20) DEFAULT 'pending',
-    [error_message] NVARCHAR(MAX),
-    [retry_count] INT DEFAULT 0,
-    [max_retries] INT DEFAULT 3,
-    [next_retry_at] DATETIME2(7),
-    [provider_message_id] NVARCHAR(255),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_notifications_recipient] ON [dbo].[notifications] ([recipient_id], [status], [created_at] DESC);
-CREATE INDEX [IX_notifications_tenant] ON [dbo].[notifications] ([tenant_id]) WHERE [tenant_id] IS NOT NULL;
-
--- ==================== ANALYTICS & REPORTING -- DO NOT CONSIDER IT'S NOT IN USE ====================
-
-CREATE TABLE [dbo].[analytics_events] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT,
-    [session_id] BIGINT,
-    [event_name] NVARCHAR(100) NOT NULL,
-    [event_category] NVARCHAR(50) NOT NULL,
-    [event_action] NVARCHAR(50),
-    [event_label] NVARCHAR(255),
-    [event_value] DECIMAL(10,2),
-    [page_url] NVARCHAR(MAX),
-    [referrer_url] NVARCHAR(MAX),
-    [user_agent] NVARCHAR(MAX),
-    [ip_address] NVARCHAR(45),
-    [properties] NVARCHAR(MAX),
-    [timestamp] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_analytics_events_tenant] ON [dbo].[analytics_events] ([tenant_id], [timestamp] DESC);
-
-CREATE TABLE [dbo].[dashboard_widgets] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [user_id] BIGINT,
-    [widget_type] NVARCHAR(50) NOT NULL,
-    [widget_name] NVARCHAR(255) NOT NULL,
-    [configuration] NVARCHAR(MAX) NOT NULL,
-    [position_x] INT DEFAULT 0,
-    [position_y] INT DEFAULT 0,
-    [width] INT DEFAULT 4,
-    [height] INT DEFAULT 3,
-    [dashboard_tab] NVARCHAR(100) DEFAULT 'default',
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[reports] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [report_type] NVARCHAR(50) NOT NULL,
-    [configuration] NVARCHAR(MAX) NOT NULL,
-    [schedule_type] NVARCHAR(20),
-    [schedule_config] NVARCHAR(MAX),
-    [last_generated_at] DATETIME2(7),
-    [next_generation_at] DATETIME2(7),
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_reports_tenant] ON [dbo].[reports] ([tenant_id], [is_active]);
-
-CREATE TABLE [dbo].[report_instances] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [report_id] BIGINT NOT NULL,
-    [generated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [generation_time_seconds] INT,
-    [file_url] NVARCHAR(MAX),
-    [file_format] NVARCHAR(20),
-    [row_count] INT,
-    [status] NVARCHAR(20) DEFAULT 'completed',
-    [error_message] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
--- ==================== SYSTEM MANAGEMENT ====================
-
-CREATE TABLE [dbo].[system_config] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [config_key] NVARCHAR(255) NOT NULL,
-    [config_value] NVARCHAR(MAX),
-    [config_type] NVARCHAR(50) DEFAULT 'string',
-    [is_encrypted] BIT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE UNIQUE INDEX [IX_system_config_tenant_key] ON [dbo].[system_config] ([tenant_id], [config_key]);
-
-CREATE TABLE [dbo].[audit_logs] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [user_id] BIGINT,
-    [entity_type] NVARCHAR(100) NOT NULL,
-    [entity_id] BIGINT,
-    [action_type] NVARCHAR(50) NOT NULL,
-    [old_values] NVARCHAR(MAX),
-    [new_values] NVARCHAR(MAX),
-    [ip_address] NVARCHAR(45),
-    [user_agent] NVARCHAR(MAX),
-    [session_id] BIGINT,
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_audit_tenant] ON [dbo].[audit_logs] ([tenant_id], [created_at] DESC) WHERE [tenant_id] IS NOT NULL;
-CREATE INDEX [IX_audit_system] ON [dbo].[audit_logs] ([created_at] DESC) WHERE [tenant_id] IS NULL;
-
-CREATE TABLE [dbo].[system_events] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [user_id] BIGINT,
-    [event_type] NVARCHAR(100) NOT NULL,
-    [event_name] NVARCHAR(255) NOT NULL,
-    [event_data] NVARCHAR(MAX),
-    [source] NVARCHAR(100),
-    [session_id] BIGINT,
-    [ip_address] NVARCHAR(45),
-    [user_agent] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_system_events_tenant] ON [dbo].[system_events] ([tenant_id], [created_at] DESC) WHERE [tenant_id] IS NOT NULL;
-
-CREATE TABLE [dbo].[system_metrics] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [metric_name] NVARCHAR(100) NOT NULL,
-    [metric_value] DECIMAL(15,4) NOT NULL,
-    [metric_unit] NVARCHAR(50),
-    [dimensions] NVARCHAR(MAX),
-    [timestamp] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_system_metrics] ON [dbo].[system_metrics] ([metric_name], [timestamp] DESC);
-
-CREATE TABLE [dbo].[error_logs] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [user_id] BIGINT,
-    [error_type] NVARCHAR(100) NOT NULL,
-    [error_message] NVARCHAR(MAX) NOT NULL,
-    [error_code] NVARCHAR(50),
-    [stack_trace] NVARCHAR(MAX),
-    [request_url] NVARCHAR(MAX),
-    [request_method] NVARCHAR(10),
-    [request_headers] NVARCHAR(MAX),
-    [request_body] NVARCHAR(MAX),
-    [response_status] INT,
-    [severity] NVARCHAR(20) DEFAULT 'error',
-    [resolved] BIT DEFAULT 0,
-    [resolved_at] DATETIME2(7),
-    [resolved_by] BIGINT,
-    [occurrence_count] INT DEFAULT 1,
-    [first_occurred_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [last_occurred_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_error_logs_tenant] ON [dbo].[error_logs] ([tenant_id], [severity], [resolved]) WHERE [tenant_id] IS NOT NULL;
-
--- ==================== ENCRYPTION KEY MANAGEMENT ====================
-
-CREATE TABLE [dbo].[encryption_keys] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [key_type] NVARCHAR(50) NOT NULL, -- 'master', 'tenant', 'user', 'channel', 'file'
-    [entity_type] NVARCHAR(50), -- 'tenant', 'user', 'channel'
-    [entity_id] BIGINT,
-    [key_version] INT NOT NULL,
-    [algorithm] NVARCHAR(50) NOT NULL, -- 'RSA-2048', 'AES-256-GCM'
-    [encrypted_key] NVARCHAR(MAX) NOT NULL,
-    [public_key] NVARCHAR(MAX),
-    [key_fingerprint] NVARCHAR(64) NOT NULL,
-    [key_purpose] NVARCHAR(100), -- 'signing', 'encryption', 'both'
-    [is_active] BIT DEFAULT 1,
-    [expires_at] DATETIME2(7),
-    [rotated_from_key_id] BIGINT,
-    [rotation_reason] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_encryption_keys_entity] ON [dbo].[encryption_keys] ([entity_type], [entity_id], [is_active]);
-CREATE INDEX [IX_encryption_keys_fingerprint] ON [dbo].[encryption_keys] ([key_fingerprint]);
-
-CREATE TABLE [dbo].[key_rotation_schedule] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [entity_type] NVARCHAR(50) NOT NULL,
-    [entity_id] BIGINT NOT NULL,
-    [current_key_id] BIGINT NOT NULL,
-    [rotation_frequency_days] INT DEFAULT 90,
-    [last_rotated_at] DATETIME2(7),
-    [next_rotation_at] DATETIME2(7) NOT NULL,
-    [auto_rotate] BIT DEFAULT 1,
-    [rotation_policy] NVARCHAR(MAX),
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([entity_type], [entity_id])
-);
-
-CREATE INDEX [IX_key_rotation_next] ON [dbo].[key_rotation_schedule] ([next_rotation_at], [auto_rotate]) WHERE [is_active] = 1;
-
--- ==================== SECURITY AUDIT ====================
-
-CREATE TABLE [dbo].[security_events] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [user_id] BIGINT,
-    [event_type] NVARCHAR(100) NOT NULL,
-    [event_category] NVARCHAR(50) NOT NULL, -- 'authentication', 'authorization', 'encryption', 'data_access'
-    [severity] NVARCHAR(20) NOT NULL, -- 'info', 'warning', 'critical'
-    [description] NVARCHAR(MAX) NOT NULL,
-    [ip_address] NVARCHAR(45),
-    [user_agent] NVARCHAR(MAX),
-    [location] NVARCHAR(MAX),
-    [resource_type] NVARCHAR(50),
-    [resource_id] BIGINT,
-    [action_taken] NVARCHAR(MAX),
-    [risk_score] INT DEFAULT 0,
-    [is_anomaly] BIT DEFAULT 0,
-    [is_resolved] BIT DEFAULT 0,
-    [resolved_at] DATETIME2(7),
-    [resolved_by] BIGINT,
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_security_events_tenant] ON [dbo].[security_events] ([tenant_id], [created_at] DESC) WHERE [tenant_id] IS NOT NULL;
-CREATE INDEX [IX_security_events_severity] ON [dbo].[security_events] ([severity], [is_resolved], [created_at] DESC);
-
-CREATE TABLE [dbo].[encryption_audit_logs] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [operation_type] NVARCHAR(50) NOT NULL, -- 'encrypt', 'decrypt', 'key_generation', 'key_rotation'
-    [entity_type] NVARCHAR(50) NOT NULL,
-    [entity_id] BIGINT NOT NULL,
-    [key_id] BIGINT,
-    [key_version] INT,
-    [algorithm_used] NVARCHAR(50),
-    [user_id] BIGINT,
-    [tenant_id] BIGINT,
-    [success] BIT NOT NULL,
-    [error_message] NVARCHAR(MAX),
-    [ip_address] NVARCHAR(45),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_encryption_audit] ON [dbo].[encryption_audit_logs] ([entity_type], [entity_id], [created_at] DESC);
-
-CREATE INDEX [IX_tenants_type_status] ON [dbo].[tenants] ([tenant_type], [status]);
-CREATE INDEX [IX_tenants_owner] ON [dbo].[tenants] ([owner_user_id]);
-CREATE INDEX [IX_tenants_slug] ON [dbo].[tenants] ([slug]);
-
--- ==================== SUBSCRIPTION PLANS ====================
-
-CREATE TABLE [dbo].[subscription_plans] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [plan_name] NVARCHAR(100) NOT NULL,
-    [plan_slug] NVARCHAR(50) UNIQUE NOT NULL,
-    [plan_type] NVARCHAR(20) NOT NULL CHECK ([plan_type] IN ('agency', 'brand', 'creator')),
-    [price_monthly] DECIMAL(10,2),
-    [price_yearly] DECIMAL(10,2),
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [trial_days] INT DEFAULT 14,
-    
-    -- Limits
-    [max_staff] INT DEFAULT 5,
-    [max_storage_gb] INT DEFAULT 10,
-    [max_campaigns] INT DEFAULT 10,
-    [max_invitations] INT DEFAULT 20,
-    [max_integrations] INT DEFAULT 5,
-    [max_creators] INT DEFAULT 100,
-    [max_brands] INT DEFAULT 50,
-    
-    [features] NVARCHAR(MAX), -- JSON array
-    [is_active] BIT DEFAULT 1,
-    [sort_order] INT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_plans_type] ON [dbo].[subscription_plans] ([plan_type], [is_active]);
-
-CREATE TABLE [dbo].[subscription_history] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [from_plan_id] BIGINT,
-    [to_plan_id] BIGINT NOT NULL,
-    [change_type] NVARCHAR(20) NOT NULL,
-    [change_reason] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_subscription_history_tenant] ON [dbo].[subscription_history] ([tenant_id], [created_at] DESC);
-
--- ==================== USERS ====================
-
-CREATE TABLE [dbo].[users] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [email] NVARCHAR(320) UNIQUE NOT NULL,
-    [username] NVARCHAR(100) NULL,
-    [password_hash] NVARCHAR(255),
-    [user_type] NVARCHAR(50) NOT NULL DEFAULT 'pending',
-    
-    [is_super_admin] BIT DEFAULT 0,
-    
-    -- Profile
-    [first_name] NVARCHAR(100),
-    [last_name] NVARCHAR(100),
-    [display_name] NVARCHAR(200),
-    [avatar_url] NVARCHAR(MAX),
-    [phone] NVARCHAR(20),
-    [timezone] NVARCHAR(50) DEFAULT 'UTC',
-    [locale] NVARCHAR(10) DEFAULT 'en-US',
-    
-    -- E2E Encryption Keys (per user)
-    [public_key] NVARCHAR(MAX), -- User's RSA public key
-    [encrypted_private_key] NVARCHAR(MAX), -- Encrypted with user's password-derived key
-    [key_version] INT DEFAULT 1,
-    [key_created_at] DATETIME2(7),
-    [key_rotated_at] DATETIME2(7),
-    
-    -- Verification
-    [email_verified_at] DATETIME2(7),
-    [phone_verified_at] DATETIME2(7),
-    
-    -- Onboarding
-    [onboarding_completed_at] DATETIME2(7),
-    [onboarding_step] INT DEFAULT 0,
-    
-    -- Activity
-    [last_login_at] DATETIME2(7),
-    [last_active_at] DATETIME2(7),
-    [login_count] INT DEFAULT 0,
-    
-    -- Security
-    [failed_login_count] INT DEFAULT 0,
-    [locked_until] DATETIME2(7),
-    [password_changed_at] DATETIME2(7),
-    [must_change_password] BIT DEFAULT 0,
-    [two_factor_enabled] BIT DEFAULT 0,
-    [two_factor_secret] NVARCHAR(255),
-    [backup_codes] NVARCHAR(MAX),
-    
-    [preferences] NVARCHAR(MAX), -- JSON
-    [metadata] NVARCHAR(MAX), -- JSON
-    [status] NVARCHAR(20) DEFAULT 'pending',
-    [is_system_user] BIT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_users_email] ON [dbo].[users] ([email]);
-CREATE INDEX [IX_users_status] ON [dbo].[users] ([status]);
-CREATE INDEX [IX_users_super_admin] ON [dbo].[users] ([is_super_admin]) WHERE [is_super_admin] = 1;
-
-CREATE TABLE [dbo].[verification_codes] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [user_id] BIGINT,
-    [email] NVARCHAR(320),
-    [phone] NVARCHAR(20),
-    [code] NVARCHAR(10) NOT NULL,
-    [code_type] NVARCHAR(20) NOT NULL,
-    [expires_at] DATETIME2(7) NOT NULL,
-    [used_at] DATETIME2(7),
-    [ip_address] NVARCHAR(45),
-    [attempts] INT DEFAULT 0,
-    [max_attempts] INT DEFAULT 5,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_verification_codes_lookup] ON [dbo].[verification_codes] ([email], [code_type], [used_at]);
-
-CREATE TABLE [dbo].[user_sessions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [user_id] BIGINT NOT NULL,
-    [active_tenant_id] BIGINT NULL,
-    [session_token] NVARCHAR(512) UNIQUE NOT NULL,
-    [refresh_token] NVARCHAR(512) UNIQUE,
-    [device_fingerprint] NVARCHAR(255),
-    [device_name] NVARCHAR(255),
-    [device_type] NVARCHAR(50),
-    [browser_name] NVARCHAR(100),
-    [browser_version] NVARCHAR(50),
-    [os_name] NVARCHAR(100),
-    [os_version] NVARCHAR(50),
-    [ip_address] NVARCHAR(45),
-    [location] NVARCHAR(MAX),
-    
-    -- E2E Session Keys
-    [encrypted_session_key] NVARCHAR(MAX), -- Encrypted with user's public key
-    [session_key_version] INT DEFAULT 1,
-    
-    [is_active] BIT DEFAULT 1,
-    [last_activity_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [expires_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_user_sessions_token] ON [dbo].[user_sessions] ([session_token]) INCLUDE ([user_id], [expires_at], [is_active]);
-CREATE INDEX [IX_user_sessions_user] ON [dbo].[user_sessions] ([user_id], [is_active]);
-CREATE INDEX [IX_user_sessions_tenant] ON [dbo].[user_sessions] ([active_tenant_id]) WHERE [active_tenant_id] IS NOT NULL;
-
-CREATE TABLE [dbo].[user_social_accounts] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [user_id] BIGINT NOT NULL,
-    [provider] NVARCHAR(50) NOT NULL,
-    [provider_user_id] NVARCHAR(255) NOT NULL,
-    [provider_username] NVARCHAR(255),
-    [provider_email] NVARCHAR(320),
-    [access_token] NVARCHAR(MAX),
-    [refresh_token] NVARCHAR(MAX),
-    [token_expires_at] DATETIME2(7),
-    [profile_data] NVARCHAR(MAX),
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([provider], [provider_user_id])
-);
-
-CREATE TABLE [dbo].[password_reset_tokens] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [user_id] BIGINT NOT NULL,
-    [token] NVARCHAR(255) UNIQUE NOT NULL,
-    [expires_at] DATETIME2(7) NOT NULL,
-    [used_at] DATETIME2(7),
-    [ip_address] NVARCHAR(45),
-    [user_agent] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
- CREATE TABLE [dbo].[user_encryption_keys] (
-        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-        [user_id] BIGINT NOT NULL UNIQUE,
-        -- RSA Key Pair (4096-bit)
-        [public_key_pem] NVARCHAR(MAX) NOT NULL,
-        [encrypted_private_key_pem] NVARCHAR(MAX) NOT NULL,
-        -- Key Metadata
-        [key_algorithm] NVARCHAR(50) DEFAULT 'RSA-4096',
-        [key_encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-        [key_fingerprint] NVARCHAR(64) NOT NULL,
-        [key_fingerprint_short] NVARCHAR(16) NOT NULL,
-        -- Key Status
-        [status] NVARCHAR(20) DEFAULT 'active',
-        [key_version] INT DEFAULT 1,
-        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-        [expires_at] DATETIME2(7) NULL,
-        [revoked_at] DATETIME2(7) NULL,
-        [revoke_reason] NVARCHAR(MAX) NULL,
-        -- Backup (Master key encrypted)
-        [backup_encrypted_private_key] NVARCHAR(MAX) NULL,
-        [backup_created_at] DATETIME2(7) NULL,
-        -- Rotation
-        [rotated_from_key_id] BIGINT NULL,
-        [next_rotation_at] DATETIME2(7) NULL,
-        [rotation_required] BIT DEFAULT 0,
-        -- Audit
-        [created_by] BIGINT,
-        [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-        [updated_by] BIGINT
-    );
-
-CREATE TABLE [dbo].[message_encryption_audit] (
-        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-        [message_id] BIGINT NOT NULL,
-        [channel_id] BIGINT NOT NULL,
-        [sender_user_id] BIGINT NOT NULL,
-        
-        -- Encryption Details
-        [sender_key_version] INT NOT NULL,
-        [channel_key_version] INT NOT NULL,
-        [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-        [key_fingerprint] NVARCHAR(64),
-        
-        -- Decryption Tracking
-        [decryption_attempts] INT DEFAULT 0,
-        [successful_decryptions] INT DEFAULT 0,
-        [failed_decryptions] INT DEFAULT 0,
-        [last_decryption_attempt_at] DATETIME2(7) NULL,
-        
-        -- Compliance
-        [encryption_verified] BIT DEFAULT 1,
-        [verified_at] DATETIME2(7),
-        [verified_by] BIGINT,
-        
-        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-        [created_by] BIGINT
-    );
--- ==================== TENANT MEMBERSHIP ====================
-
-CREATE TABLE [dbo].[tenant_members] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [role_id] BIGINT NOT NULL,
-    [member_type] NVARCHAR(20) NOT NULL DEFAULT 'staff',
-    [department] NVARCHAR(100),
-    [reports_to] BIGINT,
-    [joined_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [left_at] DATETIME2(7),
-    [is_active] BIT DEFAULT 1,
-    [permissions_override] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [user_id])
-);
-
-CREATE INDEX [IX_tenant_members_tenant] ON [dbo].[tenant_members] ([tenant_id], [is_active]);
-CREATE INDEX [IX_tenant_members_user] ON [dbo].[tenant_members] ([user_id]);
-CREATE INDEX [IX_tenant_members_role] ON [dbo].[tenant_members] ([role_id]);
-
--- ==================== INVITATIONS ====================
-
-CREATE TABLE [dbo].[invitations] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [invited_by] BIGINT NOT NULL,
-    [invitee_email] NVARCHAR(320) NOT NULL,
-    [invitee_phone] NVARCHAR(20),
-    [invitee_name] NVARCHAR(255),
-    [invitee_type] NVARCHAR(50) NOT NULL,
-    [role_id] BIGINT,
-    [invitation_token] NVARCHAR(255) UNIQUE NOT NULL,
-    [invitation_message] NVARCHAR(MAX),
-    [status] NVARCHAR(20) DEFAULT 'pending',
-    [expires_at] DATETIME2(7) NOT NULL,
-    [accepted_at] DATETIME2(7),
-    [declined_at] DATETIME2(7),
-    [decline_reason] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_invitations_tenant] ON [dbo].[invitations] ([tenant_id], [status]);
-CREATE INDEX [IX_invitations_token] ON [dbo].[invitations] ([invitation_token]);
-CREATE INDEX [IX_invitations_email] ON [dbo].[invitations] ([invitee_email], [status]);
-
--- ==================== TENANT RELATIONSHIPS ====================
-
-CREATE TABLE [dbo].[tenant_relationships] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [primary_tenant_id] BIGINT NOT NULL,
-    [related_tenant_id] BIGINT NOT NULL,
-    [relationship_type] NVARCHAR(50) NOT NULL,
-    [permissions] NVARCHAR(MAX),
-    [status] NVARCHAR(20) DEFAULT 'active',
-    [started_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [ended_at] DATETIME2(7),
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([primary_tenant_id], [related_tenant_id])
-);
-
-CREATE INDEX [IX_relationships_primary] ON [dbo].[tenant_relationships] ([primary_tenant_id], [status]);
-CREATE INDEX [IX_relationships_related] ON [dbo].[tenant_relationships] ([related_tenant_id], [status]);
-
--- ==================== TENANT USAGE ====================
-
-CREATE TABLE [dbo].[tenant_usage] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [metric_name] NVARCHAR(100) NOT NULL,
-    [metric_value] DECIMAL(15,4),
-    [measurement_period] DATE,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [metric_name], [measurement_period])
-);
-
-CREATE INDEX [IX_tenant_usage] ON [dbo].[tenant_usage] ([tenant_id], [measurement_period] DESC);
-
--- ==================== ENHANCED RBAC SYSTEM ====================
-
-CREATE TABLE [dbo].[roles] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [name] NVARCHAR(100) NOT NULL,
-    [display_name] NVARCHAR(255),
-    [description] NVARCHAR(MAX),
-    [is_system_role] BIT DEFAULT 0,
-    [is_default] BIT DEFAULT 0,
-    [hierarchy_level] INT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE UNIQUE INDEX [IX_roles_tenant_name] ON [dbo].[roles] ([tenant_id], [name]);
-CREATE INDEX [IX_roles_system] ON [dbo].[roles] ([is_system_role]) WHERE [is_system_role] = 1;
-
-CREATE TABLE [dbo].[permissions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [permission_key] NVARCHAR(100) UNIQUE NOT NULL,
-    [resource] NVARCHAR(100) NOT NULL,
-    [action] NVARCHAR(50) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [category] NVARCHAR(100),
-    [applicable_to] NVARCHAR(MAX),
-    [is_system_permission] BIT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_permissions_resource] ON [dbo].[permissions] ([resource], [action]);
-CREATE INDEX [IX_permissions_system] ON [dbo].[permissions] ([is_system_permission]) WHERE [is_system_permission] = 1;
-
-CREATE TABLE [dbo].[role_permissions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [role_id] BIGINT NOT NULL,
-    [permission_id] BIGINT NOT NULL,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([role_id], [permission_id])
-);
-
-CREATE INDEX [IX_role_permissions_role] ON [dbo].[role_permissions] ([role_id]);
-
-CREATE TABLE [dbo].[user_roles] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [user_id] BIGINT NOT NULL,
-    [role_id] BIGINT NOT NULL,
-    [assigned_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [expires_at] DATETIME2(7),
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([user_id], [role_id])
-);
-
-CREATE INDEX [IX_user_roles_lookup] ON [dbo].[user_roles] ([user_id], [is_active]) INCLUDE ([role_id]);
-
-CREATE TABLE [dbo].[role_limits] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [role_id] BIGINT NOT NULL,
-    [limit_type] NVARCHAR(50) NOT NULL,
-    [limit_value] INT NOT NULL,
-    [current_usage] INT DEFAULT 0,
-    [reset_period] NVARCHAR(20),
-    [last_reset_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([role_id], [limit_type])
-);
-
-CREATE TABLE [dbo].[menu_permissions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [menu_key] NVARCHAR(100) NOT NULL,
-    [permission_id] BIGINT NOT NULL,
-    [applicable_to] NVARCHAR(MAX),
-    [is_required] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([menu_key], [permission_id])
-);
-
-CREATE INDEX [IX_menu_permissions] ON [dbo].[menu_permissions] ([menu_key]);
-
--- Resource-level permissions (granular access control)
-CREATE TABLE [dbo].[resource_permissions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [resource_type] NVARCHAR(50) NOT NULL,
-    [resource_id] BIGINT NOT NULL,
-    [entity_type] NVARCHAR(20) NOT NULL,
-    [entity_id] BIGINT NOT NULL,
-    [permission_type] NVARCHAR(20) NOT NULL,
-    [granted_by] BIGINT NOT NULL,
-    [expires_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([resource_type], [resource_id], [entity_type], [entity_id], [permission_type])
-);
-
-CREATE INDEX [IX_resource_permissions] ON [dbo].[resource_permissions] ([resource_type], [resource_id]);
-
--- ==================== CREATOR PROFILES ====================
-
-CREATE TABLE [dbo].[creator_profiles] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL UNIQUE,
-    [stage_name] NVARCHAR(200),
-    [bio] NVARCHAR(MAX),
-    [date_of_birth] DATE,
-    [gender] NVARCHAR(20),
-    [profile_image_url] NVARCHAR(MAX),
-    [cover_image_url] NVARCHAR(MAX),
-    [location] NVARCHAR(MAX),
-    [languages] NVARCHAR(MAX),
-    [categories] NVARCHAR(MAX),
-    
-    [follower_count_total] INT DEFAULT 0,
-    [engagement_rate_avg] DECIMAL(5,2),
-    [rating] DECIMAL(3,2) DEFAULT 5.0,
-    [rating_count] INT DEFAULT 0,
-    [total_campaigns] INT DEFAULT 0,
-    [completed_campaigns] INT DEFAULT 0,
-    [success_rate] DECIMAL(5,2),
-    
-    [preferred_brands] NVARCHAR(MAX),
-    [excluded_brands] NVARCHAR(MAX),
-    [content_types] NVARCHAR(MAX),
-    [availability_status] NVARCHAR(20) DEFAULT 'available',
-    
-    [kyc_status] NVARCHAR(20) DEFAULT 'pending',
-    [bank_details] NVARCHAR(MAX),
-    [tax_details] NVARCHAR(MAX),
-    
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_creator_profiles_tenant] ON [dbo].[creator_profiles] ([tenant_id]);
-
-CREATE TABLE [dbo].[creator_categories] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [name] NVARCHAR(100) UNIQUE NOT NULL,
-    [slug] NVARCHAR(100) UNIQUE NOT NULL,
-    [description] NVARCHAR(MAX),
-    [parent_category_id] BIGINT,
-    [level] INT DEFAULT 0,
-    [sort_order] INT DEFAULT 0,
-    [icon_url] NVARCHAR(MAX),
-    [color] NVARCHAR(7),
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE TABLE [dbo].[creator_social_accounts] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [platform] NVARCHAR(50) NOT NULL,
-    [username] NVARCHAR(255) NOT NULL,
-    [url] NVARCHAR(MAX),
-    [follower_count] INT DEFAULT 0,
-    [following_count] INT DEFAULT 0,
-    [posts_count] INT DEFAULT 0,
-    [engagement_rate] DECIMAL(5,2),
-    [avg_likes] INT DEFAULT 0,
-    [avg_comments] INT DEFAULT 0,
-    [avg_shares] INT DEFAULT 0,
-    [avg_views] INT DEFAULT 0,
-    [is_verified] BIT DEFAULT 0,
-    [is_business_account] BIT DEFAULT 0,
-    [last_sync_at] DATETIME2(7),
-    [sync_status] NVARCHAR(20) DEFAULT 'pending',
-    [api_data] NVARCHAR(MAX),
-    [is_primary] BIT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [platform], [username])
-);
-
-CREATE INDEX [IX_creator_social_tenant] ON [dbo].[creator_social_accounts] ([tenant_id], [platform]);
-
-CREATE TABLE [dbo].[creator_rate_cards] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [platform] NVARCHAR(50) NOT NULL,
-    [content_type] NVARCHAR(100) NOT NULL,
-    [deliverable_type] NVARCHAR(100),
-    [base_rate] DECIMAL(10,2) NOT NULL,
-    [currency] NVARCHAR(3) DEFAULT 'USD',
-    [rate_type] NVARCHAR(20) DEFAULT 'fixed',
-    [min_rate] DECIMAL(10,2),
-    [max_rate] DECIMAL(10,2),
-    [duration_hours] INT,
-    [revisions_included] INT DEFAULT 2,
-    [usage_rights_duration] INT,
-    [commercial_usage_rate] DECIMAL(10,2),
-    [rush_delivery_rate] DECIMAL(10,2),
-    [additional_requirements] NVARCHAR(MAX),
-    [is_negotiable] BIT DEFAULT 0,
-    [is_active] BIT DEFAULT 1,
-    [effective_from] DATE DEFAULT CAST(GETUTCDATE() AS DATE),
-    [effective_until] DATE,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
--- ==================== REMAINING TABLES FROM CREATOR DOCUMENTS ====================
-
-CREATE TABLE [dbo].[creator_documents] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [document_type] NVARCHAR(50) NOT NULL,
-    [document_name] NVARCHAR(255),
-    [file_url] NVARCHAR(MAX) NOT NULL,
-    [file_size] INT,
-    [file_type] NVARCHAR(100),
-    [verification_status] NVARCHAR(20) DEFAULT 'pending',
-    [verified_at] DATETIME2(7),
-    [verified_by] BIGINT,
-    [rejection_reason] NVARCHAR(MAX),
-    [expiry_date] DATE,
-    [metadata] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_creator_documents_tenant] ON [dbo].[creator_documents] ([tenant_id], [verification_status]);
-
-CREATE TABLE [dbo].[creator_availability] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [date] DATE NOT NULL,
-    [is_available] BIT DEFAULT 1,
-    [availability_type] NVARCHAR(20) DEFAULT 'full',
-    [hours_available] INT DEFAULT 8,
-    [notes] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [date])
-);
-
-CREATE INDEX [IX_creator_availability] ON [dbo].[creator_availability] ([tenant_id], [date]);
-
-CREATE TABLE [dbo].[creator_metrics] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [platform] NVARCHAR(50) NOT NULL,
-    [metric_date] DATE NOT NULL,
-    [followers] INT DEFAULT 0,
-    [following] INT DEFAULT 0,
-    [posts] INT DEFAULT 0,
-    [likes] INT DEFAULT 0,
-    [comments] INT DEFAULT 0,
-    [shares] INT DEFAULT 0,
-    [views] INT DEFAULT 0,
-    [engagement_rate] DECIMAL(5,2),
-    [reach] INT DEFAULT 0,
-    [impressions] INT DEFAULT 0,
-    [saves] INT DEFAULT 0,
-    [profile_visits] INT DEFAULT 0,
-    [website_clicks] INT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [platform], [metric_date])
-);
-
-CREATE INDEX [IX_creator_metrics] ON [dbo].[creator_metrics] ([tenant_id], [platform], [metric_date] DESC);
-
--- ==================== CONTRACT REVIEW & MODIFICATIONS ====================
-
-CREATE TABLE [dbo].[contract_review_rounds] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [contract_id] BIGINT NOT NULL,
-    [round_number] INT NOT NULL,
-    [review_type] NVARCHAR(50) NOT NULL,
-    [initiated_by] BIGINT NOT NULL,
-    [initiator_role] NVARCHAR(50) NOT NULL,
-    [status] NVARCHAR(20) DEFAULT 'in_progress',
-    [max_modifications] INT DEFAULT 3,
-    [current_modifications] INT DEFAULT 0,
-    [started_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [completed_at] DATETIME2(7),
-    [deadline] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([contract_id], [round_number])
-);
-
-CREATE INDEX [IX_contract_review_rounds] ON [dbo].[contract_review_rounds] ([contract_id], [status]);
-
-CREATE TABLE [dbo].[contract_modifications] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [contract_id] BIGINT NOT NULL,
-    [review_round_id] BIGINT,
-    [modified_by] BIGINT NOT NULL,
-    [modifier_role] NVARCHAR(50) NOT NULL,
-    [modification_type] NVARCHAR(50) NOT NULL,
-    [section_modified] NVARCHAR(255),
-    [old_content] NVARCHAR(MAX),
-    [new_content] NVARCHAR(MAX),
-    [change_reason] NVARCHAR(MAX),
-    [requires_approval] BIT DEFAULT 1,
-    [approved_by] BIGINT,
-    [approved_at] DATETIME2(7),
-    [rejected_by] BIGINT,
-    [rejected_at] DATETIME2(7),
-    [rejection_reason] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_contract_modifications] ON [dbo].[contract_modifications] ([contract_id], [created_at] DESC);
-
-CREATE TABLE [dbo].[contract_stage_permissions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT,
-    [contract_stage] NVARCHAR(50) NOT NULL,
-    [role_type] NVARCHAR(50) NOT NULL,
-    [can_view] BIT DEFAULT 1,
-    [can_edit] BIT DEFAULT 0,
-    [can_comment] BIT DEFAULT 1,
-    [can_approve] BIT DEFAULT 0,
-    [max_modifications] INT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [contract_stage], [role_type])
-);
-
-CREATE INDEX [IX_contract_stage_permissions] ON [dbo].[contract_stage_permissions] ([tenant_id], [contract_stage]);
-
-CREATE TABLE [dbo].[contract_versions] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [contract_id] BIGINT NOT NULL,
-    [version_number] INT NOT NULL,
-    [content] NVARCHAR(MAX) NOT NULL,
-    [variables_data] NVARCHAR(MAX),
-    [changes_summary] NVARCHAR(MAX),
-    [change_reason] NVARCHAR(500),
-    [previous_version_id] BIGINT,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([contract_id], [version_number])
-);
-
-CREATE INDEX [IX_contract_versions] ON [dbo].[contract_versions] ([contract_id], [version_number] DESC);
-
--- ==================== PORTFOLIO TEMPLATES & SHARES ====================
-
-CREATE TABLE [dbo].[portfolio_templates] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [name] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [thumbnail_url] NVARCHAR(MAX),
-    [template_config] NVARCHAR(MAX) NOT NULL,
-    [is_default] BIT DEFAULT 0,
-    [is_public] BIT DEFAULT 0,
-    [usage_count] INT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_portfolio_templates] ON [dbo].[portfolio_templates] ([tenant_id], [is_public]);
-
-CREATE TABLE [dbo].[portfolio_shares] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [portfolio_id] BIGINT NOT NULL,
-    [share_type] NVARCHAR(20) NOT NULL,
-    [recipient_email] NVARCHAR(320),
-    [recipient_name] NVARCHAR(255),
-    [access_token] NVARCHAR(255) UNIQUE NOT NULL,
-    [password_hash] NVARCHAR(255),
-    [expires_at] DATETIME2(7),
-    [view_count] INT DEFAULT 0,
-    [last_viewed_at] DATETIME2(7),
-    [viewer_info] NVARCHAR(MAX),
-    [permissions] NVARCHAR(MAX),
-    [is_active] BIT DEFAULT 1,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_portfolio_shares] ON [dbo].[portfolio_shares] ([portfolio_id], [is_active]);
-CREATE INDEX [IX_portfolio_shares_token] ON [dbo].[portfolio_shares] ([access_token]);
-
-CREATE TABLE [dbo].[portfolio_selections] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [portfolio_id] BIGINT NOT NULL,
-    [share_id] BIGINT NOT NULL,
-    [selected_creator_tenant_ids] NVARCHAR(MAX) NOT NULL,
-    [brand_email] NVARCHAR(320),
-    [brand_name] NVARCHAR(255),
-    [brand_message] NVARCHAR(MAX),
-    [selection_date] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [status] NVARCHAR(20) DEFAULT 'pending',
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_portfolio_selections] ON [dbo].[portfolio_selections] ([portfolio_id], [share_id]);
-
--- ==================== CONTENT ACCESS VIOLATIONS ====================
-
-CREATE TABLE [dbo].[content_access_violations] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [submission_id] BIGINT NOT NULL,
-    [user_id] BIGINT,
-    [violation_type] NVARCHAR(50) NOT NULL,
-    [ip_address] NVARCHAR(45),
-    [user_agent] NVARCHAR(MAX),
-    [device_fingerprint] NVARCHAR(255),
-    [detected_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_content_violations] ON [dbo].[content_access_violations] ([submission_id], [detected_at] DESC);
-
--- ==================== FILE PROCESSING ====================
-
-CREATE TABLE [dbo].[file_processing_jobs] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [file_id] BIGINT NOT NULL,
-    [job_type] NVARCHAR(50) NOT NULL,
-    [status] NVARCHAR(20) DEFAULT 'pending',
-    [progress_percent] INT DEFAULT 0,
-    [started_at] DATETIME2(7),
-    [completed_at] DATETIME2(7),
-    [error_message] NVARCHAR(MAX),
-    [input_parameters] NVARCHAR(MAX),
-    [output_data] NVARCHAR(MAX),
-    [processing_time_seconds] INT,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_file_processing_jobs] ON [dbo].[file_processing_jobs] ([file_id], [status]);
-
--- ==================== TASKS & CALENDAR ====================
-
-CREATE TABLE [dbo].[tasks] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [task_type] NVARCHAR(50) NOT NULL,
-    [title] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [priority] NVARCHAR(20) DEFAULT 'medium',
-    [status] NVARCHAR(20) DEFAULT 'todo',
-    [assigned_to] BIGINT,
-    [assigned_by] BIGINT,
-    [related_type] NVARCHAR(50),
-    [related_id] BIGINT,
-    [due_date] DATETIME2(7),
-    [start_date] DATETIME2(7),
-    [completed_at] DATETIME2(7),
-    [estimated_hours] DECIMAL(4,2),
-    [actual_hours] DECIMAL(4,2),
-    [tags] NVARCHAR(MAX),
-    [attachments] NVARCHAR(MAX),
-    [checklist] NVARCHAR(MAX),
-    [dependencies] NVARCHAR(MAX),
-    [recurrence_rule] NVARCHAR(MAX),
-    [parent_task_id] BIGINT,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_tasks_tenant] ON [dbo].[tasks] ([tenant_id], [status]);
-CREATE INDEX [IX_tasks_assigned] ON [dbo].[tasks] ([assigned_to], [status]);
-
-CREATE TABLE [dbo].[calendar_events] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [event_type] NVARCHAR(50) NOT NULL,
-    [title] NVARCHAR(255) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [location] NVARCHAR(MAX),
-    [start_time] DATETIME2(7) NOT NULL,
-    [end_time] DATETIME2(7) NOT NULL,
-    [all_day] BIT DEFAULT 0,
-    [timezone] NVARCHAR(50),
-    [organizer_id] BIGINT NOT NULL,
-    [attendees] NVARCHAR(MAX),
-    [meeting_url] NVARCHAR(MAX),
-    [meeting_provider] NVARCHAR(50),
-    [related_type] NVARCHAR(50),
-    [related_id] BIGINT,
-    [recurrence_rule] NVARCHAR(MAX),
-    [recurrence_parent_id] BIGINT,
-    [reminder_minutes] INT DEFAULT 15,
-    [is_private] BIT DEFAULT 0,
-    [status] NVARCHAR(20) DEFAULT 'confirmed',
-    [color] NVARCHAR(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_calendar_events] ON [dbo].[calendar_events] ([tenant_id], [start_time]);
-CREATE INDEX [IX_calendar_organizer] ON [dbo].[calendar_events] ([organizer_id], [start_time]);
-
-CREATE TABLE [dbo].[event_attendees] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [event_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [tenant_id] BIGINT NOT NULL,
-    [response_status] NVARCHAR(20) DEFAULT 'pending', -- 'pending', 'accepted', 'declined', 'tentative'
-    [responded_at] DATETIME2(7),
-    [is_organizer] BIT DEFAULT 0,
-    [is_optional] BIT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([event_id], [user_id])
-);
-
-CREATE INDEX [IX_event_attendees] ON [dbo].[event_attendees] ([event_id], [response_status]);
-
--- ==================== NOTES & DOCUMENTS ====================
-
-CREATE TABLE [dbo].[notes] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [title] NVARCHAR(255),
-    [content] NVARCHAR(MAX) NOT NULL,
-    [content_type] NVARCHAR(20) DEFAULT 'markdown', -- 'markdown', 'html', 'plain'
-    [related_type] NVARCHAR(50),
-    [related_id] BIGINT,
-    [tags] NVARCHAR(MAX),
-    [is_pinned] BIT DEFAULT 0,
-    [is_archived] BIT DEFAULT 0,
-    [folder_path] NVARCHAR(1000) DEFAULT '/',
-    
-    -- E2E Encryption
-    [encrypted_content] NVARCHAR(MAX),
-    [encryption_iv] NVARCHAR(MAX),
-    [encryption_auth_tag] NVARCHAR(MAX),
-    [is_encrypted] BIT DEFAULT 0,
-    
-    [shared_with] NVARCHAR(MAX),
-    [last_edited_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_notes_tenant] ON [dbo].[notes] ([tenant_id], [is_archived]);
-CREATE INDEX [IX_notes_creator] ON [dbo].[notes] ([created_by], [is_archived]);
-
--- ==================== TAGS SYSTEM ====================
-
-CREATE TABLE [dbo].[tags] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NULL,
-    [name] NVARCHAR(100) NOT NULL,
-    [slug] NVARCHAR(100) NOT NULL,
-    [color] NVARCHAR(7),
-    [icon] NVARCHAR(50),
-    [category] NVARCHAR(100),
-    [usage_count] INT DEFAULT 0,
-    [is_system_tag] BIT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tenant_id], [slug])
-);
-
-CREATE INDEX [IX_tags_tenant] ON [dbo].[tags] ([tenant_id], [name]);
-
-CREATE TABLE [dbo].[taggables] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tag_id] BIGINT NOT NULL,
-    [taggable_type] NVARCHAR(50) NOT NULL,
-    [taggable_id] BIGINT NOT NULL,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([tag_id], [taggable_type], [taggable_id])
-);
-
-CREATE INDEX [IX_taggables] ON [dbo].[taggables] ([taggable_type], [taggable_id]);
-
--- ==================== COMMENTS SYSTEM ====================
-
-CREATE TABLE [dbo].[comments] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [commentable_type] NVARCHAR(50) NOT NULL,
-    [commentable_id] BIGINT NOT NULL,
-    [parent_comment_id] BIGINT,
-    [user_id] BIGINT NOT NULL,
-    [comment_text] NVARCHAR(MAX) NOT NULL,
-    [mentions] NVARCHAR(MAX),
-    [attachments] NVARCHAR(MAX),
-    [is_edited] BIT DEFAULT 0,
-    [edited_at] DATETIME2(7),
-    [is_deleted] BIT DEFAULT 0,
-    [deleted_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_comments] ON [dbo].[comments] ([commentable_type], [commentable_id], [created_at] DESC);
-CREATE INDEX [IX_comments_parent] ON [dbo].[comments] ([parent_comment_id]) WHERE [parent_comment_id] IS NOT NULL;
-
--- ==================== SAVED FILTERS & VIEWS ====================
-
-CREATE TABLE [dbo].[saved_filters] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [filter_name] NVARCHAR(255) NOT NULL,
-    [resource_type] NVARCHAR(50) NOT NULL,
-    [filter_criteria] NVARCHAR(MAX) NOT NULL,
-    [is_default] BIT DEFAULT 0,
-    [is_shared] BIT DEFAULT 0,
-    [shared_with] NVARCHAR(MAX),
-    [usage_count] INT DEFAULT 0,
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_saved_filters] ON [dbo].[saved_filters] ([tenant_id], [user_id], [resource_type]);
-
--- ==================== BOOKMARKS & FAVORITES ====================
-
-CREATE TABLE [dbo].[bookmarks] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [user_id] BIGINT NOT NULL,
-    [tenant_id] BIGINT NOT NULL,
-    [bookmarkable_type] NVARCHAR(50) NOT NULL,
-    [bookmarkable_id] BIGINT NOT NULL,
-    [folder] NVARCHAR(255),
-    [notes] NVARCHAR(MAX),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT,
-    UNIQUE([user_id], [bookmarkable_type], [bookmarkable_id])
-);
-
-CREATE INDEX [IX_bookmarks] ON [dbo].[bookmarks] ([user_id], [tenant_id]);
-
--- ==================== ACTIVITY FEED ====================
-
-CREATE TABLE [dbo].[activities] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [tenant_id] BIGINT NOT NULL,
-    [user_id] BIGINT NOT NULL,
-    [activity_type] NVARCHAR(50) NOT NULL,
-    [subject_type] NVARCHAR(50),
-    [subject_id] BIGINT,
-    [action] NVARCHAR(50) NOT NULL,
-    [description] NVARCHAR(MAX),
-    [metadata] NVARCHAR(MAX),
-    [is_read] BIT DEFAULT 0,
-    [read_at] DATETIME2(7),
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [updated_by] BIGINT
-);
-
-CREATE INDEX [IX_activities] ON [dbo].[activities] ([tenant_id], [user_id], [created_at] DESC);
-CREATE INDEX [IX_activities_unread] ON [dbo].[activities] ([user_id], [is_read]) WHERE [is_read] = 0;
-
-
--- CRITICAL TABLES ==
--- Message Queue Table (Fallback for when Redis is unavailable)
-CREATE TABLE [dbo].[message_queue] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [user_id] BIGINT NOT NULL,
-    [message_id] BIGINT NOT NULL,
-    [channel_id] BIGINT NOT NULL,
-    [queued_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [expires_at] DATETIME2(7) NOT NULL,
-    [delivered_at] DATETIME2(7),
-    INDEX IX_message_queue_user_queued (user_id, queued_at)
-);
-
-CREATE TABLE [dbo].[message_encryption_audit] (
-        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-        [message_id] BIGINT NOT NULL,
-        [channel_id] BIGINT NOT NULL,
-        [sender_user_id] BIGINT NOT NULL,
-        -- Encryption Details
-        [sender_key_version] INT NOT NULL,
-        [channel_key_version] INT NOT NULL,
-        [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-        [key_fingerprint] NVARCHAR(64),
-        -- Decryption Tracking
-        [decryption_attempts] INT DEFAULT 0,
-        [successful_decryptions] INT DEFAULT 0,
-        [failed_decryptions] INT DEFAULT 0,
-        [last_decryption_attempt_at] DATETIME2(7) NULL,
-        -- Compliance
-        [encryption_verified] BIT DEFAULT 1,
-        [verified_at] DATETIME2(7),
-        [verified_by] BIGINT,
-        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-        [created_by] BIGINT
-    );
-
-
-
-
-
-CREATE TABLE [dbo].[chat_channel_keys] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [channel_id] BIGINT NOT NULL,
-    -- :white_check_mark: CRITICAL: Master-key-encrypted channel key
-    [key_material_encrypted] NVARCHAR(MAX) NOT NULL, -- Encrypted with master key
-    [key_fingerprint] NVARCHAR(64) NOT NULL,
-    [algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-    [key_version] INT NOT NULL,
-    [status] NVARCHAR(20) DEFAULT 'active',
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [expires_at] DATETIME2(7) NULL,
-    [rotated_from_key_id] BIGINT NULL,
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    FOREIGN KEY ([channel_id]) REFERENCES [dbo].[chat_channels]([id]),
-    UNIQUE([channel_id], [key_version])
-);
-ALTER TABLE [dbo].[chat_participants] ADD
-    [channel_key_version] INT NOT NULL DEFAULT 1, -- Which key version they have
-    [last_key_sync_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [can_decrypt_all] BIT DEFAULT 1, -- Can decrypt all messages or just new ones?
-    [decryption_failures] INT DEFAULT 0,
-    [last_decryption_failure_at] DATETIME2(7) NULL;CREATE TABLE [dbo].[message_encryption_audit] (
-        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-        [message_id] BIGINT NOT NULL,
-        [channel_id] BIGINT NOT NULL,
-        [sender_user_id] BIGINT NOT NULL,
-        -- Encryption Details
-        [sender_key_version] INT NOT NULL,
-        [channel_key_version] INT NOT NULL,
-        [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-        [key_fingerprint] NVARCHAR(64),
-        -- Decryption Tracking
-        [decryption_attempts] INT DEFAULT 0,
-        [successful_decryptions] INT DEFAULT 0,
-        [failed_decryptions] INT DEFAULT 0,
-        [last_decryption_attempt_at] DATETIME2(7) NULL,
-        -- Compliance
-        [encryption_verified] BIT DEFAULT 1,
-        [verified_at] DATETIME2(7),
-        [verified_by] BIGINT,
-        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-        [created_by] BIGINT
-    );
-
-
-
-
-
-CREATE TABLE [dbo].[chat_channel_keys] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [channel_id] BIGINT NOT NULL,
-    -- :white_check_mark: CRITICAL: Master-key-encrypted channel key
-    [key_material_encrypted] NVARCHAR(MAX) NOT NULL, -- Encrypted with master key
-    [key_fingerprint] NVARCHAR(64) NOT NULL,
-    [algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-    [key_version] INT NOT NULL,
-    [status] NVARCHAR(20) DEFAULT 'active',
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [expires_at] DATETIME2(7) NULL,
-    [rotated_from_key_id] BIGINT NULL,
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    FOREIGN KEY ([channel_id]) REFERENCES [dbo].[chat_channels]([id]),
-    UNIQUE([channel_id], [key_version])
-);
-ALTER TABLE [dbo].[chat_participants] ADD
-    [channel_key_version] INT NOT NULL DEFAULT 1, -- Which key version they have
-    [last_key_sync_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [can_decrypt_all] BIT DEFAULT 1, -- Can decrypt all messages or just new ones?
-    [decryption_failures] INT DEFAULT 0,
-    [last_decryption_failure_at] DATETIME2(7) NULL;
-    
-    CREATE TABLE [dbo].[message_encryption_audit] (
-        [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-        [message_id] BIGINT NOT NULL,
-        [channel_id] BIGINT NOT NULL,
-        [sender_user_id] BIGINT NOT NULL,
-        -- Encryption Details
-        [sender_key_version] INT NOT NULL,
-        [channel_key_version] INT NOT NULL,
-        [encryption_algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-        [key_fingerprint] NVARCHAR(64),
-        -- Decryption Tracking
-        [decryption_attempts] INT DEFAULT 0,
-        [successful_decryptions] INT DEFAULT 0,
-        [failed_decryptions] INT DEFAULT 0,
-        [last_decryption_attempt_at] DATETIME2(7) NULL,
-        -- Compliance
-        [encryption_verified] BIT DEFAULT 1,
-        [verified_at] DATETIME2(7),
-        [verified_by] BIGINT,
-        [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-        [created_by] BIGINT
-    );
-
-
-
-
-
-CREATE TABLE [dbo].[chat_channel_keys] (
-    [id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-    [channel_id] BIGINT NOT NULL,
-    -- :white_check_mark: CRITICAL: Master-key-encrypted channel key
-    [key_material_encrypted] NVARCHAR(MAX) NOT NULL, -- Encrypted with master key
-    [key_fingerprint] NVARCHAR(64) NOT NULL,
-    [algorithm] NVARCHAR(50) DEFAULT 'AES-256-GCM',
-    [key_version] INT NOT NULL,
-    [status] NVARCHAR(20) DEFAULT 'active',
-    [created_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [expires_at] DATETIME2(7) NULL,
-    [rotated_from_key_id] BIGINT NULL,
-    [created_by] BIGINT,
-    [updated_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    FOREIGN KEY ([channel_id]) REFERENCES [dbo].[chat_channels]([id]),
-    UNIQUE([channel_id], [key_version])
-);
-ALTER TABLE [dbo].[chat_participants] ADD
-    [channel_key_version] INT NOT NULL DEFAULT 1, -- Which key version they have
-    [last_key_sync_at] DATETIME2(7) DEFAULT GETUTCDATE(),
-    [can_decrypt_all] BIT DEFAULT 1, -- Can decrypt all messages or just new ones?
-    [decryption_failures] INT DEFAULT 0,
-    [last_decryption_failure_at] DATETIME2(7) NULL;
--- CRITICAL TABLES ==
-
-
-
-
----- chat sp
--- ============================================
--- ULTRA-FAST STORED PROCEDURES FOR CHAT
--- Target: <30ms for message insert
--- ============================================
-
--- ==================== 1. ULTRA-FAST MESSAGE INSERT ====================
--- Replaces multiple queries with single atomic operation
--- Target: 20-30ms
-
-CREATE OR ALTER PROCEDURE [dbo].[sp_InsertMessage_UltraFast]
-    @channelId BIGINT,
+USE [fluera_new_structure]
+GO
+
+/****** Object:  Table [dbo].[activities]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[activities](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[activity_type] [nvarchar](50) NOT NULL,
+	[subject_type] [nvarchar](50) NULL,
+	[subject_id] [bigint] NULL,
+	[action] [nvarchar](50) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[is_read] [bit] NULL,
+	[read_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[ai_conversations]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[ai_conversations](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[conversation_type] [nvarchar](50) NULL,
+	[title] [nvarchar](255) NULL,
+	[context] [nvarchar](max) NULL,
+	[message_count] [int] NULL,
+	[is_active] [bit] NULL,
+	[last_message_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[ai_messages]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[ai_messages](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[conversation_id] [bigint] NOT NULL,
+	[sender_type] [nvarchar](10) NOT NULL,
+	[message_content] [nvarchar](max) NOT NULL,
+	[message_tokens] [int] NULL,
+	[response_time_ms] [int] NULL,
+	[model_used] [nvarchar](100) NULL,
+	[confidence_score] [decimal](3, 2) NULL,
+	[intent_detected] [nvarchar](100) NULL,
+	[entities_extracted] [nvarchar](max) NULL,
+	[actions_suggested] [nvarchar](max) NULL,
+	[feedback_rating] [int] NULL,
+	[feedback_comment] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[analytics_events]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[analytics_events](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NULL,
+	[session_id] [bigint] NULL,
+	[event_name] [nvarchar](100) NOT NULL,
+	[event_category] [nvarchar](50) NOT NULL,
+	[event_action] [nvarchar](50) NULL,
+	[event_label] [nvarchar](255) NULL,
+	[event_value] [decimal](10, 2) NULL,
+	[page_url] [nvarchar](max) NULL,
+	[referrer_url] [nvarchar](max) NULL,
+	[user_agent] [nvarchar](max) NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[properties] [nvarchar](max) NULL,
+	[timestamp] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[audit_logs]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[audit_logs](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[user_id] [bigint] NULL,
+	[entity_type] [nvarchar](100) NOT NULL,
+	[entity_id] [bigint] NULL,
+	[action_type] [nvarchar](50) NOT NULL,
+	[old_values] [nvarchar](max) NULL,
+	[new_values] [nvarchar](max) NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[user_agent] [nvarchar](max) NULL,
+	[session_id] [bigint] NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[batch_payments]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[batch_payments](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[batch_id] [bigint] NOT NULL,
+	[payment_id] [bigint] NOT NULL,
+	[sequence_number] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[batch_id] ASC,
+	[payment_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[bookmarks]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[bookmarks](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[bookmarkable_type] [nvarchar](50) NOT NULL,
+	[bookmarkable_id] [bigint] NOT NULL,
+	[folder] [nvarchar](255) NULL,
+	[notes] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[user_id] ASC,
+	[bookmarkable_type] ASC,
+	[bookmarkable_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[brand_profiles]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[brand_profiles](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[website_url] [nvarchar](max) NULL,
+	[industry] [nvarchar](100) NULL,
+	[description] [nvarchar](max) NULL,
+	[brand_guidelines_url] [nvarchar](max) NULL,
+	[target_demographics] [nvarchar](max) NULL,
+	[budget_range] [nvarchar](max) NULL,
+	[campaign_objectives] [nvarchar](max) NULL,
+	[brand_values] [nvarchar](max) NULL,
+	[content_restrictions] [nvarchar](max) NULL,
+	[primary_contact_name] [nvarchar](255) NULL,
+	[primary_contact_email] [nvarchar](320) NULL,
+	[primary_contact_phone] [nvarchar](20) NULL,
+	[billing_address] [nvarchar](max) NULL,
+	[content_approval_required] [bit] NULL,
+	[auto_approve_creators] [bit] NULL,
+	[blacklisted_creators] [nvarchar](max) NULL,
+	[preferred_creators] [nvarchar](max) NULL,
+	[payment_terms] [int] NULL,
+	[preferred_payment_method] [nvarchar](50) NULL,
+	[rating] [decimal](3, 2) NULL,
+	[rating_count] [int] NULL,
+	[total_campaigns] [int] NULL,
+	[total_spent] [decimal](12, 2) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[calendar_events]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[calendar_events](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[event_type] [nvarchar](50) NOT NULL,
+	[title] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[location] [nvarchar](max) NULL,
+	[start_time] [datetime2](7) NOT NULL,
+	[end_time] [datetime2](7) NOT NULL,
+	[all_day] [bit] NULL,
+	[timezone] [nvarchar](50) NULL,
+	[organizer_id] [bigint] NOT NULL,
+	[attendees] [nvarchar](max) NULL,
+	[meeting_url] [nvarchar](max) NULL,
+	[meeting_provider] [nvarchar](50) NULL,
+	[related_type] [nvarchar](50) NULL,
+	[related_id] [bigint] NULL,
+	[recurrence_rule] [nvarchar](max) NULL,
+	[recurrence_parent_id] [bigint] NULL,
+	[reminder_minutes] [int] NULL,
+	[is_private] [bit] NULL,
+	[status] [nvarchar](20) NULL,
+	[color] [nvarchar](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[campaign_participants]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[campaign_participants](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[campaign_id] [bigint] NOT NULL,
+	[creator_tenant_id] [bigint] NOT NULL,
+	[status] [nvarchar](20) NULL,
+	[invitation_sent_at] [datetime2](7) NULL,
+	[response_deadline] [datetime2](7) NULL,
+	[accepted_at] [datetime2](7) NULL,
+	[declined_at] [datetime2](7) NULL,
+	[decline_reason] [nvarchar](max) NULL,
+	[deliverables] [nvarchar](max) NULL,
+	[agreed_rate] [decimal](10, 2) NULL,
+	[currency] [nvarchar](3) NULL,
+	[bonus_amount] [decimal](10, 2) NULL,
+	[payment_status] [nvarchar](20) NULL,
+	[payment_due_date] [date] NULL,
+	[content_submitted_at] [datetime2](7) NULL,
+	[content_approved_at] [datetime2](7) NULL,
+	[content_rejected_at] [datetime2](7) NULL,
+	[rejection_reason] [nvarchar](max) NULL,
+	[revision_count] [int] NULL,
+	[performance_metrics] [nvarchar](max) NULL,
+	[rating] [decimal](3, 2) NULL,
+	[feedback] [nvarchar](max) NULL,
+	[notes] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[campaign_id] ASC,
+	[creator_tenant_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[campaign_tasks]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[campaign_tasks](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[campaign_id] [bigint] NOT NULL,
+	[creator_tenant_id] [bigint] NULL,
+	[assigned_to] [bigint] NULL,
+	[task_type] [nvarchar](50) NOT NULL,
+	[title] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[priority] [nvarchar](20) NULL,
+	[status] [nvarchar](20) NULL,
+	[due_date] [datetime2](7) NULL,
+	[completed_at] [datetime2](7) NULL,
+	[estimated_hours] [decimal](4, 2) NULL,
+	[actual_hours] [decimal](4, 2) NULL,
+	[dependencies] [nvarchar](max) NULL,
+	[attachments] [nvarchar](max) NULL,
+	[comments_count] [int] NULL,
+	[checklist] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[campaign_types]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[campaign_types](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[name] [nvarchar](100) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[default_duration_days] [int] NULL,
+	[default_workflow] [nvarchar](max) NULL,
+	[required_deliverables] [nvarchar](max) NULL,
+	[pricing_model] [nvarchar](50) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[campaigns]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[campaigns](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[created_by_tenant_id] [bigint] NOT NULL,
+	[brand_tenant_id] [bigint] NULL,
+	[campaign_type_id] [bigint] NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[brief_document_url] [nvarchar](max) NULL,
+	[objectives] [nvarchar](max) NULL,
+	[target_audience] [nvarchar](max) NULL,
+	[hashtags] [nvarchar](max) NULL,
+	[mentions] [nvarchar](max) NULL,
+	[content_requirements] [nvarchar](max) NULL,
+	[deliverables] [nvarchar](max) NULL,
+	[budget_total] [decimal](12, 2) NULL,
+	[budget_allocated] [decimal](12, 2) NULL,
+	[budget_spent] [decimal](12, 2) NULL,
+	[currency] [nvarchar](3) NULL,
+	[creator_count_target] [int] NULL,
+	[creator_count_assigned] [int] NULL,
+	[start_date] [date] NULL,
+	[end_date] [date] NULL,
+	[content_submission_deadline] [date] NULL,
+	[approval_deadline] [date] NULL,
+	[go_live_date] [date] NULL,
+	[campaign_manager_id] [bigint] NULL,
+	[account_manager_id] [bigint] NULL,
+	[approval_workflow] [nvarchar](max) NULL,
+	[auto_approve_content] [bit] NULL,
+	[content_approval_required] [bit] NULL,
+	[legal_approval_required] [bit] NULL,
+	[usage_rights_duration] [int] NULL,
+	[exclusivity_period] [int] NULL,
+	[visibility] [nvarchar](20) NULL,
+	[shared_with_tenants] [nvarchar](max) NULL,
+	[performance_metrics] [nvarchar](max) NULL,
+	[success_criteria] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[priority] [nvarchar](20) NULL,
+	[tags] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[chat_channels]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[chat_channels](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[created_by_tenant_id] [bigint] NOT NULL,
+	[name] [nvarchar](255) NULL,
+	[description] [nvarchar](max) NULL,
+	[channel_type] [nvarchar](20) NULL,
+	[related_type] [nvarchar](50) NULL,
+	[related_id] [bigint] NULL,
+	[participant_tenant_ids] [nvarchar](max) NULL,
+	[member_count] [int] NULL,
+	[is_private] [bit] NULL,
+	[is_archived] [bit] NULL,
+	[message_count] [int] NULL,
+	[last_message_at] [datetime2](7) NULL,
+	[last_activity_at] [datetime2](7) NULL,
+	[settings] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[chat_participants]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[chat_participants](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[channel_id] [bigint] NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[role] [nvarchar](20) NULL,
+	[joined_at] [datetime2](7) NULL,
+	[left_at] [datetime2](7) NULL,
+	[last_read_message_id] [bigint] NULL,
+	[last_read_at] [datetime2](7) NULL,
+	[notification_settings] [nvarchar](max) NULL,
+	[is_muted] [bit] NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+	[is_pinned] [int] NULL,
+	[mute_until] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[channel_id] ASC,
+	[user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[comments]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[comments](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[commentable_type] [nvarchar](50) NOT NULL,
+	[commentable_id] [bigint] NOT NULL,
+	[parent_comment_id] [bigint] NULL,
+	[user_id] [bigint] NOT NULL,
+	[comment_text] [nvarchar](max) NOT NULL,
+	[mentions] [nvarchar](max) NULL,
+	[attachments] [nvarchar](max) NULL,
+	[is_edited] [bit] NULL,
+	[edited_at] [datetime2](7) NULL,
+	[is_deleted] [bit] NULL,
+	[deleted_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[content_access_violations]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[content_access_violations](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[submission_id] [bigint] NOT NULL,
+	[user_id] [bigint] NULL,
+	[violation_type] [nvarchar](50) NOT NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[user_agent] [nvarchar](max) NULL,
+	[device_fingerprint] [nvarchar](255) NULL,
+	[detected_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[content_performance]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[content_performance](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[submission_id] [bigint] NOT NULL,
+	[platform] [nvarchar](50) NOT NULL,
+	[post_url] [nvarchar](max) NULL,
+	[platform_post_id] [nvarchar](255) NULL,
+	[published_at] [datetime2](7) NULL,
+	[likes] [int] NULL,
+	[comments] [int] NULL,
+	[shares] [int] NULL,
+	[saves] [int] NULL,
+	[views] [int] NULL,
+	[reach] [int] NULL,
+	[impressions] [int] NULL,
+	[engagement_rate] [decimal](5, 2) NULL,
+	[click_through_rate] [decimal](5, 2) NULL,
+	[conversion_rate] [decimal](5, 2) NULL,
+	[cost_per_engagement] [decimal](8, 2) NULL,
+	[cost_per_click] [decimal](8, 2) NULL,
+	[roi] [decimal](8, 2) NULL,
+	[sentiment_score] [decimal](3, 2) NULL,
+	[top_comments] [nvarchar](max) NULL,
+	[performance_grade] [nvarchar](2) NULL,
+	[last_updated_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[content_review_comments]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[content_review_comments](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[submission_id] [bigint] NOT NULL,
+	[review_id] [bigint] NULL,
+	[commenter_id] [bigint] NOT NULL,
+	[comment_text] [nvarchar](max) NOT NULL,
+	[comment_type] [nvarchar](20) NULL,
+	[comment_category] [nvarchar](50) NULL,
+	[timestamp_seconds] [decimal](8, 3) NULL,
+	[start_timestamp_seconds] [decimal](8, 3) NULL,
+	[end_timestamp_seconds] [decimal](8, 3) NULL,
+	[coordinates] [nvarchar](max) NULL,
+	[is_resolved] [bit] NULL,
+	[resolved_by] [bigint] NULL,
+	[resolved_at] [datetime2](7) NULL,
+	[parent_comment_id] [bigint] NULL,
+	[attachments] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[content_reviews]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[content_reviews](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[submission_id] [bigint] NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[reviewer_id] [bigint] NOT NULL,
+	[review_type] [nvarchar](20) NOT NULL,
+	[status] [nvarchar](20) NOT NULL,
+	[overall_rating] [int] NULL,
+	[brand_alignment_rating] [int] NULL,
+	[quality_rating] [int] NULL,
+	[creativity_rating] [int] NULL,
+	[feedback] [nvarchar](max) NULL,
+	[revision_notes] [nvarchar](max) NULL,
+	[approval_conditions] [nvarchar](max) NULL,
+	[review_checklist] [nvarchar](max) NULL,
+	[time_spent_minutes] [int] NULL,
+	[reviewed_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[content_submissions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[content_submissions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[campaign_id] [bigint] NOT NULL,
+	[submission_type] [nvarchar](50) NOT NULL,
+	[title] [nvarchar](255) NULL,
+	[description] [nvarchar](max) NULL,
+	[content_type] [nvarchar](50) NOT NULL,
+	[platform] [nvarchar](50) NOT NULL,
+	[file_urls] [nvarchar](max) NOT NULL,
+	[thumbnail_url] [nvarchar](max) NULL,
+	[caption] [nvarchar](max) NULL,
+	[hashtags] [nvarchar](max) NULL,
+	[mentions] [nvarchar](max) NULL,
+	[duration_seconds] [int] NULL,
+	[dimensions] [nvarchar](max) NULL,
+	[file_sizes] [nvarchar](max) NULL,
+	[mime_types] [nvarchar](max) NULL,
+	[scheduled_publish_time] [datetime2](7) NULL,
+	[submission_notes] [nvarchar](max) NULL,
+	[version] [int] NULL,
+	[parent_submission_id] [bigint] NULL,
+	[review_round] [int] NULL,
+	[max_review_rounds] [int] NULL,
+	[watermark_applied] [bit] NULL,
+	[drm_protected] [bit] NULL,
+	[download_protection] [bit] NULL,
+	[screenshot_protected] [bit] NULL,
+	[view_count] [int] NULL,
+	[download_count] [int] NULL,
+	[share_count] [int] NULL,
+	[shared_with_tenants] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[submitted_at] [datetime2](7) NULL,
+	[reviewed_at] [datetime2](7) NULL,
+	[approved_at] [datetime2](7) NULL,
+	[rejected_at] [datetime2](7) NULL,
+	[published_at] [datetime2](7) NULL,
+	[reviewer_id] [bigint] NULL,
+	[approval_notes] [nvarchar](max) NULL,
+	[rejection_reason] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[contract_modifications]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[contract_modifications](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[contract_id] [bigint] NOT NULL,
+	[review_round_id] [bigint] NULL,
+	[modified_by] [bigint] NOT NULL,
+	[modifier_role] [nvarchar](50) NOT NULL,
+	[modification_type] [nvarchar](50) NOT NULL,
+	[section_modified] [nvarchar](255) NULL,
+	[old_content] [nvarchar](max) NULL,
+	[new_content] [nvarchar](max) NULL,
+	[change_reason] [nvarchar](max) NULL,
+	[requires_approval] [bit] NULL,
+	[approved_by] [bigint] NULL,
+	[approved_at] [datetime2](7) NULL,
+	[rejected_by] [bigint] NULL,
+	[rejected_at] [datetime2](7) NULL,
+	[rejection_reason] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[contract_review_rounds]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[contract_review_rounds](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[contract_id] [bigint] NOT NULL,
+	[round_number] [int] NOT NULL,
+	[review_type] [nvarchar](50) NOT NULL,
+	[initiated_by] [bigint] NOT NULL,
+	[initiator_role] [nvarchar](50) NOT NULL,
+	[status] [nvarchar](20) NULL,
+	[max_modifications] [int] NULL,
+	[current_modifications] [int] NULL,
+	[started_at] [datetime2](7) NULL,
+	[completed_at] [datetime2](7) NULL,
+	[deadline] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[contract_id] ASC,
+	[round_number] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[contract_signatures]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[contract_signatures](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[contract_id] [bigint] NOT NULL,
+	[signer_type] [nvarchar](20) NOT NULL,
+	[signer_tenant_id] [bigint] NULL,
+	[signer_user_id] [bigint] NULL,
+	[signer_name] [nvarchar](255) NOT NULL,
+	[signer_email] [nvarchar](320) NOT NULL,
+	[signer_role] [nvarchar](100) NULL,
+	[signature_type] [nvarchar](20) NOT NULL,
+	[signature_method] [nvarchar](50) NULL,
+	[signature_image_url] [nvarchar](max) NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[user_agent] [nvarchar](max) NULL,
+	[signed_at] [datetime2](7) NULL,
+	[status] [nvarchar](20) NULL,
+	[sent_at] [datetime2](7) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[contract_stage_permissions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[contract_stage_permissions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[contract_stage] [nvarchar](50) NOT NULL,
+	[role_type] [nvarchar](50) NOT NULL,
+	[can_view] [bit] NULL,
+	[can_edit] [bit] NULL,
+	[can_comment] [bit] NULL,
+	[can_approve] [bit] NULL,
+	[max_modifications] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[contract_stage] ASC,
+	[role_type] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[contract_templates]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[contract_templates](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[template_type] [nvarchar](50) NOT NULL,
+	[category] [nvarchar](100) NULL,
+	[description] [nvarchar](max) NULL,
+	[template_content] [nvarchar](max) NOT NULL,
+	[variables] [nvarchar](max) NULL,
+	[version] [nvarchar](20) NULL,
+	[is_default] [bit] NULL,
+	[requires_legal_review] [bit] NULL,
+	[auto_renewal] [bit] NULL,
+	[renewal_period] [int] NULL,
+	[is_active] [bit] NULL,
+	[usage_count] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[contract_versions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[contract_versions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[contract_id] [bigint] NOT NULL,
+	[version_number] [int] NOT NULL,
+	[content] [nvarchar](max) NOT NULL,
+	[variables_data] [nvarchar](max) NULL,
+	[changes_summary] [nvarchar](max) NULL,
+	[change_reason] [nvarchar](500) NULL,
+	[previous_version_id] [bigint] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[contract_id] ASC,
+	[version_number] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[contracts]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[contracts](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[template_id] [bigint] NULL,
+	[contract_number] [nvarchar](100) NOT NULL,
+	[title] [nvarchar](255) NOT NULL,
+	[contract_type] [nvarchar](50) NOT NULL,
+	[party_a_type] [nvarchar](20) NOT NULL,
+	[party_a_tenant_id] [bigint] NULL,
+	[party_a_name] [nvarchar](255) NOT NULL,
+	[party_a_email] [nvarchar](320) NULL,
+	[party_b_type] [nvarchar](20) NOT NULL,
+	[party_b_tenant_id] [bigint] NULL,
+	[party_b_name] [nvarchar](255) NOT NULL,
+	[party_b_email] [nvarchar](320) NULL,
+	[related_campaign_id] [bigint] NULL,
+	[content] [nvarchar](max) NOT NULL,
+	[variables_data] [nvarchar](max) NULL,
+	[contract_value] [decimal](12, 2) NULL,
+	[currency] [nvarchar](3) NULL,
+	[start_date] [date] NULL,
+	[end_date] [date] NULL,
+	[auto_renewal] [bit] NULL,
+	[renewal_period] [int] NULL,
+	[renewal_count] [int] NULL,
+	[status] [nvarchar](20) NULL,
+	[signature_required_from] [nvarchar](max) NULL,
+	[signatures_completed] [int] NULL,
+	[signatures_required] [int] NULL,
+	[fully_signed_at] [datetime2](7) NULL,
+	[docusign_envelope_id] [nvarchar](255) NULL,
+	[document_urls] [nvarchar](max) NULL,
+	[legal_reviewed] [bit] NULL,
+	[legal_reviewer_id] [bigint] NULL,
+	[legal_reviewed_at] [datetime2](7) NULL,
+	[legal_notes] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[contract_number] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[creator_availability]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[creator_availability](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[date] [date] NOT NULL,
+	[is_available] [bit] NULL,
+	[availability_type] [nvarchar](20) NULL,
+	[hours_available] [int] NULL,
+	[notes] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[date] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[creator_categories]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[creator_categories](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[name] [nvarchar](100) NOT NULL,
+	[slug] [nvarchar](100) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[parent_category_id] [bigint] NULL,
+	[level] [int] NULL,
+	[sort_order] [int] NULL,
+	[icon_url] [nvarchar](max) NULL,
+	[color] [nvarchar](7) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[slug] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[name] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[creator_documents]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[creator_documents](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[document_type] [nvarchar](50) NOT NULL,
+	[document_name] [nvarchar](255) NULL,
+	[file_url] [nvarchar](max) NOT NULL,
+	[file_size] [int] NULL,
+	[file_type] [nvarchar](100) NULL,
+	[verification_status] [nvarchar](20) NULL,
+	[verified_at] [datetime2](7) NULL,
+	[verified_by] [bigint] NULL,
+	[rejection_reason] [nvarchar](max) NULL,
+	[expiry_date] [date] NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[creator_metrics]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[creator_metrics](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[platform] [nvarchar](50) NOT NULL,
+	[metric_date] [date] NOT NULL,
+	[followers] [int] NULL,
+	[following] [int] NULL,
+	[posts] [int] NULL,
+	[likes] [int] NULL,
+	[comments] [int] NULL,
+	[shares] [int] NULL,
+	[views] [int] NULL,
+	[engagement_rate] [decimal](5, 2) NULL,
+	[reach] [int] NULL,
+	[impressions] [int] NULL,
+	[saves] [int] NULL,
+	[profile_visits] [int] NULL,
+	[website_clicks] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[platform] ASC,
+	[metric_date] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[creator_profiles]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[creator_profiles](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[stage_name] [nvarchar](200) NULL,
+	[bio] [nvarchar](max) NULL,
+	[date_of_birth] [date] NULL,
+	[gender] [nvarchar](20) NULL,
+	[profile_image_url] [nvarchar](max) NULL,
+	[cover_image_url] [nvarchar](max) NULL,
+	[location] [nvarchar](max) NULL,
+	[languages] [nvarchar](max) NULL,
+	[categories] [nvarchar](max) NULL,
+	[follower_count_total] [int] NULL,
+	[engagement_rate_avg] [decimal](5, 2) NULL,
+	[rating] [decimal](3, 2) NULL,
+	[rating_count] [int] NULL,
+	[total_campaigns] [int] NULL,
+	[completed_campaigns] [int] NULL,
+	[success_rate] [decimal](5, 2) NULL,
+	[preferred_brands] [nvarchar](max) NULL,
+	[excluded_brands] [nvarchar](max) NULL,
+	[content_types] [nvarchar](max) NULL,
+	[availability_status] [nvarchar](20) NULL,
+	[kyc_status] [nvarchar](20) NULL,
+	[bank_details] [nvarchar](max) NULL,
+	[tax_details] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[creator_rate_cards]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[creator_rate_cards](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[platform] [nvarchar](50) NOT NULL,
+	[content_type] [nvarchar](100) NOT NULL,
+	[deliverable_type] [nvarchar](100) NULL,
+	[base_rate] [decimal](10, 2) NOT NULL,
+	[currency] [nvarchar](3) NULL,
+	[rate_type] [nvarchar](20) NULL,
+	[min_rate] [decimal](10, 2) NULL,
+	[max_rate] [decimal](10, 2) NULL,
+	[duration_hours] [int] NULL,
+	[revisions_included] [int] NULL,
+	[usage_rights_duration] [int] NULL,
+	[commercial_usage_rate] [decimal](10, 2) NULL,
+	[rush_delivery_rate] [decimal](10, 2) NULL,
+	[additional_requirements] [nvarchar](max) NULL,
+	[is_negotiable] [bit] NULL,
+	[is_active] [bit] NULL,
+	[effective_from] [date] NULL,
+	[effective_until] [date] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[creator_social_accounts]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[creator_social_accounts](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[platform] [nvarchar](50) NOT NULL,
+	[username] [nvarchar](255) NOT NULL,
+	[url] [nvarchar](max) NULL,
+	[follower_count] [int] NULL,
+	[following_count] [int] NULL,
+	[posts_count] [int] NULL,
+	[engagement_rate] [decimal](5, 2) NULL,
+	[avg_likes] [int] NULL,
+	[avg_comments] [int] NULL,
+	[avg_shares] [int] NULL,
+	[avg_views] [int] NULL,
+	[is_verified] [bit] NULL,
+	[is_business_account] [bit] NULL,
+	[last_sync_at] [datetime2](7) NULL,
+	[sync_status] [nvarchar](20) NULL,
+	[api_data] [nvarchar](max) NULL,
+	[is_primary] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[platform] ASC,
+	[username] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[dashboard_widgets]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[dashboard_widgets](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[user_id] [bigint] NULL,
+	[widget_type] [nvarchar](50) NOT NULL,
+	[widget_name] [nvarchar](255) NOT NULL,
+	[configuration] [nvarchar](max) NOT NULL,
+	[position_x] [int] NULL,
+	[position_y] [int] NULL,
+	[width] [int] NULL,
+	[height] [int] NULL,
+	[dashboard_tab] [nvarchar](100) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[email_accounts]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[email_accounts](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[provider] [nvarchar](50) NOT NULL,
+	[email_address] [nvarchar](320) NOT NULL,
+	[display_name] [nvarchar](255) NULL,
+	[imap_host] [nvarchar](255) NULL,
+	[imap_port] [int] NULL,
+	[imap_encryption] [nvarchar](10) NULL,
+	[smtp_host] [nvarchar](255) NULL,
+	[smtp_port] [int] NULL,
+	[smtp_encryption] [nvarchar](10) NULL,
+	[access_token] [nvarchar](max) NULL,
+	[refresh_token] [nvarchar](max) NULL,
+	[token_expires_at] [datetime2](7) NULL,
+	[credentials_encrypted] [nvarchar](max) NULL,
+	[sync_enabled] [bit] NULL,
+	[last_sync_at] [datetime2](7) NULL,
+	[sync_status] [nvarchar](20) NULL,
+	[error_message] [nvarchar](max) NULL,
+	[settings] [nvarchar](max) NULL,
+	[is_primary] [bit] NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[email_address] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[email_attachments]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[email_attachments](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[message_id] [bigint] NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[encrypted_filename] [nvarchar](max) NULL,
+	[encrypted_file_url] [nvarchar](max) NULL,
+	[encrypted_file_key] [nvarchar](max) NULL,
+	[encryption_iv] [nvarchar](max) NULL,
+	[encryption_auth_tag] [nvarchar](max) NULL,
+	[is_encrypted] [bit] NULL,
+	[content_type] [nvarchar](200) NULL,
+	[size_bytes] [int] NULL,
+	[attachment_id] [nvarchar](255) NULL,
+	[file_hash] [nvarchar](64) NULL,
+	[is_inline] [bit] NULL,
+	[virus_scan_status] [nvarchar](20) NULL,
+	[virus_scan_result] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[email_folders]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[email_folders](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[email_account_id] [bigint] NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[display_name] [nvarchar](255) NULL,
+	[folder_type] [nvarchar](50) NULL,
+	[parent_folder_id] [bigint] NULL,
+	[message_count] [int] NULL,
+	[unread_count] [int] NULL,
+	[sort_order] [int] NULL,
+	[is_selectable] [bit] NULL,
+	[attributes] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[email_account_id] ASC,
+	[name] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[email_messages]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[email_messages](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[email_account_id] [bigint] NOT NULL,
+	[message_id] [nvarchar](255) NULL,
+	[thread_id] [nvarchar](255) NULL,
+	[parent_message_id] [bigint] NULL,
+	[encrypted_subject] [nvarchar](max) NULL,
+	[encrypted_body_text] [nvarchar](max) NULL,
+	[encrypted_body_html] [nvarchar](max) NULL,
+	[encryption_iv] [nvarchar](max) NULL,
+	[encryption_auth_tag] [nvarchar](max) NULL,
+	[encryption_key_version] [int] NULL,
+	[is_encrypted] [bit] NULL,
+	[sender_email] [nvarchar](320) NULL,
+	[sender_name] [nvarchar](255) NULL,
+	[reply_to_email] [nvarchar](320) NULL,
+	[reply_to_name] [nvarchar](255) NULL,
+	[recipients_to] [nvarchar](max) NULL,
+	[recipients_cc] [nvarchar](max) NULL,
+	[recipients_bcc] [nvarchar](max) NULL,
+	[snippet] [nvarchar](500) NULL,
+	[size_bytes] [int] NULL,
+	[attachments_count] [int] NULL,
+	[is_read] [bit] NULL,
+	[is_important] [bit] NULL,
+	[is_starred] [bit] NULL,
+	[is_draft] [bit] NULL,
+	[is_sent] [bit] NULL,
+	[is_spam] [bit] NULL,
+	[is_trash] [bit] NULL,
+	[is_inquiry] [bit] NULL,
+	[inquiry_confidence] [decimal](3, 2) NULL,
+	[sentiment_score] [decimal](3, 2) NULL,
+	[priority_level] [int] NULL,
+	[assigned_to] [bigint] NULL,
+	[labels] [nvarchar](max) NULL,
+	[headers] [nvarchar](max) NULL,
+	[shared_with_tenants] [nvarchar](max) NULL,
+	[sharing_settings] [nvarchar](max) NULL,
+	[received_at] [datetime2](7) NULL,
+	[sent_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[email_rules]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[email_rules](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[email_account_id] [bigint] NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[conditions] [nvarchar](max) NOT NULL,
+	[actions] [nvarchar](max) NOT NULL,
+	[priority] [int] NULL,
+	[is_active] [bit] NULL,
+	[execution_count] [int] NULL,
+	[last_executed_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[email_templates]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[email_templates](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[category] [nvarchar](100) NULL,
+	[subject] [nvarchar](500) NULL,
+	[body_html] [nvarchar](max) NULL,
+	[body_text] [nvarchar](max) NULL,
+	[variables] [nvarchar](max) NULL,
+	[usage_count] [int] NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[encryption_audit_logs]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[encryption_audit_logs](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[operation_type] [nvarchar](50) NOT NULL,
+	[entity_type] [nvarchar](50) NOT NULL,
+	[entity_id] [bigint] NOT NULL,
+	[key_id] [bigint] NULL,
+	[key_version] [int] NULL,
+	[algorithm_used] [nvarchar](50) NULL,
+	[user_id] [bigint] NULL,
+	[tenant_id] [bigint] NULL,
+	[success] [bit] NOT NULL,
+	[error_message] [nvarchar](max) NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[encryption_keys]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[encryption_keys](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[key_type] [nvarchar](50) NOT NULL,
+	[entity_type] [nvarchar](50) NULL,
+	[entity_id] [bigint] NULL,
+	[key_version] [int] NOT NULL,
+	[algorithm] [nvarchar](50) NOT NULL,
+	[encrypted_key] [nvarchar](max) NOT NULL,
+	[public_key] [nvarchar](max) NULL,
+	[key_fingerprint] [nvarchar](64) NOT NULL,
+	[key_purpose] [nvarchar](100) NULL,
+	[is_active] [bit] NULL,
+	[expires_at] [datetime2](7) NULL,
+	[rotated_from_key_id] [bigint] NULL,
+	[rotation_reason] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[error_logs]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[error_logs](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[user_id] [bigint] NULL,
+	[error_type] [nvarchar](100) NOT NULL,
+	[error_message] [nvarchar](max) NOT NULL,
+	[error_code] [nvarchar](50) NULL,
+	[stack_trace] [nvarchar](max) NULL,
+	[request_url] [nvarchar](max) NULL,
+	[request_method] [nvarchar](10) NULL,
+	[request_headers] [nvarchar](max) NULL,
+	[request_body] [nvarchar](max) NULL,
+	[response_status] [int] NULL,
+	[severity] [nvarchar](20) NULL,
+	[resolved] [bit] NULL,
+	[resolved_at] [datetime2](7) NULL,
+	[resolved_by] [bigint] NULL,
+	[occurrence_count] [int] NULL,
+	[first_occurred_at] [datetime2](7) NULL,
+	[last_occurred_at] [datetime2](7) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[event_attendees]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[event_attendees](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[event_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[response_status] [nvarchar](20) NULL,
+	[responded_at] [datetime2](7) NULL,
+	[is_organizer] [bit] NULL,
+	[is_optional] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[event_id] ASC,
+	[user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[file_processing_jobs]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[file_processing_jobs](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[file_id] [bigint] NOT NULL,
+	[job_type] [nvarchar](50) NOT NULL,
+	[status] [nvarchar](20) NULL,
+	[progress_percent] [int] NULL,
+	[started_at] [datetime2](7) NULL,
+	[completed_at] [datetime2](7) NULL,
+	[error_message] [nvarchar](max) NULL,
+	[input_parameters] [nvarchar](max) NULL,
+	[output_data] [nvarchar](max) NULL,
+	[processing_time_seconds] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[file_shares]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[file_shares](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[file_id] [bigint] NOT NULL,
+	[share_type] [nvarchar](20) NOT NULL,
+	[shared_with_user_id] [bigint] NULL,
+	[shared_with_tenant_id] [bigint] NULL,
+	[shared_with_email] [nvarchar](320) NULL,
+	[access_token] [nvarchar](255) NULL,
+	[password_hash] [nvarchar](255) NULL,
+	[permissions] [nvarchar](max) NULL,
+	[expires_at] [datetime2](7) NULL,
+	[max_downloads] [int] NULL,
+	[download_count] [int] NULL,
+	[last_accessed_at] [datetime2](7) NULL,
+	[access_count] [int] NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[access_token] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[files]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[files](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[uploaded_by] [bigint] NOT NULL,
+	[filename] [nvarchar](500) NOT NULL,
+	[original_filename] [nvarchar](500) NOT NULL,
+	[file_path] [nvarchar](1000) NOT NULL,
+	[file_url] [nvarchar](max) NOT NULL,
+	[file_size] [bigint] NOT NULL,
+	[mime_type] [nvarchar](200) NOT NULL,
+	[file_extension] [nvarchar](20) NULL,
+	[file_hash] [nvarchar](64) NULL,
+	[dimensions] [nvarchar](max) NULL,
+	[duration_seconds] [int] NULL,
+	[metadata] [nvarchar](max) NULL,
+	[folder_path] [nvarchar](1000) NULL,
+	[tags] [nvarchar](max) NULL,
+	[is_public] [bit] NULL,
+	[is_temporary] [bit] NULL,
+	[expires_at] [datetime2](7) NULL,
+	[download_count] [int] NULL,
+	[virus_scan_status] [nvarchar](20) NULL,
+	[virus_scan_result] [nvarchar](max) NULL,
+	[processing_status] [nvarchar](20) NULL,
+	[thumbnail_url] [nvarchar](max) NULL,
+	[preview_url] [nvarchar](max) NULL,
+	[compressed_url] [nvarchar](max) NULL,
+	[watermarked_url] [nvarchar](max) NULL,
+	[encrypted_file_key] [nvarchar](max) NULL,
+	[encryption_iv] [nvarchar](max) NULL,
+	[encryption_auth_tag] [nvarchar](max) NULL,
+	[is_encrypted] [bit] NULL,
+	[shared_with_tenants] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[file_hash] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[financial_reports]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[financial_reports](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[report_type] [nvarchar](50) NOT NULL,
+	[report_name] [nvarchar](255) NOT NULL,
+	[period_type] [nvarchar](20) NOT NULL,
+	[period_start] [date] NOT NULL,
+	[period_end] [date] NOT NULL,
+	[total_revenue] [decimal](12, 2) NULL,
+	[total_expenses] [decimal](12, 2) NULL,
+	[total_profit] [decimal](12, 2) NULL,
+	[creator_payments] [decimal](12, 2) NULL,
+	[platform_fees] [decimal](12, 2) NULL,
+	[tax_amount] [decimal](12, 2) NULL,
+	[report_data] [nvarchar](max) NOT NULL,
+	[generated_at] [datetime2](7) NULL,
+	[file_url] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[report_type] ASC,
+	[period_start] ASC,
+	[period_end] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[integrations]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[integrations](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[integration_type] [nvarchar](50) NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[configuration] [nvarchar](max) NULL,
+	[credentials_encrypted] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[last_sync_at] [datetime2](7) NULL,
+	[sync_frequency_minutes] [int] NULL,
+	[error_message] [nvarchar](max) NULL,
+	[error_count] [int] NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[invitations]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[invitations](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[invited_by] [bigint] NOT NULL,
+	[invitee_email] [nvarchar](320) NOT NULL,
+	[invitee_phone] [nvarchar](20) NULL,
+	[invitee_name] [nvarchar](255) NULL,
+	[invitee_type] [nvarchar](50) NOT NULL,
+	[role_id] [bigint] NULL,
+	[invitation_token] [nvarchar](255) NOT NULL,
+	[invitation_message] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[expires_at] [datetime2](7) NOT NULL,
+	[accepted_at] [datetime2](7) NULL,
+	[declined_at] [datetime2](7) NULL,
+	[decline_reason] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[invitation_token] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[invoice_items]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[invoice_items](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[invoice_id] [bigint] NOT NULL,
+	[line_number] [int] NOT NULL,
+	[item_type] [nvarchar](50) NOT NULL,
+	[description] [nvarchar](500) NOT NULL,
+	[quantity] [decimal](10, 2) NULL,
+	[unit_price] [decimal](10, 2) NOT NULL,
+	[discount_percent] [decimal](5, 2) NULL,
+	[discount_amount] [decimal](10, 2) NULL,
+	[tax_rate] [decimal](5, 2) NULL,
+	[tax_amount] [decimal](10, 2) NULL,
+	[line_total] [decimal](12, 2) NOT NULL,
+	[sku] [nvarchar](100) NULL,
+	[category] [nvarchar](100) NULL,
+	[campaign_id] [bigint] NULL,
+	[creator_tenant_id] [bigint] NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[invoices]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[invoices](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[invoice_number] [nvarchar](100) NOT NULL,
+	[invoice_type] [nvarchar](20) NOT NULL,
+	[related_type] [nvarchar](50) NULL,
+	[related_id] [bigint] NULL,
+	[recipient_type] [nvarchar](20) NOT NULL,
+	[recipient_tenant_id] [bigint] NULL,
+	[recipient_name] [nvarchar](255) NOT NULL,
+	[recipient_email] [nvarchar](320) NULL,
+	[recipient_address] [nvarchar](max) NULL,
+	[bill_to_address] [nvarchar](max) NULL,
+	[ship_to_address] [nvarchar](max) NULL,
+	[subtotal] [decimal](12, 2) NOT NULL,
+	[tax_amount] [decimal](12, 2) NULL,
+	[discount_amount] [decimal](12, 2) NULL,
+	[total_amount] [decimal](12, 2) NOT NULL,
+	[currency] [nvarchar](3) NULL,
+	[exchange_rate] [decimal](10, 4) NULL,
+	[payment_terms] [int] NULL,
+	[due_date] [date] NULL,
+	[issue_date] [date] NULL,
+	[service_period_start] [date] NULL,
+	[service_period_end] [date] NULL,
+	[notes] [nvarchar](max) NULL,
+	[terms_conditions] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[sent_at] [datetime2](7) NULL,
+	[paid_at] [datetime2](7) NULL,
+	[payment_method] [nvarchar](50) NULL,
+	[payment_reference] [nvarchar](255) NULL,
+	[late_fee_amount] [decimal](10, 2) NULL,
+	[reminder_sent_count] [int] NULL,
+	[last_reminder_sent_at] [datetime2](7) NULL,
+	[pdf_url] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[invoice_number] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[key_rotation_schedule]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[key_rotation_schedule](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[entity_type] [nvarchar](50) NOT NULL,
+	[entity_id] [bigint] NOT NULL,
+	[current_key_id] [bigint] NOT NULL,
+	[rotation_frequency_days] [int] NULL,
+	[last_rotated_at] [datetime2](7) NULL,
+	[next_rotation_at] [datetime2](7) NOT NULL,
+	[auto_rotate] [bit] NULL,
+	[rotation_policy] [nvarchar](max) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[entity_type] ASC,
+	[entity_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[menu_permissions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[menu_permissions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[menu_key] [nvarchar](100) NOT NULL,
+	[permission_id] [bigint] NOT NULL,
+	[applicable_to] [nvarchar](max) NULL,
+	[is_required] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[menu_key] ASC,
+	[permission_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[message_attachments]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[message_attachments](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[message_id] [bigint] NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[file_url] [nvarchar](max) NOT NULL,
+	[filename] [nvarchar](500) NOT NULL,
+	[file_size] [bigint] NOT NULL,
+	[mime_type] [nvarchar](200) NOT NULL,
+	[file_hash] [nvarchar](64) NULL,
+	[thumbnail_url] [nvarchar](max) NULL,
+	[virus_scan_status] [nvarchar](20) NULL,
+	[virus_scan_result] [nvarchar](max) NULL,
+	[download_count] [int] NULL,
+	[is_deleted] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[message_queue]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[message_queue](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[message_id] [bigint] NOT NULL,
+	[channel_id] [bigint] NOT NULL,
+	[queued_at] [datetime2](7) NULL,
+	[expires_at] [datetime2](7) NOT NULL,
+	[delivered_at] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[message_reactions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[message_reactions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[message_id] [bigint] NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[emoji] [nvarchar](50) NOT NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[message_id] ASC,
+	[user_id] ASC,
+	[emoji] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[message_read_receipts]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[message_read_receipts](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[message_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[status] [nvarchar](20) NOT NULL,
+	[delivered_at] [datetime2](7) NULL,
+	[read_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[messages]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[messages](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[channel_id] [bigint] NOT NULL,
+	[sender_tenant_id] [bigint] NOT NULL,
+	[sender_user_id] [bigint] NOT NULL,
+	[message_type] [nvarchar](20) NULL,
+	[content] [nvarchar](max) NOT NULL,
+	[has_attachments] [bit] NULL,
+	[has_mentions] [bit] NULL,
+	[reply_to_message_id] [bigint] NULL,
+	[thread_id] [bigint] NULL,
+	[is_edited] [bit] NULL,
+	[edited_at] [datetime2](7) NULL,
+	[is_deleted] [bit] NULL,
+	[deleted_at] [datetime2](7) NULL,
+	[deleted_by] [bigint] NULL,
+	[is_pinned] [bit] NULL,
+	[pinned_at] [datetime2](7) NULL,
+	[pinned_by] [bigint] NULL,
+	[metadata] [nvarchar](max) NULL,
+	[sent_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+	[reply_count] [int] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[notes]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[notes](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[title] [nvarchar](255) NULL,
+	[content] [nvarchar](max) NOT NULL,
+	[content_type] [nvarchar](20) NULL,
+	[related_type] [nvarchar](50) NULL,
+	[related_id] [bigint] NULL,
+	[tags] [nvarchar](max) NULL,
+	[is_pinned] [bit] NULL,
+	[is_archived] [bit] NULL,
+	[folder_path] [nvarchar](1000) NULL,
+	[encrypted_content] [nvarchar](max) NULL,
+	[encryption_iv] [nvarchar](max) NULL,
+	[encryption_auth_tag] [nvarchar](max) NULL,
+	[is_encrypted] [bit] NULL,
+	[shared_with] [nvarchar](max) NULL,
+	[last_edited_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[notification_preferences]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[notification_preferences](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[event_type] [nvarchar](100) NOT NULL,
+	[email_enabled] [bit] NULL,
+	[sms_enabled] [bit] NULL,
+	[push_enabled] [bit] NULL,
+	[in_app_enabled] [bit] NULL,
+	[frequency] [nvarchar](20) NULL,
+	[quiet_hours_start] [time](7) NULL,
+	[quiet_hours_end] [time](7) NULL,
+	[timezone] [nvarchar](50) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[user_id] ASC,
+	[event_type] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[notification_templates]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[notification_templates](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[event_type] [nvarchar](100) NOT NULL,
+	[channel] [nvarchar](50) NOT NULL,
+	[subject_template] [nvarchar](500) NULL,
+	[body_template] [nvarchar](max) NOT NULL,
+	[variables] [nvarchar](max) NULL,
+	[is_system_template] [bit] NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[notifications]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[notifications](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[recipient_id] [bigint] NOT NULL,
+	[event_type] [nvarchar](100) NOT NULL,
+	[channel] [nvarchar](50) NOT NULL,
+	[priority] [nvarchar](20) NULL,
+	[subject] [nvarchar](500) NULL,
+	[message] [nvarchar](max) NOT NULL,
+	[data] [nvarchar](max) NULL,
+	[template_id] [bigint] NULL,
+	[scheduled_at] [datetime2](7) NULL,
+	[sent_at] [datetime2](7) NULL,
+	[delivered_at] [datetime2](7) NULL,
+	[read_at] [datetime2](7) NULL,
+	[clicked_at] [datetime2](7) NULL,
+	[status] [nvarchar](20) NULL,
+	[error_message] [nvarchar](max) NULL,
+	[retry_count] [int] NULL,
+	[max_retries] [int] NULL,
+	[next_retry_at] [datetime2](7) NULL,
+	[provider_message_id] [nvarchar](255) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[password_reset_tokens]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[password_reset_tokens](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[token] [nvarchar](255) NOT NULL,
+	[expires_at] [datetime2](7) NOT NULL,
+	[used_at] [datetime2](7) NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[user_agent] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[token] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[payment_methods]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[payment_methods](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NULL,
+	[method_type] [nvarchar](50) NOT NULL,
+	[provider] [nvarchar](50) NULL,
+	[account_name] [nvarchar](255) NULL,
+	[account_number_encrypted] [nvarchar](max) NULL,
+	[routing_number_encrypted] [nvarchar](max) NULL,
+	[iban_encrypted] [nvarchar](max) NULL,
+	[swift_code] [nvarchar](20) NULL,
+	[bank_name] [nvarchar](255) NULL,
+	[bank_address] [nvarchar](max) NULL,
+	[paypal_email] [nvarchar](320) NULL,
+	[crypto_wallet_address] [nvarchar](max) NULL,
+	[crypto_network] [nvarchar](50) NULL,
+	[provider_customer_id] [nvarchar](255) NULL,
+	[provider_payment_method_id] [nvarchar](255) NULL,
+	[currency] [nvarchar](3) NULL,
+	[is_default] [bit] NULL,
+	[is_verified] [bit] NULL,
+	[verified_at] [datetime2](7) NULL,
+	[last_used_at] [datetime2](7) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[payments]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[payments](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[invoice_id] [bigint] NULL,
+	[payment_type] [nvarchar](20) NOT NULL,
+	[transaction_type] [nvarchar](50) NOT NULL,
+	[payer_type] [nvarchar](20) NULL,
+	[payer_tenant_id] [bigint] NULL,
+	[payer_name] [nvarchar](255) NULL,
+	[payee_type] [nvarchar](20) NULL,
+	[payee_tenant_id] [bigint] NULL,
+	[payee_name] [nvarchar](255) NULL,
+	[amount] [decimal](12, 2) NOT NULL,
+	[currency] [nvarchar](3) NULL,
+	[exchange_rate] [decimal](10, 4) NULL,
+	[base_amount] [decimal](12, 2) NULL,
+	[fee_amount] [decimal](10, 2) NULL,
+	[net_amount] [decimal](12, 2) NULL,
+	[payment_method_id] [bigint] NULL,
+	[payment_gateway] [nvarchar](50) NULL,
+	[gateway_transaction_id] [nvarchar](255) NULL,
+	[gateway_fee] [decimal](10, 2) NULL,
+	[reference_number] [nvarchar](255) NULL,
+	[description] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[initiated_at] [datetime2](7) NULL,
+	[processed_at] [datetime2](7) NULL,
+	[completed_at] [datetime2](7) NULL,
+	[failed_at] [datetime2](7) NULL,
+	[failure_reason] [nvarchar](max) NULL,
+	[retry_count] [int] NULL,
+	[next_retry_at] [datetime2](7) NULL,
+	[webhook_data] [nvarchar](max) NULL,
+	[reconciliation_status] [nvarchar](20) NULL,
+	[reconciled_at] [datetime2](7) NULL,
+	[bank_statement_reference] [nvarchar](255) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[payout_batches]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[payout_batches](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[batch_number] [nvarchar](100) NOT NULL,
+	[batch_type] [nvarchar](20) NULL,
+	[total_amount] [decimal](12, 2) NOT NULL,
+	[currency] [nvarchar](3) NULL,
+	[payment_count] [int] NULL,
+	[successful_payments] [int] NULL,
+	[failed_payments] [int] NULL,
+	[processing_fee] [decimal](10, 2) NULL,
+	[status] [nvarchar](20) NULL,
+	[scheduled_at] [datetime2](7) NULL,
+	[started_at] [datetime2](7) NULL,
+	[completed_at] [datetime2](7) NULL,
+	[gateway_batch_id] [nvarchar](255) NULL,
+	[notes] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[batch_number] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[permissions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[permissions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[permission_key] [nvarchar](100) NOT NULL,
+	[resource] [nvarchar](100) NOT NULL,
+	[action] [nvarchar](50) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[category] [nvarchar](100) NULL,
+	[applicable_to] [nvarchar](max) NULL,
+	[is_system_permission] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[permission_key] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[portfolio_selections]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[portfolio_selections](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[portfolio_id] [bigint] NOT NULL,
+	[share_id] [bigint] NOT NULL,
+	[selected_creator_tenant_ids] [nvarchar](max) NOT NULL,
+	[brand_email] [nvarchar](320) NULL,
+	[brand_name] [nvarchar](255) NULL,
+	[brand_message] [nvarchar](max) NULL,
+	[selection_date] [datetime2](7) NULL,
+	[status] [nvarchar](20) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[portfolio_shares]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[portfolio_shares](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[portfolio_id] [bigint] NOT NULL,
+	[share_type] [nvarchar](20) NOT NULL,
+	[recipient_email] [nvarchar](320) NULL,
+	[recipient_name] [nvarchar](255) NULL,
+	[access_token] [nvarchar](255) NOT NULL,
+	[password_hash] [nvarchar](255) NULL,
+	[expires_at] [datetime2](7) NULL,
+	[view_count] [int] NULL,
+	[last_viewed_at] [datetime2](7) NULL,
+	[viewer_info] [nvarchar](max) NULL,
+	[permissions] [nvarchar](max) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[access_token] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[portfolio_templates]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[portfolio_templates](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[thumbnail_url] [nvarchar](max) NULL,
+	[template_config] [nvarchar](max) NOT NULL,
+	[is_default] [bit] NULL,
+	[is_public] [bit] NULL,
+	[usage_count] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[portfolios]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[portfolios](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[creator_tenant_ids] [nvarchar](max) NULL,
+	[brand_categories] [nvarchar](max) NULL,
+	[target_audience] [nvarchar](max) NULL,
+	[total_reach] [int] NULL,
+	[avg_engagement_rate] [decimal](5, 2) NULL,
+	[template_id] [bigint] NULL,
+	[cover_image_url] [nvarchar](max) NULL,
+	[is_public] [bit] NULL,
+	[share_token] [nvarchar](255) NULL,
+	[share_expires_at] [datetime2](7) NULL,
+	[view_count] [int] NULL,
+	[download_count] [int] NULL,
+	[status] [nvarchar](20) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[share_token] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[report_instances]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[report_instances](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[report_id] [bigint] NOT NULL,
+	[generated_at] [datetime2](7) NULL,
+	[generation_time_seconds] [int] NULL,
+	[file_url] [nvarchar](max) NULL,
+	[file_format] [nvarchar](20) NULL,
+	[row_count] [int] NULL,
+	[status] [nvarchar](20) NULL,
+	[error_message] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[reports]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[reports](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[report_type] [nvarchar](50) NOT NULL,
+	[configuration] [nvarchar](max) NOT NULL,
+	[schedule_type] [nvarchar](20) NULL,
+	[schedule_config] [nvarchar](max) NULL,
+	[last_generated_at] [datetime2](7) NULL,
+	[next_generation_at] [datetime2](7) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[resource_access_logs]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[resource_access_logs](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[resource_type] [nvarchar](50) NOT NULL,
+	[resource_id] [bigint] NOT NULL,
+	[user_id] [bigint] NULL,
+	[tenant_id] [bigint] NULL,
+	[action] [nvarchar](50) NOT NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[user_agent] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[accessed_at] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[resource_permissions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[resource_permissions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[resource_type] [nvarchar](50) NOT NULL,
+	[resource_id] [bigint] NOT NULL,
+	[entity_type] [nvarchar](20) NOT NULL,
+	[entity_id] [bigint] NOT NULL,
+	[permission_type] [nvarchar](20) NOT NULL,
+	[granted_by] [bigint] NOT NULL,
+	[expires_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[resource_type] ASC,
+	[resource_id] ASC,
+	[entity_type] ASC,
+	[entity_id] ASC,
+	[permission_type] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[resource_shares]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[resource_shares](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[resource_type] [nvarchar](50) NOT NULL,
+	[resource_id] [bigint] NOT NULL,
+	[share_token] [nvarchar](255) NOT NULL,
+	[share_type] [nvarchar](20) NOT NULL,
+	[recipient_email] [nvarchar](320) NULL,
+	[recipient_user_id] [bigint] NULL,
+	[recipient_tenant_id] [bigint] NULL,
+	[password_protected] [bit] NULL,
+	[password_hash] [nvarchar](255) NULL,
+	[requires_login] [bit] NULL,
+	[allow_download] [bit] NULL,
+	[expires_at] [datetime2](7) NULL,
+	[max_views] [int] NULL,
+	[view_count] [int] NULL,
+	[revoked_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[share_token] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[role_limits]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[role_limits](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[role_id] [bigint] NOT NULL,
+	[limit_type] [nvarchar](50) NOT NULL,
+	[limit_value] [int] NOT NULL,
+	[current_usage] [int] NULL,
+	[reset_period] [nvarchar](20) NULL,
+	[last_reset_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[role_id] ASC,
+	[limit_type] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[role_permissions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[role_permissions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[role_id] [bigint] NOT NULL,
+	[permission_id] [bigint] NOT NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[role_id] ASC,
+	[permission_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[roles]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[roles](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[name] [nvarchar](100) NOT NULL,
+	[display_name] [nvarchar](255) NULL,
+	[description] [nvarchar](max) NULL,
+	[is_system_role] [bit] NULL,
+	[is_default] [bit] NULL,
+	[hierarchy_level] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[saved_filters]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[saved_filters](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[filter_name] [nvarchar](255) NOT NULL,
+	[resource_type] [nvarchar](50) NOT NULL,
+	[filter_criteria] [nvarchar](max) NOT NULL,
+	[is_default] [bit] NULL,
+	[is_shared] [bit] NULL,
+	[shared_with] [nvarchar](max) NULL,
+	[usage_count] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[security_events]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[security_events](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[user_id] [bigint] NULL,
+	[event_type] [nvarchar](100) NOT NULL,
+	[event_category] [nvarchar](50) NOT NULL,
+	[severity] [nvarchar](20) NOT NULL,
+	[description] [nvarchar](max) NOT NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[user_agent] [nvarchar](max) NULL,
+	[location] [nvarchar](max) NULL,
+	[resource_type] [nvarchar](50) NULL,
+	[resource_id] [bigint] NULL,
+	[action_taken] [nvarchar](max) NULL,
+	[risk_score] [int] NULL,
+	[is_anomaly] [bit] NULL,
+	[is_resolved] [bit] NULL,
+	[resolved_at] [datetime2](7) NULL,
+	[resolved_by] [bigint] NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[subscription_history]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[subscription_history](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[from_plan_id] [bigint] NULL,
+	[to_plan_id] [bigint] NOT NULL,
+	[change_type] [nvarchar](20) NOT NULL,
+	[change_reason] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[subscription_plans]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[subscription_plans](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[plan_name] [nvarchar](100) NOT NULL,
+	[plan_slug] [nvarchar](50) NOT NULL,
+	[plan_type] [nvarchar](20) NOT NULL,
+	[price_monthly] [decimal](10, 2) NULL,
+	[price_yearly] [decimal](10, 2) NULL,
+	[currency] [nvarchar](3) NULL,
+	[trial_days] [int] NULL,
+	[max_staff] [int] NULL,
+	[max_storage_gb] [int] NULL,
+	[max_campaigns] [int] NULL,
+	[max_invitations] [int] NULL,
+	[max_integrations] [int] NULL,
+	[max_creators] [int] NULL,
+	[max_brands] [int] NULL,
+	[features] [nvarchar](max) NULL,
+	[is_active] [bit] NULL,
+	[sort_order] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[plan_slug] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[system_config]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[system_config](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[config_key] [nvarchar](255) NOT NULL,
+	[config_value] [nvarchar](max) NULL,
+	[config_type] [nvarchar](50) NULL,
+	[is_encrypted] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[system_events]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[system_events](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[user_id] [bigint] NULL,
+	[event_type] [nvarchar](100) NOT NULL,
+	[event_name] [nvarchar](255) NOT NULL,
+	[event_data] [nvarchar](max) NULL,
+	[source] [nvarchar](100) NULL,
+	[session_id] [bigint] NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[user_agent] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[system_metrics]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[system_metrics](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[metric_name] [nvarchar](100) NOT NULL,
+	[metric_value] [decimal](15, 4) NOT NULL,
+	[metric_unit] [nvarchar](50) NULL,
+	[dimensions] [nvarchar](max) NULL,
+	[timestamp] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[taggables]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[taggables](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tag_id] [bigint] NOT NULL,
+	[taggable_type] [nvarchar](50) NOT NULL,
+	[taggable_id] [bigint] NOT NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tag_id] ASC,
+	[taggable_type] ASC,
+	[taggable_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[tags]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[tags](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NULL,
+	[name] [nvarchar](100) NOT NULL,
+	[slug] [nvarchar](100) NOT NULL,
+	[color] [nvarchar](7) NULL,
+	[icon] [nvarchar](50) NULL,
+	[category] [nvarchar](100) NULL,
+	[usage_count] [int] NULL,
+	[is_system_tag] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[slug] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[tasks]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[tasks](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[task_type] [nvarchar](50) NOT NULL,
+	[title] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[priority] [nvarchar](20) NULL,
+	[status] [nvarchar](20) NULL,
+	[assigned_to] [bigint] NULL,
+	[assigned_by] [bigint] NULL,
+	[related_type] [nvarchar](50) NULL,
+	[related_id] [bigint] NULL,
+	[due_date] [datetime2](7) NULL,
+	[start_date] [datetime2](7) NULL,
+	[completed_at] [datetime2](7) NULL,
+	[estimated_hours] [decimal](4, 2) NULL,
+	[actual_hours] [decimal](4, 2) NULL,
+	[tags] [nvarchar](max) NULL,
+	[attachments] [nvarchar](max) NULL,
+	[checklist] [nvarchar](max) NULL,
+	[dependencies] [nvarchar](max) NULL,
+	[recurrence_rule] [nvarchar](max) NULL,
+	[parent_task_id] [bigint] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[tenant_members]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[tenant_members](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[role_id] [bigint] NOT NULL,
+	[member_type] [nvarchar](20) NOT NULL,
+	[department] [nvarchar](100) NULL,
+	[reports_to] [bigint] NULL,
+	[joined_at] [datetime2](7) NULL,
+	[left_at] [datetime2](7) NULL,
+	[is_active] [bit] NULL,
+	[permissions_override] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[tenant_relationships]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[tenant_relationships](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[primary_tenant_id] [bigint] NOT NULL,
+	[related_tenant_id] [bigint] NOT NULL,
+	[relationship_type] [nvarchar](50) NOT NULL,
+	[permissions] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[started_at] [datetime2](7) NULL,
+	[ended_at] [datetime2](7) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[primary_tenant_id] ASC,
+	[related_tenant_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[tenant_usage]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[tenant_usage](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[metric_name] [nvarchar](100) NOT NULL,
+	[metric_value] [decimal](15, 4) NULL,
+	[measurement_period] [date] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[tenant_id] ASC,
+	[metric_name] ASC,
+	[measurement_period] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[tenants]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[tenants](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_type] [nvarchar](20) NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[slug] [nvarchar](100) NOT NULL,
+	[owner_user_id] [bigint] NOT NULL,
+	[logo_url] [nvarchar](max) NULL,
+	[subdomain] [nvarchar](100) NULL,
+	[custom_domain] [nvarchar](255) NULL,
+	[domain_verified_at] [datetime2](7) NULL,
+	[timezone] [nvarchar](50) NULL,
+	[locale] [nvarchar](10) NULL,
+	[currency] [nvarchar](3) NULL,
+	[settings] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[subscription_plan_id] [bigint] NULL,
+	[subscription_status] [nvarchar](20) NULL,
+	[is_trial] [bit] NULL,
+	[trial_started_at] [datetime2](7) NULL,
+	[trial_ends_at] [datetime2](7) NULL,
+	[subscription_started_at] [datetime2](7) NULL,
+	[subscription_expires_at] [datetime2](7) NULL,
+	[max_staff] [int] NULL,
+	[max_storage_gb] [int] NULL,
+	[max_campaigns] [int] NULL,
+	[max_invitations] [int] NULL,
+	[max_creators] [int] NULL,
+	[max_brands] [int] NULL,
+	[current_staff] [int] NULL,
+	[current_storage_gb] [decimal](10, 2) NULL,
+	[current_campaigns] [int] NULL,
+	[current_invitations] [int] NULL,
+	[current_creators] [int] NULL,
+	[current_brands] [int] NULL,
+	[public_key] [nvarchar](max) NULL,
+	[encrypted_private_key] [nvarchar](max) NULL,
+	[key_version] [int] NULL,
+	[key_created_at] [datetime2](7) NULL,
+	[key_rotated_at] [datetime2](7) NULL,
+	[status] [nvarchar](20) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[slug] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[user_encryption_keys]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[user_encryption_keys](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[public_key_pem] [nvarchar](max) NOT NULL,
+	[encrypted_private_key_pem] [nvarchar](max) NOT NULL,
+	[key_algorithm] [nvarchar](50) NULL,
+	[key_encryption_algorithm] [nvarchar](50) NULL,
+	[key_fingerprint] [nvarchar](64) NOT NULL,
+	[key_fingerprint_short] [nvarchar](16) NOT NULL,
+	[status] [nvarchar](20) NULL,
+	[key_version] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[expires_at] [datetime2](7) NULL,
+	[revoked_at] [datetime2](7) NULL,
+	[revoke_reason] [nvarchar](max) NULL,
+	[backup_encrypted_private_key] [nvarchar](max) NULL,
+	[backup_created_at] [datetime2](7) NULL,
+	[rotated_from_key_id] [bigint] NULL,
+	[next_rotation_at] [datetime2](7) NULL,
+	[rotation_required] [bit] NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[user_roles]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[user_roles](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[role_id] [bigint] NOT NULL,
+	[assigned_at] [datetime2](7) NULL,
+	[expires_at] [datetime2](7) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[user_id] ASC,
+	[role_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[user_sessions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[user_sessions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[active_tenant_id] [bigint] NULL,
+	[session_token] [nvarchar](512) NOT NULL,
+	[refresh_token] [nvarchar](512) NULL,
+	[device_fingerprint] [nvarchar](255) NULL,
+	[device_name] [nvarchar](255) NULL,
+	[device_type] [nvarchar](50) NULL,
+	[browser_name] [nvarchar](100) NULL,
+	[browser_version] [nvarchar](50) NULL,
+	[os_name] [nvarchar](100) NULL,
+	[os_version] [nvarchar](50) NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[location] [nvarchar](max) NULL,
+	[encrypted_session_key] [nvarchar](max) NULL,
+	[session_key_version] [int] NULL,
+	[is_active] [bit] NULL,
+	[last_activity_at] [datetime2](7) NULL,
+	[expires_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[refresh_token] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[session_token] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[user_social_accounts]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[user_social_accounts](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[provider] [nvarchar](50) NOT NULL,
+	[provider_user_id] [nvarchar](255) NOT NULL,
+	[provider_username] [nvarchar](255) NULL,
+	[provider_email] [nvarchar](320) NULL,
+	[access_token] [nvarchar](max) NULL,
+	[refresh_token] [nvarchar](max) NULL,
+	[token_expires_at] [datetime2](7) NULL,
+	[profile_data] [nvarchar](max) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[provider] ASC,
+	[provider_user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[users]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[users](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[email] [nvarchar](320) NOT NULL,
+	[username] [nvarchar](100) NULL,
+	[password_hash] [nvarchar](255) NULL,
+	[user_type] [nvarchar](50) NOT NULL,
+	[is_super_admin] [bit] NULL,
+	[first_name] [nvarchar](100) NULL,
+	[last_name] [nvarchar](100) NULL,
+	[display_name] [nvarchar](200) NULL,
+	[avatar_url] [nvarchar](max) NULL,
+	[phone] [nvarchar](20) NULL,
+	[timezone] [nvarchar](50) NULL,
+	[locale] [nvarchar](10) NULL,
+	[key_version] [int] NULL,
+	[key_created_at] [datetime2](7) NULL,
+	[key_rotated_at] [datetime2](7) NULL,
+	[email_verified_at] [datetime2](7) NULL,
+	[phone_verified_at] [datetime2](7) NULL,
+	[onboarding_completed_at] [datetime2](7) NULL,
+	[onboarding_step] [int] NULL,
+	[last_login_at] [datetime2](7) NULL,
+	[last_active_at] [datetime2](7) NULL,
+	[login_count] [int] NULL,
+	[failed_login_count] [int] NULL,
+	[locked_until] [datetime2](7) NULL,
+	[password_changed_at] [datetime2](7) NULL,
+	[must_change_password] [bit] NULL,
+	[two_factor_enabled] [bit] NULL,
+	[two_factor_secret] [nvarchar](255) NULL,
+	[backup_codes] [nvarchar](max) NULL,
+	[preferences] [nvarchar](max) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[is_system_user] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[email] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[verification_codes]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[verification_codes](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NULL,
+	[email] [nvarchar](320) NULL,
+	[phone] [nvarchar](20) NULL,
+	[code] [nvarchar](10) NOT NULL,
+	[code_type] [nvarchar](20) NOT NULL,
+	[expires_at] [datetime2](7) NOT NULL,
+	[used_at] [datetime2](7) NULL,
+	[ip_address] [nvarchar](45) NULL,
+	[attempts] [int] NULL,
+	[max_attempts] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[webhook_deliveries]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[webhook_deliveries](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[webhook_id] [bigint] NOT NULL,
+	[event_type] [nvarchar](100) NOT NULL,
+	[event_data] [nvarchar](max) NOT NULL,
+	[http_status] [int] NULL,
+	[response_body] [nvarchar](max) NULL,
+	[response_headers] [nvarchar](max) NULL,
+	[delivery_duration_ms] [int] NULL,
+	[attempt_number] [int] NULL,
+	[max_attempts] [int] NULL,
+	[status] [nvarchar](20) NOT NULL,
+	[error_message] [nvarchar](max) NULL,
+	[next_retry_at] [datetime2](7) NULL,
+	[delivered_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[webhooks]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[webhooks](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[url] [nvarchar](max) NOT NULL,
+	[secret_key] [nvarchar](255) NULL,
+	[events] [nvarchar](max) NOT NULL,
+	[is_active] [bit] NULL,
+	[retry_attempts] [int] NULL,
+	[timeout_seconds] [int] NULL,
+	[last_triggered_at] [datetime2](7) NULL,
+	[success_count] [int] NULL,
+	[failure_count] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[workflow_executions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[workflow_executions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[workflow_id] [bigint] NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[execution_name] [nvarchar](255) NULL,
+	[trigger_data] [nvarchar](max) NULL,
+	[context_data] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[started_at] [datetime2](7) NULL,
+	[completed_at] [datetime2](7) NULL,
+	[duration_seconds] [int] NULL,
+	[steps_total] [int] NULL,
+	[steps_completed] [int] NULL,
+	[steps_failed] [int] NULL,
+	[current_step_id] [bigint] NULL,
+	[error_message] [nvarchar](max) NULL,
+	[retry_count] [int] NULL,
+	[max_retries] [int] NULL,
+	[next_retry_at] [datetime2](7) NULL,
+	[metadata] [nvarchar](max) NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[workflow_step_executions]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[workflow_step_executions](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[execution_id] [bigint] NOT NULL,
+	[step_id] [nvarchar](100) NOT NULL,
+	[step_name] [nvarchar](255) NULL,
+	[step_type] [nvarchar](50) NOT NULL,
+	[input_data] [nvarchar](max) NULL,
+	[output_data] [nvarchar](max) NULL,
+	[status] [nvarchar](20) NULL,
+	[started_at] [datetime2](7) NULL,
+	[completed_at] [datetime2](7) NULL,
+	[duration_seconds] [int] NULL,
+	[error_message] [nvarchar](max) NULL,
+	[retry_count] [int] NULL,
+	[sequence_number] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[workflows]    Script Date: 23-11-2025 11:39:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[workflows](
+	[id] [bigint] IDENTITY(1,1) NOT NULL,
+	[tenant_id] [bigint] NOT NULL,
+	[name] [nvarchar](255) NOT NULL,
+	[description] [nvarchar](max) NULL,
+	[category] [nvarchar](100) NULL,
+	[trigger_type] [nvarchar](50) NOT NULL,
+	[trigger_conditions] [nvarchar](max) NULL,
+	[workflow_definition] [nvarchar](max) NOT NULL,
+	[variables] [nvarchar](max) NULL,
+	[is_active] [bit] NULL,
+	[is_template] [bit] NULL,
+	[execution_count] [int] NULL,
+	[success_rate] [decimal](5, 2) NULL,
+	[avg_execution_time_seconds] [int] NULL,
+	[last_executed_at] [datetime2](7) NULL,
+	[version] [int] NULL,
+	[created_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+	[updated_at] [datetime2](7) NULL,
+	[updated_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[activities] ADD  DEFAULT ((0)) FOR [is_read]
+GO
+
+ALTER TABLE [dbo].[activities] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[activities] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[ai_conversations] ADD  DEFAULT ('general') FOR [conversation_type]
+GO
+
+ALTER TABLE [dbo].[ai_conversations] ADD  DEFAULT ((0)) FOR [message_count]
+GO
+
+ALTER TABLE [dbo].[ai_conversations] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[ai_conversations] ADD  DEFAULT (getutcdate()) FOR [last_message_at]
+GO
+
+ALTER TABLE [dbo].[ai_conversations] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[ai_conversations] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[ai_messages] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[ai_messages] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[analytics_events] ADD  DEFAULT (getutcdate()) FOR [timestamp]
+GO
+
+ALTER TABLE [dbo].[analytics_events] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[analytics_events] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[audit_logs] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[audit_logs] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[batch_payments] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[batch_payments] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[bookmarks] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[bookmarks] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT ((1)) FOR [content_approval_required]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT ((0)) FOR [auto_approve_creators]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT ((30)) FOR [payment_terms]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT ((5.0)) FOR [rating]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT ((0)) FOR [rating_count]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT ((0)) FOR [total_campaigns]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT ((0)) FOR [total_spent]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[brand_profiles] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[calendar_events] ADD  DEFAULT ((0)) FOR [all_day]
+GO
+
+ALTER TABLE [dbo].[calendar_events] ADD  DEFAULT ((15)) FOR [reminder_minutes]
+GO
+
+ALTER TABLE [dbo].[calendar_events] ADD  DEFAULT ((0)) FOR [is_private]
+GO
+
+ALTER TABLE [dbo].[calendar_events] ADD  DEFAULT ('confirmed') FOR [status]
+GO
+
+ALTER TABLE [dbo].[calendar_events] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[calendar_events] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[campaign_participants] ADD  DEFAULT ('invited') FOR [status]
+GO
+
+ALTER TABLE [dbo].[campaign_participants] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[campaign_participants] ADD  DEFAULT ((0)) FOR [bonus_amount]
+GO
+
+ALTER TABLE [dbo].[campaign_participants] ADD  DEFAULT ('pending') FOR [payment_status]
+GO
+
+ALTER TABLE [dbo].[campaign_participants] ADD  DEFAULT ((0)) FOR [revision_count]
+GO
+
+ALTER TABLE [dbo].[campaign_participants] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[campaign_participants] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[campaign_tasks] ADD  DEFAULT ('medium') FOR [priority]
+GO
+
+ALTER TABLE [dbo].[campaign_tasks] ADD  DEFAULT ('todo') FOR [status]
+GO
+
+ALTER TABLE [dbo].[campaign_tasks] ADD  DEFAULT ((0)) FOR [comments_count]
+GO
+
+ALTER TABLE [dbo].[campaign_tasks] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[campaign_tasks] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[campaign_types] ADD  DEFAULT ((30)) FOR [default_duration_days]
+GO
+
+ALTER TABLE [dbo].[campaign_types] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[campaign_types] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[campaign_types] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ((0)) FOR [budget_allocated]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ((0)) FOR [budget_spent]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ((0)) FOR [creator_count_assigned]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ((0)) FOR [auto_approve_content]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ((1)) FOR [content_approval_required]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ((0)) FOR [legal_approval_required]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ((90)) FOR [usage_rights_duration]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ((0)) FOR [exclusivity_period]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ('private') FOR [visibility]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ('draft') FOR [status]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT ('medium') FOR [priority]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[campaigns] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[chat_channels] ADD  DEFAULT ('group') FOR [channel_type]
+GO
+
+ALTER TABLE [dbo].[chat_channels] ADD  DEFAULT ((0)) FOR [member_count]
+GO
+
+ALTER TABLE [dbo].[chat_channels] ADD  DEFAULT ((1)) FOR [is_private]
+GO
+
+ALTER TABLE [dbo].[chat_channels] ADD  DEFAULT ((0)) FOR [is_archived]
+GO
+
+ALTER TABLE [dbo].[chat_channels] ADD  DEFAULT ((0)) FOR [message_count]
+GO
+
+ALTER TABLE [dbo].[chat_channels] ADD  DEFAULT (getutcdate()) FOR [last_activity_at]
+GO
+
+ALTER TABLE [dbo].[chat_channels] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[chat_channels] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[chat_participants] ADD  DEFAULT ('member') FOR [role]
+GO
+
+ALTER TABLE [dbo].[chat_participants] ADD  DEFAULT (getutcdate()) FOR [joined_at]
+GO
+
+ALTER TABLE [dbo].[chat_participants] ADD  DEFAULT ((0)) FOR [is_muted]
+GO
+
+ALTER TABLE [dbo].[chat_participants] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[chat_participants] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[chat_participants] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[comments] ADD  DEFAULT ((0)) FOR [is_edited]
+GO
+
+ALTER TABLE [dbo].[comments] ADD  DEFAULT ((0)) FOR [is_deleted]
+GO
+
+ALTER TABLE [dbo].[comments] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[comments] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[content_access_violations] ADD  DEFAULT (getutcdate()) FOR [detected_at]
+GO
+
+ALTER TABLE [dbo].[content_access_violations] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[content_access_violations] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT ((0)) FOR [likes]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT ((0)) FOR [comments]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT ((0)) FOR [shares]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT ((0)) FOR [saves]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT ((0)) FOR [views]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT ((0)) FOR [reach]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT ((0)) FOR [impressions]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT (getutcdate()) FOR [last_updated_at]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[content_performance] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[content_review_comments] ADD  DEFAULT ('general') FOR [comment_type]
+GO
+
+ALTER TABLE [dbo].[content_review_comments] ADD  DEFAULT ((0)) FOR [is_resolved]
+GO
+
+ALTER TABLE [dbo].[content_review_comments] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[content_review_comments] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[content_reviews] ADD  DEFAULT (getutcdate()) FOR [reviewed_at]
+GO
+
+ALTER TABLE [dbo].[content_reviews] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[content_reviews] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((1)) FOR [version]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((1)) FOR [review_round]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((3)) FOR [max_review_rounds]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((0)) FOR [watermark_applied]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((0)) FOR [drm_protected]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((1)) FOR [download_protection]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((1)) FOR [screenshot_protected]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((0)) FOR [view_count]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((0)) FOR [download_count]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ((0)) FOR [share_count]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT ('submitted') FOR [status]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT (getutcdate()) FOR [submitted_at]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[content_submissions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[contract_modifications] ADD  DEFAULT ((1)) FOR [requires_approval]
+GO
+
+ALTER TABLE [dbo].[contract_modifications] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[contract_modifications] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[contract_review_rounds] ADD  DEFAULT ('in_progress') FOR [status]
+GO
+
+ALTER TABLE [dbo].[contract_review_rounds] ADD  DEFAULT ((3)) FOR [max_modifications]
+GO
+
+ALTER TABLE [dbo].[contract_review_rounds] ADD  DEFAULT ((0)) FOR [current_modifications]
+GO
+
+ALTER TABLE [dbo].[contract_review_rounds] ADD  DEFAULT (getutcdate()) FOR [started_at]
+GO
+
+ALTER TABLE [dbo].[contract_review_rounds] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[contract_review_rounds] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[contract_signatures] ADD  DEFAULT ('pending') FOR [status]
+GO
+
+ALTER TABLE [dbo].[contract_signatures] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[contract_signatures] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[contract_stage_permissions] ADD  DEFAULT ((1)) FOR [can_view]
+GO
+
+ALTER TABLE [dbo].[contract_stage_permissions] ADD  DEFAULT ((0)) FOR [can_edit]
+GO
+
+ALTER TABLE [dbo].[contract_stage_permissions] ADD  DEFAULT ((1)) FOR [can_comment]
+GO
+
+ALTER TABLE [dbo].[contract_stage_permissions] ADD  DEFAULT ((0)) FOR [can_approve]
+GO
+
+ALTER TABLE [dbo].[contract_stage_permissions] ADD  DEFAULT ((0)) FOR [max_modifications]
+GO
+
+ALTER TABLE [dbo].[contract_stage_permissions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[contract_stage_permissions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[contract_templates] ADD  DEFAULT ('1.0') FOR [version]
+GO
+
+ALTER TABLE [dbo].[contract_templates] ADD  DEFAULT ((0)) FOR [is_default]
+GO
+
+ALTER TABLE [dbo].[contract_templates] ADD  DEFAULT ((0)) FOR [requires_legal_review]
+GO
+
+ALTER TABLE [dbo].[contract_templates] ADD  DEFAULT ((0)) FOR [auto_renewal]
+GO
+
+ALTER TABLE [dbo].[contract_templates] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[contract_templates] ADD  DEFAULT ((0)) FOR [usage_count]
+GO
+
+ALTER TABLE [dbo].[contract_templates] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[contract_templates] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[contract_versions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[contract_versions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT ((0)) FOR [auto_renewal]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT ((0)) FOR [renewal_count]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT ('draft') FOR [status]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT ((0)) FOR [signatures_completed]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT ((2)) FOR [signatures_required]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT ((0)) FOR [legal_reviewed]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[contracts] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[creator_availability] ADD  DEFAULT ((1)) FOR [is_available]
+GO
+
+ALTER TABLE [dbo].[creator_availability] ADD  DEFAULT ('full') FOR [availability_type]
+GO
+
+ALTER TABLE [dbo].[creator_availability] ADD  DEFAULT ((8)) FOR [hours_available]
+GO
+
+ALTER TABLE [dbo].[creator_availability] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[creator_availability] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[creator_categories] ADD  DEFAULT ((0)) FOR [level]
+GO
+
+ALTER TABLE [dbo].[creator_categories] ADD  DEFAULT ((0)) FOR [sort_order]
+GO
+
+ALTER TABLE [dbo].[creator_categories] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[creator_categories] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[creator_categories] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[creator_documents] ADD  DEFAULT ('pending') FOR [verification_status]
+GO
+
+ALTER TABLE [dbo].[creator_documents] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[creator_documents] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [followers]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [following]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [posts]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [likes]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [comments]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [shares]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [views]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [reach]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [impressions]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [saves]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [profile_visits]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT ((0)) FOR [website_clicks]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[creator_metrics] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT ((0)) FOR [follower_count_total]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT ((5.0)) FOR [rating]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT ((0)) FOR [rating_count]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT ((0)) FOR [total_campaigns]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT ((0)) FOR [completed_campaigns]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT ('available') FOR [availability_status]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT ('pending') FOR [kyc_status]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[creator_profiles] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[creator_rate_cards] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[creator_rate_cards] ADD  DEFAULT ('fixed') FOR [rate_type]
+GO
+
+ALTER TABLE [dbo].[creator_rate_cards] ADD  DEFAULT ((2)) FOR [revisions_included]
+GO
+
+ALTER TABLE [dbo].[creator_rate_cards] ADD  DEFAULT ((0)) FOR [is_negotiable]
+GO
+
+ALTER TABLE [dbo].[creator_rate_cards] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[creator_rate_cards] ADD  DEFAULT (CONVERT([date],getutcdate())) FOR [effective_from]
+GO
+
+ALTER TABLE [dbo].[creator_rate_cards] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[creator_rate_cards] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [follower_count]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [following_count]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [posts_count]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [avg_likes]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [avg_comments]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [avg_shares]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [avg_views]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [is_verified]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [is_business_account]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ('pending') FOR [sync_status]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT ((0)) FOR [is_primary]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[creator_social_accounts] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[dashboard_widgets] ADD  DEFAULT ((0)) FOR [position_x]
+GO
+
+ALTER TABLE [dbo].[dashboard_widgets] ADD  DEFAULT ((0)) FOR [position_y]
+GO
+
+ALTER TABLE [dbo].[dashboard_widgets] ADD  DEFAULT ((4)) FOR [width]
+GO
+
+ALTER TABLE [dbo].[dashboard_widgets] ADD  DEFAULT ((3)) FOR [height]
+GO
+
+ALTER TABLE [dbo].[dashboard_widgets] ADD  DEFAULT ('default') FOR [dashboard_tab]
+GO
+
+ALTER TABLE [dbo].[dashboard_widgets] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[dashboard_widgets] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[dashboard_widgets] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT ((993)) FOR [imap_port]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT ('ssl') FOR [imap_encryption]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT ((587)) FOR [smtp_port]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT ('tls') FOR [smtp_encryption]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT ((1)) FOR [sync_enabled]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT ('active') FOR [sync_status]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT ((0)) FOR [is_primary]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[email_accounts] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[email_attachments] ADD  DEFAULT ((1)) FOR [is_encrypted]
+GO
+
+ALTER TABLE [dbo].[email_attachments] ADD  DEFAULT ((0)) FOR [is_inline]
+GO
+
+ALTER TABLE [dbo].[email_attachments] ADD  DEFAULT ('pending') FOR [virus_scan_status]
+GO
+
+ALTER TABLE [dbo].[email_attachments] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[email_attachments] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[email_folders] ADD  DEFAULT ((0)) FOR [message_count]
+GO
+
+ALTER TABLE [dbo].[email_folders] ADD  DEFAULT ((0)) FOR [unread_count]
+GO
+
+ALTER TABLE [dbo].[email_folders] ADD  DEFAULT ((0)) FOR [sort_order]
+GO
+
+ALTER TABLE [dbo].[email_folders] ADD  DEFAULT ((1)) FOR [is_selectable]
+GO
+
+ALTER TABLE [dbo].[email_folders] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[email_folders] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((1)) FOR [encryption_key_version]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((1)) FOR [is_encrypted]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [attachments_count]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [is_read]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [is_important]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [is_starred]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [is_draft]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [is_sent]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [is_spam]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [is_trash]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [is_inquiry]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT ((0)) FOR [priority_level]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[email_messages] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[email_rules] ADD  DEFAULT ((0)) FOR [priority]
+GO
+
+ALTER TABLE [dbo].[email_rules] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[email_rules] ADD  DEFAULT ((0)) FOR [execution_count]
+GO
+
+ALTER TABLE [dbo].[email_rules] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[email_rules] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[email_templates] ADD  DEFAULT ((0)) FOR [usage_count]
+GO
+
+ALTER TABLE [dbo].[email_templates] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[email_templates] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[email_templates] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[encryption_audit_logs] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[encryption_audit_logs] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[encryption_keys] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[encryption_keys] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[encryption_keys] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[error_logs] ADD  DEFAULT ('error') FOR [severity]
+GO
+
+ALTER TABLE [dbo].[error_logs] ADD  DEFAULT ((0)) FOR [resolved]
+GO
+
+ALTER TABLE [dbo].[error_logs] ADD  DEFAULT ((1)) FOR [occurrence_count]
+GO
+
+ALTER TABLE [dbo].[error_logs] ADD  DEFAULT (getutcdate()) FOR [first_occurred_at]
+GO
+
+ALTER TABLE [dbo].[error_logs] ADD  DEFAULT (getutcdate()) FOR [last_occurred_at]
+GO
+
+ALTER TABLE [dbo].[error_logs] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[error_logs] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[event_attendees] ADD  DEFAULT ('pending') FOR [response_status]
+GO
+
+ALTER TABLE [dbo].[event_attendees] ADD  DEFAULT ((0)) FOR [is_organizer]
+GO
+
+ALTER TABLE [dbo].[event_attendees] ADD  DEFAULT ((0)) FOR [is_optional]
+GO
+
+ALTER TABLE [dbo].[event_attendees] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[event_attendees] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[file_processing_jobs] ADD  DEFAULT ('pending') FOR [status]
+GO
+
+ALTER TABLE [dbo].[file_processing_jobs] ADD  DEFAULT ((0)) FOR [progress_percent]
+GO
+
+ALTER TABLE [dbo].[file_processing_jobs] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[file_processing_jobs] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[file_shares] ADD  DEFAULT ((0)) FOR [download_count]
+GO
+
+ALTER TABLE [dbo].[file_shares] ADD  DEFAULT ((0)) FOR [access_count]
+GO
+
+ALTER TABLE [dbo].[file_shares] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[file_shares] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[file_shares] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT ('/') FOR [folder_path]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT ((0)) FOR [is_public]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT ((0)) FOR [is_temporary]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT ((0)) FOR [download_count]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT ('pending') FOR [virus_scan_status]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT ('pending') FOR [processing_status]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT ((0)) FOR [is_encrypted]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[files] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT ((0)) FOR [total_revenue]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT ((0)) FOR [total_expenses]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT ((0)) FOR [total_profit]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT ((0)) FOR [creator_payments]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT ((0)) FOR [platform_fees]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT ((0)) FOR [tax_amount]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT (getutcdate()) FOR [generated_at]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[financial_reports] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[integrations] ADD  DEFAULT ('active') FOR [status]
+GO
+
+ALTER TABLE [dbo].[integrations] ADD  DEFAULT ((60)) FOR [sync_frequency_minutes]
+GO
+
+ALTER TABLE [dbo].[integrations] ADD  DEFAULT ((0)) FOR [error_count]
+GO
+
+ALTER TABLE [dbo].[integrations] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[integrations] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[integrations] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[invitations] ADD  DEFAULT ('pending') FOR [status]
+GO
+
+ALTER TABLE [dbo].[invitations] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[invitations] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[invoice_items] ADD  DEFAULT ((1)) FOR [quantity]
+GO
+
+ALTER TABLE [dbo].[invoice_items] ADD  DEFAULT ((0)) FOR [discount_percent]
+GO
+
+ALTER TABLE [dbo].[invoice_items] ADD  DEFAULT ((0)) FOR [discount_amount]
+GO
+
+ALTER TABLE [dbo].[invoice_items] ADD  DEFAULT ((0)) FOR [tax_rate]
+GO
+
+ALTER TABLE [dbo].[invoice_items] ADD  DEFAULT ((0)) FOR [tax_amount]
+GO
+
+ALTER TABLE [dbo].[invoice_items] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[invoice_items] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ((0)) FOR [subtotal]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ((0)) FOR [tax_amount]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ((0)) FOR [discount_amount]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ((1)) FOR [exchange_rate]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ((30)) FOR [payment_terms]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT (CONVERT([date],getutcdate())) FOR [issue_date]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ('draft') FOR [status]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ((0)) FOR [late_fee_amount]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT ((0)) FOR [reminder_sent_count]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[invoices] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[key_rotation_schedule] ADD  DEFAULT ((90)) FOR [rotation_frequency_days]
+GO
+
+ALTER TABLE [dbo].[key_rotation_schedule] ADD  DEFAULT ((1)) FOR [auto_rotate]
+GO
+
+ALTER TABLE [dbo].[key_rotation_schedule] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[key_rotation_schedule] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[key_rotation_schedule] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[menu_permissions] ADD  DEFAULT ((1)) FOR [is_required]
+GO
+
+ALTER TABLE [dbo].[menu_permissions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[menu_permissions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[message_attachments] ADD  DEFAULT ('pending') FOR [virus_scan_status]
+GO
+
+ALTER TABLE [dbo].[message_attachments] ADD  DEFAULT ((0)) FOR [download_count]
+GO
+
+ALTER TABLE [dbo].[message_attachments] ADD  DEFAULT ((0)) FOR [is_deleted]
+GO
+
+ALTER TABLE [dbo].[message_attachments] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[message_attachments] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[message_queue] ADD  DEFAULT (getutcdate()) FOR [queued_at]
+GO
+
+ALTER TABLE [dbo].[message_reactions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[message_reactions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[message_read_receipts] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT ('text') FOR [message_type]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT ((0)) FOR [has_attachments]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT ((0)) FOR [has_mentions]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT ((0)) FOR [is_edited]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT ((0)) FOR [is_deleted]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT ((0)) FOR [is_pinned]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT (getutcdate()) FOR [sent_at]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[messages] ADD  DEFAULT ((0)) FOR [reply_count]
+GO
+
+ALTER TABLE [dbo].[notes] ADD  DEFAULT ('markdown') FOR [content_type]
+GO
+
+ALTER TABLE [dbo].[notes] ADD  DEFAULT ((0)) FOR [is_pinned]
+GO
+
+ALTER TABLE [dbo].[notes] ADD  DEFAULT ((0)) FOR [is_archived]
+GO
+
+ALTER TABLE [dbo].[notes] ADD  DEFAULT ('/') FOR [folder_path]
+GO
+
+ALTER TABLE [dbo].[notes] ADD  DEFAULT ((0)) FOR [is_encrypted]
+GO
+
+ALTER TABLE [dbo].[notes] ADD  DEFAULT (getutcdate()) FOR [last_edited_at]
+GO
+
+ALTER TABLE [dbo].[notes] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[notes] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[notification_preferences] ADD  DEFAULT ((1)) FOR [email_enabled]
+GO
+
+ALTER TABLE [dbo].[notification_preferences] ADD  DEFAULT ((0)) FOR [sms_enabled]
+GO
+
+ALTER TABLE [dbo].[notification_preferences] ADD  DEFAULT ((1)) FOR [push_enabled]
+GO
+
+ALTER TABLE [dbo].[notification_preferences] ADD  DEFAULT ((1)) FOR [in_app_enabled]
+GO
+
+ALTER TABLE [dbo].[notification_preferences] ADD  DEFAULT ('immediate') FOR [frequency]
+GO
+
+ALTER TABLE [dbo].[notification_preferences] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[notification_preferences] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[notification_templates] ADD  DEFAULT ((0)) FOR [is_system_template]
+GO
+
+ALTER TABLE [dbo].[notification_templates] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[notification_templates] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[notification_templates] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[notifications] ADD  DEFAULT ('normal') FOR [priority]
+GO
+
+ALTER TABLE [dbo].[notifications] ADD  DEFAULT (getutcdate()) FOR [scheduled_at]
+GO
+
+ALTER TABLE [dbo].[notifications] ADD  DEFAULT ('pending') FOR [status]
+GO
+
+ALTER TABLE [dbo].[notifications] ADD  DEFAULT ((0)) FOR [retry_count]
+GO
+
+ALTER TABLE [dbo].[notifications] ADD  DEFAULT ((3)) FOR [max_retries]
+GO
+
+ALTER TABLE [dbo].[notifications] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[notifications] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[password_reset_tokens] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[password_reset_tokens] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[payment_methods] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[payment_methods] ADD  DEFAULT ((0)) FOR [is_default]
+GO
+
+ALTER TABLE [dbo].[payment_methods] ADD  DEFAULT ((0)) FOR [is_verified]
+GO
+
+ALTER TABLE [dbo].[payment_methods] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[payment_methods] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT ((1)) FOR [exchange_rate]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT ((0)) FOR [fee_amount]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT ((0)) FOR [gateway_fee]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT ('pending') FOR [status]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT (getutcdate()) FOR [initiated_at]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT ((0)) FOR [retry_count]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT ('pending') FOR [reconciliation_status]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[payments] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT ('creator_payout') FOR [batch_type]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT ((0)) FOR [payment_count]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT ((0)) FOR [successful_payments]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT ((0)) FOR [failed_payments]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT ((0)) FOR [processing_fee]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT ('draft') FOR [status]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[payout_batches] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[permissions] ADD  DEFAULT ((0)) FOR [is_system_permission]
+GO
+
+ALTER TABLE [dbo].[permissions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[permissions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[portfolio_selections] ADD  DEFAULT (getutcdate()) FOR [selection_date]
+GO
+
+ALTER TABLE [dbo].[portfolio_selections] ADD  DEFAULT ('pending') FOR [status]
+GO
+
+ALTER TABLE [dbo].[portfolio_selections] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[portfolio_selections] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[portfolio_shares] ADD  DEFAULT ((0)) FOR [view_count]
+GO
+
+ALTER TABLE [dbo].[portfolio_shares] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[portfolio_shares] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[portfolio_shares] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[portfolio_templates] ADD  DEFAULT ((0)) FOR [is_default]
+GO
+
+ALTER TABLE [dbo].[portfolio_templates] ADD  DEFAULT ((0)) FOR [is_public]
+GO
+
+ALTER TABLE [dbo].[portfolio_templates] ADD  DEFAULT ((0)) FOR [usage_count]
+GO
+
+ALTER TABLE [dbo].[portfolio_templates] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[portfolio_templates] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[portfolios] ADD  DEFAULT ((0)) FOR [total_reach]
+GO
+
+ALTER TABLE [dbo].[portfolios] ADD  DEFAULT ((0)) FOR [is_public]
+GO
+
+ALTER TABLE [dbo].[portfolios] ADD  DEFAULT ((0)) FOR [view_count]
+GO
+
+ALTER TABLE [dbo].[portfolios] ADD  DEFAULT ((0)) FOR [download_count]
+GO
+
+ALTER TABLE [dbo].[portfolios] ADD  DEFAULT ('draft') FOR [status]
+GO
+
+ALTER TABLE [dbo].[portfolios] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[portfolios] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[report_instances] ADD  DEFAULT (getutcdate()) FOR [generated_at]
+GO
+
+ALTER TABLE [dbo].[report_instances] ADD  DEFAULT ('completed') FOR [status]
+GO
+
+ALTER TABLE [dbo].[report_instances] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[report_instances] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[reports] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[reports] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[reports] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[resource_access_logs] ADD  DEFAULT (getutcdate()) FOR [accessed_at]
+GO
+
+ALTER TABLE [dbo].[resource_permissions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[resource_permissions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[resource_shares] ADD  DEFAULT ((0)) FOR [password_protected]
+GO
+
+ALTER TABLE [dbo].[resource_shares] ADD  DEFAULT ((1)) FOR [requires_login]
+GO
+
+ALTER TABLE [dbo].[resource_shares] ADD  DEFAULT ((0)) FOR [allow_download]
+GO
+
+ALTER TABLE [dbo].[resource_shares] ADD  DEFAULT ((0)) FOR [view_count]
+GO
+
+ALTER TABLE [dbo].[resource_shares] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[resource_shares] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[role_limits] ADD  DEFAULT ((0)) FOR [current_usage]
+GO
+
+ALTER TABLE [dbo].[role_limits] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[role_limits] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[role_permissions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[role_permissions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[roles] ADD  DEFAULT ((0)) FOR [is_system_role]
+GO
+
+ALTER TABLE [dbo].[roles] ADD  DEFAULT ((0)) FOR [is_default]
+GO
+
+ALTER TABLE [dbo].[roles] ADD  DEFAULT ((0)) FOR [hierarchy_level]
+GO
+
+ALTER TABLE [dbo].[roles] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[roles] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[saved_filters] ADD  DEFAULT ((0)) FOR [is_default]
+GO
+
+ALTER TABLE [dbo].[saved_filters] ADD  DEFAULT ((0)) FOR [is_shared]
+GO
+
+ALTER TABLE [dbo].[saved_filters] ADD  DEFAULT ((0)) FOR [usage_count]
+GO
+
+ALTER TABLE [dbo].[saved_filters] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[saved_filters] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[security_events] ADD  DEFAULT ((0)) FOR [risk_score]
+GO
+
+ALTER TABLE [dbo].[security_events] ADD  DEFAULT ((0)) FOR [is_anomaly]
+GO
+
+ALTER TABLE [dbo].[security_events] ADD  DEFAULT ((0)) FOR [is_resolved]
+GO
+
+ALTER TABLE [dbo].[security_events] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[security_events] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[subscription_history] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[subscription_history] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((14)) FOR [trial_days]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((5)) FOR [max_staff]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((10)) FOR [max_storage_gb]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((10)) FOR [max_campaigns]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((20)) FOR [max_invitations]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((5)) FOR [max_integrations]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((100)) FOR [max_creators]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((50)) FOR [max_brands]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT ((0)) FOR [sort_order]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[subscription_plans] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[system_config] ADD  DEFAULT ('string') FOR [config_type]
+GO
+
+ALTER TABLE [dbo].[system_config] ADD  DEFAULT ((0)) FOR [is_encrypted]
+GO
+
+ALTER TABLE [dbo].[system_config] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[system_config] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[system_events] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[system_events] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[system_metrics] ADD  DEFAULT (getutcdate()) FOR [timestamp]
+GO
+
+ALTER TABLE [dbo].[system_metrics] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[system_metrics] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[taggables] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[taggables] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[tags] ADD  DEFAULT ((0)) FOR [usage_count]
+GO
+
+ALTER TABLE [dbo].[tags] ADD  DEFAULT ((0)) FOR [is_system_tag]
+GO
+
+ALTER TABLE [dbo].[tags] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[tags] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[tasks] ADD  DEFAULT ('medium') FOR [priority]
+GO
+
+ALTER TABLE [dbo].[tasks] ADD  DEFAULT ('todo') FOR [status]
+GO
+
+ALTER TABLE [dbo].[tasks] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[tasks] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[tenant_members] ADD  DEFAULT ('staff') FOR [member_type]
+GO
+
+ALTER TABLE [dbo].[tenant_members] ADD  DEFAULT (getutcdate()) FOR [joined_at]
+GO
+
+ALTER TABLE [dbo].[tenant_members] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[tenant_members] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[tenant_members] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[tenant_relationships] ADD  DEFAULT ('active') FOR [status]
+GO
+
+ALTER TABLE [dbo].[tenant_relationships] ADD  DEFAULT (getutcdate()) FOR [started_at]
+GO
+
+ALTER TABLE [dbo].[tenant_relationships] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[tenant_relationships] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[tenant_usage] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[tenant_usage] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ('UTC') FOR [timezone]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ('en-US') FOR [locale]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ('USD') FOR [currency]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ('trial') FOR [subscription_status]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((1)) FOR [is_trial]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((5)) FOR [max_staff]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((10)) FOR [max_storage_gb]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((10)) FOR [max_campaigns]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((20)) FOR [max_invitations]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((100)) FOR [max_creators]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((50)) FOR [max_brands]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((0)) FOR [current_staff]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((0)) FOR [current_storage_gb]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((0)) FOR [current_campaigns]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((0)) FOR [current_invitations]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((0)) FOR [current_creators]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((0)) FOR [current_brands]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((1)) FOR [key_version]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ('active') FOR [status]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[tenants] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[user_encryption_keys] ADD  DEFAULT ('RSA-4096') FOR [key_algorithm]
+GO
+
+ALTER TABLE [dbo].[user_encryption_keys] ADD  DEFAULT ('AES-256-GCM') FOR [key_encryption_algorithm]
+GO
+
+ALTER TABLE [dbo].[user_encryption_keys] ADD  DEFAULT ('active') FOR [status]
+GO
+
+ALTER TABLE [dbo].[user_encryption_keys] ADD  DEFAULT ((1)) FOR [key_version]
+GO
+
+ALTER TABLE [dbo].[user_encryption_keys] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[user_encryption_keys] ADD  DEFAULT ((0)) FOR [rotation_required]
+GO
+
+ALTER TABLE [dbo].[user_encryption_keys] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[user_roles] ADD  DEFAULT (getutcdate()) FOR [assigned_at]
+GO
+
+ALTER TABLE [dbo].[user_roles] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[user_roles] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[user_roles] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[user_sessions] ADD  DEFAULT ((1)) FOR [session_key_version]
+GO
+
+ALTER TABLE [dbo].[user_sessions] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[user_sessions] ADD  DEFAULT (getutcdate()) FOR [last_activity_at]
+GO
+
+ALTER TABLE [dbo].[user_sessions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[user_sessions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[user_social_accounts] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[user_social_accounts] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[user_social_accounts] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ('pending') FOR [user_type]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((0)) FOR [is_super_admin]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ('UTC') FOR [timezone]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ('en-US') FOR [locale]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((1)) FOR [key_version]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((0)) FOR [onboarding_step]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((0)) FOR [login_count]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((0)) FOR [failed_login_count]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((0)) FOR [must_change_password]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((0)) FOR [two_factor_enabled]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ('pending') FOR [status]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((0)) FOR [is_system_user]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[users] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[verification_codes] ADD  DEFAULT ((0)) FOR [attempts]
+GO
+
+ALTER TABLE [dbo].[verification_codes] ADD  DEFAULT ((5)) FOR [max_attempts]
+GO
+
+ALTER TABLE [dbo].[verification_codes] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[verification_codes] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[webhook_deliveries] ADD  DEFAULT ((1)) FOR [attempt_number]
+GO
+
+ALTER TABLE [dbo].[webhook_deliveries] ADD  DEFAULT ((3)) FOR [max_attempts]
+GO
+
+ALTER TABLE [dbo].[webhook_deliveries] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[webhook_deliveries] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[webhooks] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[webhooks] ADD  DEFAULT ((3)) FOR [retry_attempts]
+GO
+
+ALTER TABLE [dbo].[webhooks] ADD  DEFAULT ((30)) FOR [timeout_seconds]
+GO
+
+ALTER TABLE [dbo].[webhooks] ADD  DEFAULT ((0)) FOR [success_count]
+GO
+
+ALTER TABLE [dbo].[webhooks] ADD  DEFAULT ((0)) FOR [failure_count]
+GO
+
+ALTER TABLE [dbo].[webhooks] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[webhooks] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT ('running') FOR [status]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT (getutcdate()) FOR [started_at]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT ((0)) FOR [steps_total]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT ((0)) FOR [steps_completed]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT ((0)) FOR [steps_failed]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT ((0)) FOR [retry_count]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT ((3)) FOR [max_retries]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[workflow_executions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[workflow_step_executions] ADD  DEFAULT ('pending') FOR [status]
+GO
+
+ALTER TABLE [dbo].[workflow_step_executions] ADD  DEFAULT ((0)) FOR [retry_count]
+GO
+
+ALTER TABLE [dbo].[workflow_step_executions] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[workflow_step_executions] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[workflows] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+
+ALTER TABLE [dbo].[workflows] ADD  DEFAULT ((0)) FOR [is_template]
+GO
+
+ALTER TABLE [dbo].[workflows] ADD  DEFAULT ((0)) FOR [execution_count]
+GO
+
+ALTER TABLE [dbo].[workflows] ADD  DEFAULT ((1)) FOR [version]
+GO
+
+ALTER TABLE [dbo].[workflows] ADD  DEFAULT (getutcdate()) FOR [created_at]
+GO
+
+ALTER TABLE [dbo].[workflows] ADD  DEFAULT (getutcdate()) FOR [updated_at]
+GO
+
+ALTER TABLE [dbo].[ai_messages]  WITH CHECK ADD CHECK  (([feedback_rating]>=(1) AND [feedback_rating]<=(5)))
+GO
+
+ALTER TABLE [dbo].[ai_messages]  WITH CHECK ADD CHECK  (([sender_type]='assistant' OR [sender_type]='user'))
+GO
+
+ALTER TABLE [dbo].[content_reviews]  WITH CHECK ADD CHECK  (([brand_alignment_rating]>=(1) AND [brand_alignment_rating]<=(5)))
+GO
+
+ALTER TABLE [dbo].[content_reviews]  WITH CHECK ADD CHECK  (([creativity_rating]>=(1) AND [creativity_rating]<=(5)))
+GO
+
+ALTER TABLE [dbo].[content_reviews]  WITH CHECK ADD CHECK  (([overall_rating]>=(1) AND [overall_rating]<=(5)))
+GO
+
+ALTER TABLE [dbo].[content_reviews]  WITH CHECK ADD CHECK  (([quality_rating]>=(1) AND [quality_rating]<=(5)))
+GO
+
+ALTER TABLE [dbo].[subscription_plans]  WITH CHECK ADD CHECK  (([plan_type]='creator' OR [plan_type]='brand' OR [plan_type]='agency'))
+GO
+
+ALTER TABLE [dbo].[tenants]  WITH CHECK ADD CHECK  (([tenant_type]='creator' OR [tenant_type]='brand' OR [tenant_type]='agency'))
+GO
+
+
+
+
+USE [fluera_new_structure]
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CheckResourcePermission]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+ -- ✅ CHANGE: Make @tenantId nullable
+CREATE   PROCEDURE [dbo].[sp_CheckResourcePermission]
     @userId BIGINT,
-    @tenantId BIGINT,
-    @messageType NVARCHAR(20),
-    @encryptedContent NVARCHAR(MAX),
-    @encryptionIv NVARCHAR(MAX),
-    @encryptionAuthTag NVARCHAR(MAX),
-    @keyVersion INT,
-    @hasAttachments BIT = 0,
-    @hasMentions BIT = 0,
-    @replyToMessageId BIGINT = NULL,
-    @threadId BIGINT = NULL
+    @tenantId BIGINT = NULL, -- ✅ NOW NULLABLE
+    @resourceType NVARCHAR(50),
+    @resourceId BIGINT,
+    @permissionType NVARCHAR(20)
+AS
+BEGIN
+    -- ✅ For NULL tenantId (global admins), check global permissions only
+    IF @tenantId IS NULL
+    BEGIN
+        -- Check only direct user permissions (no tenant filtering)
+        SELECT COUNT(*) as has_permission
+        FROM resource_permissions
+        WHERE resource_type = @resourceType
+          AND resource_id = @resourceId
+          AND entity_type = 'user'
+          AND entity_id = @userId
+          AND permission_type = @permissionType
+          AND (expires_at IS NULL OR expires_at > GETUTCDATE());
+          
+        RETURN;
+    END
+    
+    -- Regular tenant-based permission check (existing logic)
+    -- ...
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CleanupExpiredSessions]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 15. Cleanup Expired Sessions
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_CleanupExpiredSessions]
 AS
 BEGIN
     SET NOCOUNT ON;
-    SET XACT_ABORT ON; -- Auto-rollback on error
+
+    UPDATE user_sessions
+    SET is_active = 0
+    WHERE expires_at < GETUTCDATE() AND is_active = 1;
+
+    SELECT @@ROWCOUNT AS sessions_cleaned;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateAuditLog]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 8. Create Audit Log
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_CreateAuditLog]
+    @tenantId BIGINT = NULL,
+    @userId BIGINT = NULL,
+    @entityType NVARCHAR(100),
+    @entityId BIGINT = NULL,
+    @actionType NVARCHAR(50),
+    @oldValues NVARCHAR(MAX) = NULL,
+    @newValues NVARCHAR(MAX) = NULL,
+    @ipAddress NVARCHAR(45) = NULL,
+    @userAgent NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO audit_logs (
+        tenant_id, user_id, entity_type, entity_id, action_type,
+        old_values, new_values, ip_address, user_agent
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @tenantId, @userId, @entityType, @entityId, @actionType,
+        @oldValues, @newValues, @ipAddress, @userAgent
+    );
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateChannel_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROCEDURE [dbo].[sp_CreateChannel_Fast]
+    @tenantId BIGINT,
+    @userId BIGINT,
+    @name NVARCHAR(255),
+    @channelType NVARCHAR(20),
+    @participantIds NVARCHAR(MAX),
+    @description NVARCHAR(MAX) = NULL,
+    @isPrivate BIT = 1,
+    @relatedType NVARCHAR(50) = NULL,
+    @relatedId BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
     
-    DECLARE @messageId BIGINT;
-    DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
+    DECLARE @channelId BIGINT;
     
     BEGIN TRANSACTION;
     
-    -- 1. Insert message (with index hint for speed)
-    INSERT INTO messages WITH (TABLOCK) (
-        channel_id, sender_tenant_id, sender_user_id, message_type,
-        encrypted_content, encryption_iv, encryption_auth_tag,
-        encryption_key_version, has_attachments, has_mentions,
-        reply_to_message_id, thread_id, 
-        sent_at, created_at, created_by
+    -- Create channel
+    INSERT INTO chat_channels (
+        created_by_tenant_id, name, description, channel_type,
+        related_type, related_id, participant_tenant_ids, is_private,
+        created_at, created_by, updated_at, updated_by
     )
     VALUES (
-        @channelId, @tenantId, @userId, @messageType,
-        @encryptedContent, @encryptionIv, @encryptionAuthTag,
-        @keyVersion, @hasAttachments, @hasMentions,
-        @replyToMessageId, @threadId,
-        @now, @now, @userId
+        @tenantId, @name, @description, @channelType,
+        @relatedType, @relatedId, @participantIds, @isPrivate,
+        GETUTCDATE(), @userId, GETUTCDATE(), @userId
     );
     
-    SET @messageId = SCOPE_IDENTITY();
+    SET @channelId = SCOPE_IDENTITY();
     
-    -- 2. Update channel stats (single UPDATE with ROWLOCK)
-    UPDATE chat_channels WITH (ROWLOCK)
-    SET message_count = message_count + 1,
-        last_message_at = @now,
-        last_activity_at = @now
+    -- Add participants (ensuring no duplicates)
+    WITH DistinctParticipants AS (
+        SELECT DISTINCT CAST(value AS BIGINT) AS user_id
+        FROM STRING_SPLIT(@participantIds, ',')
+        WHERE RTRIM(value) <> '' 
+        AND ISNUMERIC(value) = 1
+    )
+    INSERT INTO chat_participants (channel_id, tenant_id, user_id, role, created_at, created_by, updated_at, updated_by)
+    SELECT 
+        @channelId,
+        @tenantId,
+        dp.user_id,
+        CASE WHEN dp.user_id = @userId THEN 'owner' ELSE 'member' END,
+        GETUTCDATE(),
+        @userId,
+        GETUTCDATE(),
+        @userId
+    FROM DistinctParticipants dp
+    WHERE NOT EXISTS (
+        SELECT 1 
+        FROM chat_participants cp
+        WHERE cp.channel_id = @channelId 
+        AND cp.user_id = dp.user_id
+    );
+    
+    -- Update member count
+    UPDATE chat_channels
+    SET member_count = (
+        SELECT COUNT(*) 
+        FROM chat_participants 
+        WHERE channel_id = @channelId AND is_active = 1
+    )
     WHERE id = @channelId;
     
     COMMIT TRANSACTION;
     
-    -- 3. Return minimal data for broadcast
-    SELECT 
-        @messageId as id,
-        @channelId as channel_id,
-        @userId as sender_user_id,
-        @tenantId as sender_tenant_id,
-        @messageType as message_type,
-        @now as sent_at,
-        @keyVersion as encryption_key_version;
+    SELECT @channelId as channel_id;
 END;
 GO
 
--- ==================== 2. VALIDATE MESSAGE SEND (CACHED) ====================
--- Single query to validate user membership and get channel info
--- Target: 5-10ms with proper indexing
+/****** Object:  StoredProcedure [dbo].[sp_CreateChatNotification]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_ValidateMessageSend]
-    @channelId BIGINT,
-    @userId BIGINT
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- 3. Create notification helper procedure
+CREATE   PROCEDURE [dbo].[sp_CreateChatNotification]
+    @recipientId BIGINT,
+    @tenantId BIGINT,
+    @eventType NVARCHAR(100),
+    @message NVARCHAR(MAX),
+    @data NVARCHAR(MAX) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     
-    -- Single query with all validation
-    SELECT 
-        CASE WHEN cp.user_id IS NOT NULL THEN 1 ELSE 0 END as isMember,
-        c.encryption_version,
-        (
-            SELECT STRING_AGG(CAST(user_id AS VARCHAR(20)), ',')
-            FROM chat_participants WITH (NOLOCK)
-            WHERE channel_id = @channelId AND is_active = 1
-        ) as participant_ids
-    FROM chat_channels c WITH (NOLOCK)
-    LEFT JOIN chat_participants cp WITH (NOLOCK) 
-        ON cp.channel_id = c.id 
-        AND cp.user_id = @userId 
-        AND cp.is_active = 1
-    WHERE c.id = @channelId;
+    INSERT INTO notifications (
+        recipient_id, tenant_id, event_type, channel, 
+        message, data, priority, status, created_at
+    )
+    VALUES (
+        @recipientId, @tenantId, @eventType, 'in_app',
+        @message, @data, 'normal', 'pending', GETUTCDATE()
+    );
 END;
 GO
 
--- ==================== 3. BULK READ RECEIPTS (ASYNC) ====================
--- Single INSERT for all participants
--- Target: 30-50ms (run async, doesn't block message send)
+/****** Object:  StoredProcedure [dbo].[sp_CreateErrorLog]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_CreateReadReceiptsBulk]
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE   PROCEDURE [dbo].[sp_CreateErrorLog]
+    @tenant_id BIGINT = NULL,
+    @user_id BIGINT = NULL,
+    @error_type NVARCHAR(100),
+    @error_message NVARCHAR(MAX),
+    @stack_trace NVARCHAR(MAX) = NULL,
+    @request_url NVARCHAR(MAX) = NULL,
+    @request_method NVARCHAR(10) = NULL,
+    @request_body NVARCHAR(MAX) = NULL,
+    @severity NVARCHAR(20) = 'error',
+    @ip_address NVARCHAR(45) = NULL,
+    @user_agent NVARCHAR(MAX) = NULL,
+    @metadata NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[error_logs] (
+        tenant_id, user_id, error_type, error_message, stack_trace,
+        request_url, request_method, request_body, severity,  metadata, created_at
+    )
+    VALUES (
+        @tenant_id, @user_id, @error_type, @error_message, @stack_trace,
+        @request_url, @request_method, @request_body, @severity,
+         @metadata, GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateNotification]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ==================== NOTIFICATIONS ====================
+
+-- SP: Create Notification
+-- FIX: Changed user_id to recipient_id and added event_type, channel
+CREATE     PROCEDURE [dbo].[sp_CreateNotification]
+    @recipient_id BIGINT,
+    @tenant_id BIGINT = NULL,
+    @event_type NVARCHAR(100),
+    @channel NVARCHAR(50) = 'in_app',
+    @subject NVARCHAR(500) = NULL,
+    @message NVARCHAR(MAX),
+    @data NVARCHAR(MAX) = NULL,
+    @priority NVARCHAR(20) = 'normal'
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[notifications] (
+        recipient_id, tenant_id, event_type, channel, subject, message, data, priority,
+        status, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @recipient_id, @tenant_id, @event_type, @channel, @subject, @message, @data, @priority,
+        'pending', GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateReadReceiptsBulk_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== 4. CREATE READ RECEIPTS (BULK) ====================
+CREATE PROCEDURE [dbo].[sp_CreateReadReceiptsBulk_Fast]
     @messageId BIGINT,
     @channelId BIGINT,
     @senderId BIGINT
@@ -3064,7 +6020,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
     
-    -- Bulk insert all receipts in one operation
     INSERT INTO message_read_receipts (message_id, user_id, status, created_at)
     SELECT 
         @messageId,
@@ -3080,48 +6035,504 @@ BEGIN
 END;
 GO
 
--- ==================== 4. GET MESSAGES (OPTIMIZED) ====================
--- Single query with covering index
--- Target: 20-30ms
+/****** Object:  StoredProcedure [dbo].[sp_CreateSecurityEvent]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_GetMessages_UltraFast]
-    @channelId BIGINT,
-    @limit INT = 50,
-    @beforeId BIGINT = NULL
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- =====================================================
+-- MISSING STORED PROCEDURES
+-- =====================================================
+
+-- SP: Create Security Event
+CREATE     PROCEDURE [dbo].[sp_CreateSecurityEvent]
+    @tenant_id BIGINT = NULL,
+    @user_id BIGINT = NULL,
+    @event_type NVARCHAR(100),
+    @event_category NVARCHAR(50),
+    @severity NVARCHAR(20),
+    @description NVARCHAR(MAX),
+    @ip_address NVARCHAR(45) = NULL,
+    @user_agent NVARCHAR(MAX) = NULL,
+    @location NVARCHAR(MAX) = NULL,
+    @resource_type NVARCHAR(50) = NULL,
+    @resource_id BIGINT = NULL,
+    @action_taken NVARCHAR(MAX) = NULL,
+    @risk_score INT = 0,
+    @is_anomaly BIT = 0
 AS
 BEGIN
     SET NOCOUNT ON;
     
-    SELECT TOP (@limit)
-        m.id,
-        m.sender_user_id,
-        m.message_type,
-        m.encrypted_content,
-        m.encryption_iv,
-        m.encryption_auth_tag,
-        m.encryption_key_version,
-        m.has_attachments,
-        m.has_mentions,
-        m.reply_to_message_id,
-        m.thread_id,
-        m.sent_at,
-        u.first_name,
-        u.last_name,
-        u.avatar_url
-    FROM messages m WITH (NOLOCK)
-    INNER JOIN users u WITH (NOLOCK) ON m.sender_user_id = u.id
-    WHERE m.channel_id = @channelId
-    AND m.is_deleted = 0
-    AND (@beforeId IS NULL OR m.id < @beforeId)
-    ORDER BY m.sent_at DESC;
+    INSERT INTO [dbo].[security_events] (
+        tenant_id, user_id, event_type, event_category, severity,
+        description, ip_address, user_agent, location,
+        resource_type, resource_id, action_taken, risk_score, is_anomaly,
+        is_resolved, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @tenant_id, @user_id, @event_type, @event_category, @severity,
+        @description, @ip_address, @user_agent, @location,
+        @resource_type, @resource_id, @action_taken, @risk_score, @is_anomaly,
+        0, GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateSystemEvent]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ==================== SYSTEM EVENTS ====================
+
+-- SP: Create System Event
+-- FIX: Changed severity parameter name from @severity to match column
+CREATE     PROCEDURE [dbo].[sp_CreateSystemEvent]
+    @tenant_id BIGINT = NULL,
+    @user_id BIGINT = NULL,
+    @event_type NVARCHAR(100),
+    @event_name NVARCHAR(255),
+    @event_data NVARCHAR(MAX) = NULL,
+    @source NVARCHAR(100) = NULL,
+    @session_id BIGINT = NULL,
+    @ip_address NVARCHAR(45) = NULL,
+    @user_agent NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[system_events] (
+        tenant_id, user_id, event_type, event_name, event_data,
+        source, session_id, ip_address, user_agent,
+        created_at
+    )
+    VALUES (
+        @tenant_id, @user_id, @event_type, @event_name, @event_data,
+        @source, @session_id, @ip_address, @user_agent,
+        GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateTenant]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE   PROCEDURE [dbo].[sp_CreateTenant]
+    @tenant_type NVARCHAR(20),
+    @name NVARCHAR(255),
+    @slug NVARCHAR(100),
+    @owner_user_id BIGINT,
+    @timezone NVARCHAR(50) = 'UTC',
+    @locale NVARCHAR(10) = 'en-US',
+    @metadata NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        DECLARE @tenantId BIGINT;
+        DECLARE @defaultRole NVARCHAR(50);
+        DECLARE @ownerRoleId BIGINT;
+
+        ----------------------------------------------
+        -- 1️⃣ Create Tenant
+        ----------------------------------------------
+        INSERT INTO [dbo].[tenants] (
+            tenant_type, name, slug, owner_user_id,
+            timezone, locale, metadata, status,
+            created_at, created_by
+        )
+        VALUES (
+            @tenant_type, @name, @slug, @owner_user_id,
+            @timezone, @locale, @metadata, 'active',
+            GETUTCDATE(), @owner_user_id
+        );
+
+        SET @tenantId = SCOPE_IDENTITY();
+
+        ----------------------------------------------
+        -- 2️⃣ Determine Default Owner Role
+        ----------------------------------------------
+        SET @defaultRole = (
+            CASE 
+                WHEN @tenant_type = 'agency' THEN 'agency_admin'
+                WHEN @tenant_type = 'brand' THEN 'brand_admin'
+                WHEN @tenant_type = 'creator' THEN 'creator_admin'
+                ELSE 'super_admin'
+            END
+        );
+
+        ----------------------------------------------
+        -- 3️⃣ Fetch Role ID
+        ----------------------------------------------
+        SELECT TOP 1 @ownerRoleId = id
+        FROM [dbo].[roles]
+        WHERE name = @defaultRole AND is_system_role = 1;
+
+        ----------------------------------------------
+        -- 4️⃣ Add Owner in tenant_members
+        ----------------------------------------------
+        INSERT INTO [dbo].[tenant_members] (
+            tenant_id, user_id, role_id, member_type, joined_at, created_at
+        )
+        VALUES (
+            @tenantId, @owner_user_id, @ownerRoleId,
+            @tenant_type, GETUTCDATE(), GETUTCDATE()
+        );
+
+        ----------------------------------------------
+        -- 5️⃣ Assign Role in user_roles (Idempotent)
+        ----------------------------------------------
+        IF NOT EXISTS (
+            SELECT 1 
+            FROM [dbo].[user_roles]
+            WHERE user_id = @owner_user_id 
+              AND role_id = @ownerRoleId
+        )
+        BEGIN
+            INSERT INTO [dbo].[user_roles] (
+                user_id, role_id, created_by, updated_by
+            )
+            VALUES (
+                @owner_user_id, @ownerRoleId,
+                @owner_user_id, @owner_user_id
+            );
+        END
+
+        ----------------------------------------------
+        -- 6️⃣ Return created tenant
+        ----------------------------------------------
+        SELECT * 
+        FROM [dbo].[tenants] 
+        WHERE id = @tenantId;
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateUser]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+ CREATE        PROCEDURE [dbo].[sp_CreateUser]
+    @email NVARCHAR(320),
+    @password_hash NVARCHAR(255),
+    @first_name NVARCHAR(100) = NULL,
+    @last_name NVARCHAR(100) = NULL,
+    @public_key NVARCHAR(MAX),
+    @encrypted_private_key NVARCHAR(MAX),
+    @user_type NVARCHAR(50) = 'pending',
+    @created_by BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[users] (
+        email, password_hash, first_name, last_name, 
+        display_name, user_type, status,
+        key_version, key_created_at,
+        created_at, created_by
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @email, @password_hash, @first_name, @last_name,
+        CONCAT(ISNULL(@first_name, ''), ' ', ISNULL(@last_name, '')), 
+        @user_type, 'pending',
+        1, GETUTCDATE(),
+        GETUTCDATE(), @created_by
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateUserEncryptionKey]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- Create procedure to create/update user encryption key
+CREATE   PROCEDURE [dbo].[sp_CreateUserEncryptionKey]
+    @UserId BIGINT,
+    @PublicKeyPem NVARCHAR(MAX),
+    @EncryptedPrivateKeyPem NVARCHAR(MAX),
+    @BackupEncryptedPrivateKey NVARCHAR(MAX) = NULL,
+    @CreatedBy BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        -- Deactivate existing keys
+        UPDATE [dbo].[user_encryption_keys]
+        SET status = 'inactive',
+            updated_at = GETUTCDATE()
+        WHERE user_id = @UserId
+        AND status = 'active';
+        -- Calculate fingerprints
+        DECLARE @KeyFingerprint NVARCHAR(64) = SUBSTRING(CONVERT(NVARCHAR(MAX), HASHBYTES('SHA2_256', @PublicKeyPem), 2), 1, 64);
+        DECLARE @KeyFingerprintShort NVARCHAR(16) = SUBSTRING(@KeyFingerprint, 1, 16);
+        -- Insert new key
+        INSERT INTO [dbo].[user_encryption_keys] (
+            user_id,
+            public_key_pem,
+            encrypted_private_key_pem,
+            key_fingerprint,
+            key_fingerprint_short,
+            backup_encrypted_private_key,
+            backup_created_at,
+            status,
+            key_version,
+            created_at,
+            created_by
+        )
+        VALUES (
+            @UserId,
+            @PublicKeyPem,
+            @EncryptedPrivateKeyPem,
+            @KeyFingerprint,
+            @KeyFingerprintShort,
+            @BackupEncryptedPrivateKey,
+            CASE WHEN @BackupEncryptedPrivateKey IS NOT NULL THEN GETUTCDATE() ELSE NULL END,
+            'active',
+            ISNULL((SELECT MAX(key_version) FROM [dbo].[user_encryption_keys] WHERE user_id = @UserId), 0) + 1,
+            GETUTCDATE(),
+            COALESCE(@CreatedBy, @UserId)
+        );
+        SELECT CAST(SCOPE_IDENTITY() AS BIGINT) AS KeyId;
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateUserSession]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- SP: Create User Session
+-- FIX: Removed session_type and tenant_id parameters that don't exist in table
+CREATE     PROCEDURE [dbo].[sp_CreateUserSession]
+    @user_id BIGINT,
+    @active_tenant_id BIGINT = NULL,
+    @session_token NVARCHAR(512),
+    @ip_address NVARCHAR(45),
+    @device_name NVARCHAR(255) = NULL,
+    @browser_name NVARCHAR(100) = NULL,
+    @os_name NVARCHAR(100) = NULL,
+    @expires_at DATETIME2(7)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO [dbo].[user_sessions] (
+        user_id, active_tenant_id, session_token,
+        ip_address, device_name, browser_name, os_name, expires_at,
+        last_activity_at, is_active, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @user_id, @active_tenant_id, @session_token,
+        @ip_address, @device_name, @browser_name, @os_name, @expires_at,
+        GETUTCDATE(), 1, GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateVerificationCode]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ==================== VERIFICATION CODES ====================
+
+-- SP: Create Verification Code
+CREATE     PROCEDURE [dbo].[sp_CreateVerificationCode]
+    @user_id BIGINT = NULL,
+    @email NVARCHAR(320),
+    @code NVARCHAR(10),
+    @code_type NVARCHAR(20),
+    @expires_at DATETIME2(7),
+    @max_attempts INT = 5,
+    @ip_address NVARCHAR(45) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    -- Invalidate previous codes of same type
+    UPDATE [dbo].[verification_codes]
+    SET used_at = GETUTCDATE()
+    WHERE email = @email 
+        AND code_type = @code_type 
+        AND used_at IS NULL;
+    
+    -- Create new code
+    INSERT INTO [dbo].[verification_codes] (
+        user_id, email, code, code_type, expires_at, 
+        max_attempts, attempts, ip_address, created_at
+    )
+    OUTPUT INSERTED.*
+    VALUES (
+        @user_id, @email, @code, @code_type, @expires_at,
+        @max_attempts, 0, @ip_address, GETUTCDATE()
+    );
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_DeleteEmailTemplate]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 5. Delete Email Template
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_DeleteEmailTemplate]
+    @id BIGINT,
+    @organizationId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM email_templates
+    OUTPUT 1 AS affected_rows
+    WHERE id = @id AND tenant_id = @organizationId;
 END;
 GO
 
--- ==================== 5. GET CHANNEL MEMBERS (FOR CACHE) ====================
--- Fast lookup for WebSocket routing
--- Target: 5-10ms
+/****** Object:  StoredProcedure [dbo].[sp_EndUserSession]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_GetChannelMembers_Fast]
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- SP: End User Session
+-- FIX: Changed logged_out_at to use updated_at (column doesn't exist in table)
+CREATE     PROCEDURE [dbo].[sp_EndUserSession]
+    @session_token NVARCHAR(512)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    UPDATE [dbo].[user_sessions]
+    SET is_active = 0,
+        updated_at = GETUTCDATE()
+    WHERE session_token = @session_token;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetActiveSession]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- SP: Get Active Session
+CREATE     PROCEDURE [dbo].[sp_GetActiveSession]
+    @session_token NVARCHAR(512)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT *
+    FROM [dbo].[user_sessions]
+    WHERE session_token = @session_token
+        AND is_active = 1
+        AND expires_at > GETUTCDATE();
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetAuditLogs]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE     PROCEDURE [dbo].[sp_GetAuditLogs]
+    @userId BIGINT = NULL,
+    @tenantId BIGINT = NULL,
+    @entityType NVARCHAR(100) = NULL,
+    @startDate DATETIME2(7) = NULL,
+    @endDate DATETIME2(7) = NULL,
+    @limit INT = 100,
+    @offset INT = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT *
+    FROM audit_logs
+    WHERE 1=1
+        AND (@userId IS NULL OR user_id = @userId)
+        AND (@tenantId IS NULL OR tenant_id = @tenantId)
+        AND (@entityType IS NULL OR entity_type = @entityType)
+        AND (@startDate IS NULL OR created_at >= @startDate)
+        AND (@endDate IS NULL OR created_at <= @endDate)
+    ORDER BY created_at DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+END
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetChannelMembers_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== 6. GET CHANNEL MEMBERS ====================
+CREATE PROCEDURE [dbo].[sp_GetChannelMembers_Fast]
     @channelId BIGINT
 AS
 BEGIN
@@ -3134,36 +6545,988 @@ BEGIN
 END;
 GO
 
--- ==================== 6. GET USER CHANNELS (FOR CONNECTION) ====================
--- Fast lookup when user connects
--- Target: 10-20ms
+/****** Object:  StoredProcedure [dbo].[sp_GetEmailTemplate]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_GetUserChannels_Fast]
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+
+-- ============================================
+-- 2. Get Email Template
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_GetEmailTemplate]
+    @tenant_id BIGINT = NULL,
+    @category NVARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Try to get tenant-specific template first
+    IF @tenant_id IS NOT NULL
+    BEGIN
+        SELECT TOP 1 *
+        FROM email_templates
+        WHERE tenant_id = @tenant_id 
+          AND category = @category 
+          AND is_active = 1
+        ORDER BY created_at DESC;
+
+        IF @@ROWCOUNT > 0
+            RETURN;
+    END
+
+    -- Fall back to system-wide template
+    SELECT TOP 1 *
+    FROM email_templates
+    WHERE (tenant_id IS NULL OR tenant_id = 0)
+      AND category = @category 
+      AND is_active = 1
+    ORDER BY created_at DESC;
+
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetMessages_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== 2. GET MESSAGES ====================
+CREATE PROCEDURE [dbo].[sp_GetMessages_Fast]
+    @channelId BIGINT,
+    @limit INT = 50,
+    @beforeId BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT TOP (@limit)
+        m.id,
+        m.sender_user_id,
+        m.message_type,
+        m.content, -- ✅ Plain text
+        m.has_attachments,
+        m.has_mentions,
+        m.reply_to_message_id,
+        m.thread_id,
+        m.sent_at,
+        m.is_edited,
+        m.edited_at,
+        u.first_name,
+        u.last_name,
+        u.avatar_url,
+        ISNULL((SELECT COUNT(*) FROM message_reactions WHERE message_id = m.id), 0) as reaction_count
+    FROM messages m WITH (NOLOCK)
+    INNER JOIN users u WITH (NOLOCK) ON m.sender_user_id = u.id
+    WHERE m.channel_id = @channelId
+    AND m.is_deleted = 0
+    AND (@beforeId IS NULL OR m.id < @beforeId)
+    ORDER BY m.sent_at DESC;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetOrganizationTemplates]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 4. Get Tenant Templates
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_GetOrganizationTemplates]
+    @organizationId BIGINT,
+    @includeGlobal BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @includeGlobal = 1
+    BEGIN
+        SELECT *
+        FROM email_templates
+        WHERE (tenant_id = @organizationId OR tenant_id IS NULL)
+          AND is_active = 1
+        ORDER BY tenant_id DESC, category, created_at DESC;
+    END
+    ELSE
+    BEGIN
+        SELECT *
+        FROM email_templates
+        WHERE tenant_id = @organizationId
+          AND is_active = 1
+        ORDER BY category, created_at DESC;
+    END
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetSystemConfigByKey]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ==================== SYSTEM CONFIG ====================
+
+-- SP: Get System Config by Key
+-- FIX: Removed environment parameter (doesn't exist in query)
+CREATE     PROCEDURE [dbo].[sp_GetSystemConfigByKey]
+    @config_key NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT *
+    FROM [dbo].[system_config]
+    WHERE config_key = @config_key;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantMembers]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 11. Get Tenant Members with Roles
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_GetTenantMembers]
+    @tenantId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        tm.id AS member_id,
+        tm.member_type,
+        tm.joined_at,
+        tm.is_active,
+        u.id AS user_id,
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.avatar_url,
+        u.last_active_at,
+        r.id AS role_id,
+        r.name AS role_name,
+        r.display_name AS role_display_name
+    FROM tenant_members tm
+    JOIN users u ON tm.user_id = u.id
+    LEFT JOIN roles r ON tm.role_id = r.id
+    WHERE tm.tenant_id = @tenantId
+    ORDER BY tm.joined_at DESC;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantUsageStats]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 13. Get Tenant Usage Stats
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_GetTenantUsageStats]
+    @tenantId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        -- Limits
+        max_staff,
+        max_storage_gb,
+        max_campaigns,
+        max_invitations,
+        max_creators,
+        max_brands,
+        
+        -- Current usage
+        current_staff,
+        current_storage_gb,
+        current_campaigns,
+        current_invitations,
+        current_creators,
+        current_brands,
+        
+        -- Calculated percentages
+        CASE WHEN max_staff > 0 
+             THEN (CAST(current_staff AS FLOAT) / max_staff) * 100 
+             ELSE 0 END AS staff_usage_percent,
+        
+        CASE WHEN max_storage_gb > 0 
+             THEN (CAST(current_storage_gb AS FLOAT) / max_storage_gb) * 100 
+             ELSE 0 END AS storage_usage_percent,
+        
+        CASE WHEN max_campaigns > 0 
+             THEN (CAST(current_campaigns AS FLOAT) / max_campaigns) * 100 
+             ELSE 0 END AS campaigns_usage_percent
+    FROM tenants
+    WHERE id = @tenantId;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUnreadCount_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== 8. GET UNREAD COUNT ====================
+CREATE PROCEDURE [dbo].[sp_GetUnreadCount_Fast]
     @userId BIGINT
 AS
 BEGIN
     SET NOCOUNT ON;
     
+    SELECT COUNT(*) as unread_count
+    FROM chat_participants cp WITH (NOLOCK)
+    INNER JOIN messages m WITH (NOLOCK) 
+        ON m.channel_id = cp.channel_id
+    WHERE cp.user_id = @userId
+    AND cp.is_active = 1
+    AND m.sent_at > ISNULL(cp.last_read_at, '1900-01-01')
+    AND m.sender_user_id != @userId
+    AND m.is_deleted = 0;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAccessibleMenus]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ============================================
+-- FIXED: sp_GetUserAccessibleMenus - Production Ready
+-- Handles ALL user types correctly with proper menu filtering
+-- ============================================
+
+CREATE     PROCEDURE [dbo].[sp_GetUserAccessibleMenus]
+    @userId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- 🔍 Get user details with proper type checking
+    DECLARE @userType NVARCHAR(50);
+    DECLARE @isSuperAdmin BIT = 0;
+    DECLARE @tenantId INT = NULL;
+
     SELECT 
+        @userType = u.user_type,
+        @isSuperAdmin = ISNULL(u.is_super_admin, 0),
+        @tenantId = tm.tenant_id
+    FROM users u
+    LEFT JOIN tenant_members tm ON u.id = tm.user_id AND tm.is_active = 1
+    WHERE u.id = @userId;
+
+    -- ✅ Check if user exists
+    IF @userType IS NULL
+    BEGIN
+        RAISERROR('User not found', 16, 1);
+        RETURN;
+    END;
+
+    -- 📊 RESULT SET 1: User's Effective Permissions
+    -- Super admins get ALL permissions, others get role-based
+    IF @isSuperAdmin = 1 OR @userType IN ('super_admin', 'owner')
+    BEGIN
+        -- Super admin: ALL permissions
+        SELECT DISTINCT
+            p.id,
+            p.permission_key,
+            p.resource,
+            p.action,
+            p.category,
+            p.description,
+            1 as is_super_admin
+        FROM permissions p        
+        ORDER BY p.category, p.resource, p.action;
+    END
+    ELSE
+    BEGIN
+        -- Regular users: Role-based permissions
+        SELECT DISTINCT
+            p.id,
+            p.permission_key,
+            p.resource,
+            p.action,
+            p.category,
+            p.description,
+            0 as is_super_admin
+        FROM user_roles ur
+        INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+        INNER JOIN permissions p ON rp.permission_id = p.id
+        WHERE ur.user_id = @userId 
+            AND ur.is_active = 1
+        ORDER BY p.category, p.resource, p.action;
+    END;
+
+    -- 📊 RESULT SET 2: Accessible Menus (with proper hierarchy)
+    -- Super admins see ALL menus, others see only permitted ones
+    IF @isSuperAdmin = 1 OR @userType IN ('super_admin', 'owner')
+    BEGIN
+        -- Super admin: ALL menus
+        SELECT DISTINCT
+            mp.menu_key,
+            mp.is_required,
+            1 as has_access,
+            'Super Admin - Full Access' as access_reason
+        FROM menu_permissions mp
+        ORDER BY mp.menu_key;
+    END
+    ELSE
+    BEGIN
+        -- Regular users: Check each menu's required permissions
+        WITH UserPermissionKeys AS (
+            SELECT DISTINCT p.permission_key
+            FROM user_roles ur
+            INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+            INNER JOIN permissions p ON rp.permission_id = p.id
+            WHERE ur.user_id = @userId 
+                AND ur.is_active = 1
+        ),
+        MenuAccessCheck AS (
+            SELECT 
+                mp.menu_key,
+                mp.permission_id,
+                p.permission_key,
+                mp.is_required,
+                CASE 
+                    WHEN upk.permission_key IS NOT NULL THEN 1 
+                    ELSE 0 
+                END as has_permission
+            FROM menu_permissions mp
+            INNER JOIN permissions p ON mp.permission_id = p.id
+            LEFT JOIN UserPermissionKeys upk ON p.permission_key = upk.permission_key
+        ),
+        MenuAccessSummary AS (
+            SELECT 
+                menu_key,
+                COUNT(*) as total_permissions,
+                SUM(CASE WHEN is_required = 1 THEN 1 ELSE 0 END) as required_permissions,
+                SUM(CASE WHEN is_required = 1 AND has_permission = 1 THEN 1 ELSE 0 END) as satisfied_required,
+                SUM(CASE WHEN has_permission = 1 THEN 1 ELSE 0 END) as granted_permissions
+            FROM MenuAccessCheck
+            GROUP BY menu_key
+        )
+        SELECT 
+            menu_key,
+            CASE 
+                WHEN required_permissions = 0 THEN 1 -- No required perms = accessible
+                WHEN satisfied_required = required_permissions THEN 1 -- All required satisfied
+                ELSE 0 
+            END as has_access,
+            CASE 
+                WHEN required_permissions = 0 THEN 'No permissions required'
+                WHEN satisfied_required = required_permissions THEN 
+                    CAST(satisfied_required AS VARCHAR) + '/' + CAST(required_permissions AS VARCHAR) + ' required permissions granted'
+                ELSE 
+                    'Missing ' + CAST(required_permissions - satisfied_required AS VARCHAR) + ' required permissions'
+            END as access_reason,
+            required_permissions,
+            satisfied_required,
+            granted_permissions
+        FROM MenuAccessSummary
+        ORDER BY menu_key;
+    END;
+
+    -- 📊 RESULT SET 3: Blocked Menus with Reasons
+    -- Only for regular users (super admins never blocked)
+    IF @isSuperAdmin = 1 OR @userType IN ('super_admin', 'owner')
+    BEGIN
+        -- Super admin: No blocked menus
+        SELECT 
+            NULL as menu_key,
+            NULL as missing_permissions,
+            'Super Admin - No Restrictions' as block_reason
+        WHERE 1 = 0; -- Return empty result set with correct structure
+    END
+    ELSE
+    BEGIN
+        WITH UserPermissionKeys AS (
+            SELECT DISTINCT p.permission_key
+            FROM user_roles ur
+            INNER JOIN role_permissions rp ON ur.role_id = rp.role_id
+            INNER JOIN permissions p ON rp.permission_id = p.id
+            WHERE ur.user_id = @userId 
+                AND ur.is_active = 1
+        ),
+        BlockedMenus AS (
+            SELECT 
+                mp.menu_key,
+                p.permission_key,
+                mp.is_required
+            FROM menu_permissions mp
+            INNER JOIN permissions p ON mp.permission_id = p.id
+            LEFT JOIN UserPermissionKeys upk ON p.permission_key = upk.permission_key
+            WHERE mp.is_required = 1 
+                AND upk.permission_key IS NULL
+        )
+        SELECT 
+            menu_key,
+            STRING_AGG(permission_key, ', ') as missing_permissions,
+            'Missing required permissions: ' + STRING_AGG(permission_key, ', ') as block_reason
+        FROM BlockedMenus
+        GROUP BY menu_key
+        ORDER BY menu_key;
+    END;
+
+    -- 📊 RESULT SET 4: User Context (for debugging & logging)
+    SELECT 
+        @userId as user_id,
+        @userType as user_type,
+        @isSuperAdmin as is_super_admin,
+        @tenantId as tenant_id,
+        CASE 
+            WHEN @isSuperAdmin = 1 OR @userType IN ('super_admin', 'owner') THEN 'FULL_ACCESS'
+            ELSE 'ROLE_BASED'
+        END as access_mode,
+        GETUTCDATE() as checked_at;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAuthData]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+-- =====================================================
+-- FIXED: sp_GetUserAuthData - Returns COMPLETE User Data
+-- =====================================================
+CREATE   PROCEDURE [dbo].[sp_GetUserAuthData] 
+    @userId BIGINT 
+AS 
+BEGIN 
+    SET NOCOUNT ON; 
+    
+    -- ============================================
+    -- RESULT SET 1: User Data (with userType)
+    -- ============================================
+    SELECT 
+        u.id, 
+        u.email, 
+        u.username, 
+        u.user_type AS userType,  -- ✅ FIX: Map to camelCase
+        u.first_name AS firstName, 
+        u.last_name AS lastName, 
+        u.display_name AS displayName, 
+        u.avatar_url AS avatarUrl, 
+        ISNULL(u.is_super_admin, 0) AS isSuperAdmin, 
+        u.email_verified_at AS emailVerifiedAt, 
+        u.status, 
+        ISNULL(u.two_factor_enabled, 0) AS twoFactorEnabled,
+        uek.public_key_pem AS publicKey,  -- From user_encryption_keys
+        -- ✅ FIX: Get active tenant ID from tenant_members
+        (SELECT TOP 1 tenant_id 
+         FROM tenant_members 
+         WHERE user_id = u.id 
+           AND is_active = 1 
+         ORDER BY joined_at DESC) AS activeTenantId
+    FROM [dbo].[users] u 
+    LEFT JOIN [dbo].[user_encryption_keys] uek 
+        ON u.id = uek.user_id 
+        AND uek.status = 'active'
+    WHERE u.id = @userId 
+        AND u.status = 'active' 
+        AND u.email_verified_at IS NOT NULL; 
+    
+    -- ============================================
+    -- RESULT SET 2: User Roles (comma-separated)
+    -- ============================================
+    SELECT STRING_AGG(r.name, ',') AS roles 
+    FROM [dbo].[user_roles] ur
+    INNER JOIN [dbo].[roles] r ON ur.role_id = r.id 
+    WHERE ur.user_id = @userId 
+        AND ur.is_active = 1; 
+    
+    -- ============================================
+    -- RESULT SET 3: User Permissions (comma-separated)
+    -- ============================================
+    SELECT STRING_AGG(p.permission_key, ',') WITHIN GROUP (ORDER BY p.permission_key) AS permissions 
+    FROM [dbo].[user_roles] ur
+    INNER JOIN [dbo].[role_permissions] rp ON ur.role_id = rp.role_id 
+    INNER JOIN [dbo].[permissions] p ON rp.permission_id = p.id 
+    WHERE ur.user_id = @userId 
+        AND ur.is_active = 1; 
+    
+    -- ============================================
+    -- RESULT SET 4: All Accessible Tenants (NEW)
+    -- ============================================
+    SELECT 
+        tm.tenant_id AS tenantId,
+        t.name AS tenantName,
+        t.tenant_type AS tenantType,
+        t.slug AS tenantSlug,
+        r.name AS roleName,
+        r.display_name AS roleDisplayName,
+        tm.is_active AS isActive,
+        tm.joined_at AS joinedAt
+    FROM [dbo].[tenant_members] tm
+    INNER JOIN [dbo].[tenants] t ON tm.tenant_id = t.id
+    LEFT JOIN [dbo].[roles] r ON tm.role_id = r.id
+    WHERE tm.user_id = @userId 
+        AND tm.is_active = 1
+        AND t.status = 'active'
+    ORDER BY 
+        CASE WHEN tm.role_id IN (
+            SELECT id FROM roles WHERE name IN ('owner', 'super_admin', 'agency_admin', 'brand_admin', 'creator_admin')
+        ) THEN 0 ELSE 1 END,
+        tm.joined_at DESC;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUserChannels_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== 7. GET USER CHANNELS ====================
+CREATE PROCEDURE [dbo].[sp_GetUserChannels_Fast]
+    @userId BIGINT,
+    @limit INT = 50
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT TOP (@limit)
         c.id as channel_id,
         c.name,
         c.channel_type,
-        c.last_activity_at
-    FROM chat_channels c WITH (NOLOCK)
-    INNER JOIN chat_participants cp WITH (NOLOCK) 
+        c.last_message_at,
+        c.message_count,
+        cp.last_read_message_id,
+        cp.is_muted,
+        (
+            SELECT COUNT(*) 
+            FROM messages m WITH (NOLOCK)
+            WHERE m.channel_id = c.id
+            AND m.sent_at > ISNULL(cp.last_read_at, '1900-01-01')
+            AND m.sender_user_id != @userId
+            AND m.is_deleted = 0
+        ) as unread_count
+    FROM chat_participants cp WITH (NOLOCK)
+    INNER JOIN chat_channels c WITH (NOLOCK) ON cp.channel_id = c.id
+    WHERE cp.user_id = @userId
+    AND cp.is_active = 1
+    ORDER BY c.last_activity_at DESC;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUserChannels_Ultra]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- 3. GET USER CHANNELS (30ms target)
+CREATE   PROCEDURE [dbo].[sp_GetUserChannels_Ultra]
+    @userId BIGINT,
+    @tenantId BIGINT,
+    @limit INT = 50
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT TOP (@limit)
+        c.id,
+        c.name,
+        c.channel_type,
+        c.is_private,
+        c.last_activity_at,
+        c.message_count,
+        cp.role as user_role,
+        cp.encrypted_channel_key,
+        cp.last_read_message_id,
+        ISNULL((
+            SELECT COUNT(*) 
+            FROM messages m WITH (NOLOCK)
+            WHERE m.channel_id = c.id 
+            AND m.is_deleted = 0
+            AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)
+        ), 0) as unread_count
+    FROM chat_channels c WITH (NOLOCK, INDEX(IX_channels_tenant_activity_ULTRA))
+    INNER JOIN chat_participants cp WITH (NOLOCK, INDEX(IX_participants_user_tenant_ULTRA)) 
         ON c.id = cp.channel_id
     WHERE cp.user_id = @userId
     AND cp.is_active = 1
+    AND c.created_by_tenant_id = @tenantId
     AND c.is_archived = 0
     ORDER BY c.last_activity_at DESC;
 END;
 GO
 
--- ==================== 7. MARK AS READ (ASYNC) ====================
--- Non-blocking read receipt update
--- Target: 20-30ms (run async)
+/****** Object:  StoredProcedure [dbo].[sp_GetUserEncryptionKey]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_MarkAsRead_Async]
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- Create procedure to get user's active encryption key
+CREATE   PROCEDURE [dbo].[sp_GetUserEncryptionKey]
+    @UserId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT TOP 1
+        id,
+        user_id,
+        public_key_pem,
+        key_fingerprint,
+        key_fingerprint_short,
+        key_version,
+        status,
+        created_at,
+        expires_at
+    FROM [dbo].[user_encryption_keys]
+    WHERE user_id = @UserId
+    AND status = 'active'
+    AND (expires_at IS NULL OR expires_at > GETUTCDATE())
+    ORDER BY key_version DESC;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_GetUserSessions]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 9. Get User Sessions
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_GetUserSessions]
+    @userId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        id,
+        active_tenant_id,
+        device_name,
+        device_type,
+        browser_name,
+        os_name,
+        ip_address,
+        last_activity_at,
+        is_active,
+        expires_at,
+        created_at
+    FROM user_sessions
+    WHERE user_id = @userId
+    ORDER BY last_activity_at DESC;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_IncrementTemplateUsage]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 6. Increment Template Usage
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_IncrementTemplateUsage]
+    @template_id BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE email_templates
+    SET usage_count = usage_count + 1
+    WHERE id = @template_id;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_ListMenuPermissions]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ==================== sp_ListMenuPermissions ====================
+CREATE     PROCEDURE [dbo].[sp_ListMenuPermissions]
+    @page INT = 1,
+    @limit INT = 50,
+    @search NVARCHAR(255) = NULL,
+    @menuKey NVARCHAR(100) = NULL,
+    @category NVARCHAR(100) = NULL,
+    @sortBy NVARCHAR(50) = 'created_at',
+    @sortOrder NVARCHAR(4) = 'DESC'
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @offset INT = (@page - 1) * @limit;
+    DECLARE @totalCount INT;
+
+    -- Build where clause
+    DECLARE @whereClause NVARCHAR(MAX) = 'WHERE 1=1';
+
+    IF @menuKey IS NOT NULL
+        SET @whereClause = @whereClause + ' AND mp.menu_key = @menuKey';
+
+    IF @category IS NOT NULL
+        SET @whereClause = @whereClause + ' AND p.category = @category';
+
+    IF @search IS NOT NULL
+        SET @whereClause = @whereClause + ' AND (mp.menu_key LIKE ''%'' + @search + ''%'' OR p.permission_key LIKE ''%'' + @search + ''%'')';
+
+    -- Get total count
+    DECLARE @countQuery NVARCHAR(MAX) = 
+        'SELECT @totalCount = COUNT(*) 
+         FROM menu_permissions mp
+         INNER JOIN permissions p ON mp.permission_id = p.id ' + @whereClause;
+    
+    EXEC sp_executesql @countQuery,
+        N'@menuKey NVARCHAR(100), @category NVARCHAR(100), @search NVARCHAR(255), @totalCount INT OUTPUT',
+        @menuKey, @category, @search, @totalCount OUTPUT;
+
+    -- Build sort clause
+    DECLARE @orderBy NVARCHAR(100) = 
+        CASE @sortBy
+            WHEN 'menu_key' THEN 'mp.menu_key'
+            WHEN 'permission_name' THEN 'p.permission_key'
+            ELSE 'mp.created_at'
+        END + ' ' + @sortOrder;
+
+    -- Get paginated results
+    DECLARE @dataQuery NVARCHAR(MAX) =
+        'SELECT 
+            mp.id,
+            mp.menu_key,
+            mp.permission_id,
+            mp.is_required,
+            mp.created_at,
+            p.permission_key,
+            p.resource,
+            p.action,
+            p.category,
+            p.description
+         FROM menu_permissions mp
+         INNER JOIN permissions p ON mp.permission_id = p.id ' + @whereClause +
+        ' ORDER BY ' + @orderBy +
+        ' OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY';
+
+    EXEC sp_executesql @dataQuery,
+        N'@menuKey NVARCHAR(100), @category NVARCHAR(100), @search NVARCHAR(255), @offset INT, @limit INT',
+        @menuKey, @category, @search, @offset, @limit;
+
+    -- Return metadata
+    SELECT 
+        @page as currentPage,
+        @limit as itemsPerPage,
+        @totalCount as totalItems,
+        CEILING(CAST(@totalCount AS FLOAT) / @limit) as totalPages,
+        CASE WHEN @page * @limit < @totalCount THEN 1 ELSE 0 END as hasNextPage,
+        CASE WHEN @page > 1 THEN 1 ELSE 0 END as hasPreviousPage;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_ListPermissions]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ==================== sp_ListPermissions ====================
+CREATE     PROCEDURE [dbo].[sp_ListPermissions]
+    @category NVARCHAR(100) = NULL,
+    @scope NVARCHAR(20) = 'all',
+    @page INT = 1,
+    @limit INT = 50
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @offset INT = (@page - 1) * @limit;
+    DECLARE @totalCount INT;
+
+    -- Build where clause
+    DECLARE @whereClause NVARCHAR(MAX) = 'WHERE 1=1';
+
+    IF @category IS NOT NULL
+        SET @whereClause = @whereClause + ' AND p.category = @category';
+
+    IF @scope = 'system'
+        SET @whereClause = @whereClause + ' AND p.is_system_permission = 1';
+    ELSE IF @scope = 'custom'
+        SET @whereClause = @whereClause + ' AND p.is_system_permission = 0';
+
+    -- Get total count
+    DECLARE @countQuery NVARCHAR(MAX) = 
+        'SELECT @totalCount = COUNT(*) FROM permissions p ' + @whereClause;
+    
+    EXEC sp_executesql @countQuery,
+        N'@category NVARCHAR(100), @totalCount INT OUTPUT',
+        @category, @totalCount OUTPUT;
+
+    -- Get paginated results
+    DECLARE @dataQuery NVARCHAR(MAX) =
+        'SELECT 
+            p.id,
+            p.permission_key,
+            p.resource,
+            p.action,
+            p.description,
+            p.category,
+            p.is_system_permission,
+            p.created_at,
+            (SELECT COUNT(*) FROM role_permissions rp WHERE rp.permission_id = p.id) as roles_count
+         FROM permissions p ' + @whereClause +
+        ' ORDER BY p.category, p.permission_key
+         OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY';
+
+    EXEC sp_executesql @dataQuery,
+        N'@category NVARCHAR(100), @offset INT, @limit INT',
+        @category, @offset, @limit;
+
+    -- Return metadata
+    SELECT 
+        @page as currentPage,
+        @limit as itemsPerPage,
+        @totalCount as totalItems,
+        CEILING(CAST(@totalCount AS FLOAT) / @limit) as totalPages,
+        CASE WHEN @page * @limit < @totalCount THEN 1 ELSE 0 END as hasNextPage,
+        CASE WHEN @page > 1 THEN 1 ELSE 0 END as hasPreviousPage;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_ListRoles]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE PROCEDURE [dbo].[sp_ListRoles]
+    @scope NVARCHAR(20) = 'all',
+    @tenantId BIGINT = NULL,
+    @page INT = 1,
+    @limit INT = 50,
+    @userType NVARCHAR(50) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @offset INT = (@page - 1) * @limit;
+    DECLARE @totalCount INT;
+    
+    DECLARE @whereClause NVARCHAR(MAX) = '';
+    
+    IF @scope = 'system'
+        SET @whereClause = 'WHERE r.is_system_role = 1';
+    ELSE IF @scope = 'tenant'
+        SET @whereClause = 'WHERE r.tenant_id = @tenantId';
+    ELSE IF @scope = 'all'
+    BEGIN
+        IF @tenantId IS NOT NULL
+            SET @whereClause = 'WHERE r.tenant_id = @tenantId';
+        ELSE IF @userType IN ('owner', 'superadmin', 'super_admin')
+            SET @whereClause = 'WHERE 1=1';
+        ELSE
+            SET @whereClause = 'WHERE r.is_system_role = 1';
+    END
+    
+    DECLARE @countQuery NVARCHAR(MAX) = 
+        'SELECT @totalCount = COUNT(*) FROM roles r ' + @whereClause;
+    
+    EXEC sp_executesql @countQuery, 
+        N'@tenantId BIGINT, @totalCount INT OUTPUT', 
+        @tenantId, @totalCount OUTPUT;
+    
+    DECLARE @dataQuery NVARCHAR(MAX) = 
+        'SELECT 
+            r.id,
+            r.tenant_id,
+            r.name,
+            r.display_name,
+            r.description,
+            r.is_system_role,
+            r.is_default,
+            r.hierarchy_level,
+            r.created_at,
+            r.updated_at,
+            (SELECT COUNT(*) FROM user_roles ur WHERE ur.role_id = r.id AND ur.is_active = 1) as users_count,
+            (SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id = r.id) as permissions_count
+         FROM roles r ' + @whereClause + 
+        ' ORDER BY r.hierarchy_level DESC, r.name ASC
+         OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY';
+    
+    EXEC sp_executesql @dataQuery,
+        N'@tenantId BIGINT, @offset INT, @limit INT',
+        @tenantId, @offset, @limit;
+    
+    SELECT 
+        @page as currentPage,
+        @limit as itemsPerPage,
+        @totalCount as totalItems,
+        CEILING(CAST(@totalCount AS FLOAT) / @limit) as totalPages,
+        CASE WHEN @page * @limit < @totalCount THEN 1 ELSE 0 END as hasNextPage,
+        CASE WHEN @page > 1 THEN 1 ELSE 0 END as hasPreviousPage;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_MarkAsRead_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== 5. MARK AS READ ====================
+CREATE PROCEDURE [dbo].[sp_MarkAsRead_Fast]
     @messageId BIGINT,
     @userId BIGINT,
     @channelId BIGINT
@@ -3192,59 +7555,508 @@ BEGIN
 END;
 GO
 
--- ==================== INDEXES FOR ULTRA-FAST QUERIES ====================
--- Critical indexes to achieve <80ms target
+/****** Object:  StoredProcedure [dbo].[sp_RotateTenantKeys]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
 
--- 1. Messages - covering index for fast retrieval
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_messages_channel_sent_COVERING')
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 10. Rotate Tenant Encryption Keys
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_RotateTenantKeys]
+    @tenantId BIGINT,
+    @newPublicKey NVARCHAR(MAX),
+    @newEncryptedPrivateKey NVARCHAR(MAX),
+    @rotatedBy BIGINT
+AS
 BEGIN
-    CREATE NONCLUSTERED INDEX IX_messages_channel_sent_COVERING
-    ON messages (channel_id, sent_at DESC, is_deleted)
-    INCLUDE (id, sender_user_id, message_type, encrypted_content, 
-             encryption_iv, encryption_auth_tag, encryption_key_version,
-             has_attachments, has_mentions, reply_to_message_id, thread_id);
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+
+    BEGIN TRY
+        DECLARE @currentVersion INT;
+
+        SELECT @currentVersion = key_version
+        FROM tenants
+        WHERE id = @tenantId;
+
+        -- Update tenant keys
+        UPDATE tenants
+        SET public_key = @newPublicKey,
+            encrypted_private_key = @newEncryptedPrivateKey,
+            key_version = @currentVersion + 1,
+            key_rotated_at = GETUTCDATE(),
+            updated_at = GETUTCDATE(),
+            updated_by = @rotatedBy
+        WHERE id = @tenantId;
+
+        -- Log key rotation
+        INSERT INTO audit_logs (
+            tenant_id, user_id, entity_type, entity_id, action_type,
+            old_values, new_values
+        )
+        VALUES (
+            @tenantId, @rotatedBy, 'tenants', @tenantId, 'KEY_ROTATION',
+            JSON_QUERY('{"key_version": ' + CAST(@currentVersion AS NVARCHAR(10)) + '}'),
+            JSON_QUERY('{"key_version": ' + CAST(@currentVersion + 1 AS NVARCHAR(10)) + '}')
+        );
+
+        COMMIT TRANSACTION;
+
+        SELECT 
+            id,
+            key_version,
+            key_rotated_at
+        FROM tenants
+        WHERE id = @tenantId;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
 END;
 GO
 
--- 2. Participants - fast membership check
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_participants_channel_user_active')
+/****** Object:  StoredProcedure [dbo].[sp_RotateUserEncryptionKey]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- Create procedure for key rotation
+CREATE   PROCEDURE [dbo].[sp_RotateUserEncryptionKey]
+    @UserId BIGINT,
+    @NewPublicKeyPem NVARCHAR(MAX),
+    @NewEncryptedPrivateKeyPem NVARCHAR(MAX),
+    @BackupEncryptedPrivateKey NVARCHAR(MAX) = NULL,
+    @RotationReason NVARCHAR(MAX) = 'scheduled',
+    @RotatedBy BIGINT = NULL
+AS
 BEGIN
-    CREATE NONCLUSTERED INDEX IX_participants_channel_user_active
-    ON chat_participants (channel_id, user_id, is_active)
-    INCLUDE (role, encrypted_channel_key, key_version);
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        -- Get current key
+        DECLARE @OldKeyId BIGINT;
+        SELECT TOP 1 @OldKeyId = id
+        FROM [dbo].[user_encryption_keys]
+        WHERE user_id = @UserId
+        AND status = 'active'
+        ORDER BY key_version DESC;
+        -- Mark old key as rotated
+        UPDATE [dbo].[user_encryption_keys]
+        SET status = 'rotated',
+            revoked_at = GETUTCDATE(),
+            revoke_reason = @RotationReason,
+            updated_at = GETUTCDATE(),
+            updated_by = COALESCE(@RotatedBy, @UserId)
+        WHERE id = @OldKeyId;
+        -- Calculate fingerprints
+        DECLARE @KeyFingerprint NVARCHAR(64) = SUBSTRING(CONVERT(NVARCHAR(MAX), HASHBYTES('SHA2_256', @NewPublicKeyPem), 2), 1, 64);
+        DECLARE @KeyFingerprintShort NVARCHAR(16) = SUBSTRING(@KeyFingerprint, 1, 16);
+        -- Insert new key
+        INSERT INTO [dbo].[user_encryption_keys] (
+            user_id,
+            public_key_pem,
+            encrypted_private_key_pem,
+            key_fingerprint,
+            key_fingerprint_short,
+            backup_encrypted_private_key,
+            backup_created_at,
+            status,
+            key_version,
+            rotated_from_key_id,
+            created_at,
+            created_by,
+            next_rotation_at
+        )
+        VALUES (
+            @UserId,
+            @NewPublicKeyPem,
+            @NewEncryptedPrivateKeyPem,
+            @KeyFingerprint,
+            @KeyFingerprintShort,
+            @BackupEncryptedPrivateKey,
+            CASE WHEN @BackupEncryptedPrivateKey IS NOT NULL THEN GETUTCDATE() ELSE NULL END,
+            'active',
+            ISNULL((SELECT MAX(key_version) FROM [dbo].[user_encryption_keys] WHERE user_id = @UserId), 0) + 1,
+            @OldKeyId,
+            GETUTCDATE(),
+            COALESCE(@RotatedBy, @UserId),
+            DATEADD(YEAR, 1, GETUTCDATE()) -- Next rotation in 1 year
+        );
+        SELECT CAST(SCOPE_IDENTITY() AS BIGINT) AS NewKeyId, @OldKeyId AS OldKeyId;
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_SendMessage_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+-- ============================================
+-- CHAT STORED PROCEDURES - NO ENCRYPTION
+-- Ultra-fast, simple, no encryption overhead
+-- ============================================
+
+-- ==================== 1. SEND MESSAGE ====================
+CREATE PROCEDURE [dbo].[sp_SendMessage_Fast]
+    @channelId BIGINT,
+    @userId BIGINT,
+    @tenantId BIGINT,
+    @messageType NVARCHAR(20),
+    @content NVARCHAR(MAX), -- ✅ Plain text, no encryption
+    @hasAttachments BIT = 0,
+    @hasMentions BIT = 0,
+    @replyToMessageId BIGINT = NULL,
+    @threadId BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    
+    DECLARE @messageId BIGINT;
+    DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
+    
+    BEGIN TRANSACTION;
+    
+    -- Insert message
+    INSERT INTO messages (
+        channel_id, sender_tenant_id, sender_user_id, message_type,
+        content, has_attachments, has_mentions,
+        reply_to_message_id, thread_id, 
+        sent_at, created_at, created_by
+    )
+    VALUES (
+        @channelId, @tenantId, @userId, @messageType,
+        @content, @hasAttachments, @hasMentions,
+        @replyToMessageId, @threadId,
+        @now, @now, @userId
+    );
+    
+    SET @messageId = SCOPE_IDENTITY();
+    
+    -- Update channel stats
+    UPDATE chat_channels
+    SET message_count = message_count + 1,
+        last_message_at = @now,
+        last_activity_at = @now
+    WHERE id = @channelId;
+    
+    COMMIT TRANSACTION;
+    
+    -- Return message data
+    SELECT 
+        @messageId as id,
+        @channelId as channel_id,
+        @userId as sender_user_id,
+        @tenantId as sender_tenant_id,
+        @messageType as message_type,
+        @now as sent_at;
 END;
 GO
 
--- 3. Participants - fast user channels lookup
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_participants_user_active_channels')
+/****** Object:  StoredProcedure [dbo].[sp_UpdateSessionActivity]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 14. Update Session Activity
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_UpdateSessionActivity]
+    @sessionId BIGINT
+AS
 BEGIN
-    CREATE NONCLUSTERED INDEX IX_participants_user_active_channels
-    ON chat_participants (user_id, is_active)
-    INCLUDE (channel_id, role, last_read_message_id);
+    SET NOCOUNT ON;
+
+    UPDATE user_sessions
+    SET last_activity_at = GETUTCDATE()
+    WHERE id = @sessionId AND is_active = 1;
 END;
 GO
 
--- 4. Read receipts - fast status lookup
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_read_receipts_message_user')
+/****** Object:  StoredProcedure [dbo].[sp_UpsertEmailTemplate]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ============================================
+-- 3. Upsert Email Template
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_UpsertEmailTemplate]
+    @id BIGINT = NULL,
+    @tenantId BIGINT = NULL,
+    @name NVARCHAR(255),
+    @category NVARCHAR(100),
+    @subject NVARCHAR(500),
+    @bodyHtml NVARCHAR(MAX),
+    @bodyText NVARCHAR(MAX) = NULL,
+    @variables NVARCHAR(MAX) = NULL,
+    @userId BIGINT,
+    @isActive BIT = 1
+AS
 BEGIN
-    CREATE NONCLUSTERED INDEX IX_read_receipts_message_user
-    ON message_read_receipts (message_id, user_id)
-    INCLUDE (status, read_at);
+    SET NOCOUNT ON;
+
+    IF @id IS NULL
+    BEGIN
+        -- INSERT
+        INSERT INTO email_templates (
+            tenant_id, name, category, subject, body_html, body_text,
+            variables, is_active, created_by
+        )
+        OUTPUT INSERTED.id
+        VALUES (
+            @tenantId, @name, @category, @subject, @bodyHtml, @bodyText,
+            @variables, @isActive, @userId
+        );
+    END
+    ELSE
+    BEGIN
+        -- UPDATE
+        UPDATE email_templates
+        SET name = @name,
+            category = @category,
+            subject = @subject,
+            body_html = @bodyHtml,
+            body_text = @bodyText,
+            variables = @variables,
+            is_active = @isActive,
+            updated_at = GETUTCDATE(),
+            updated_by = @userId
+        OUTPUT INSERTED.id
+        WHERE id = @id;
+    END
 END;
 GO
 
--- 5. Channels - fast stats update
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_channels_activity')
+/****** Object:  StoredProcedure [dbo].[sp_UpsertOAuthProvider]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- ==================== OAUTH PROVIDERS ====================
+
+-- SP: Upsert OAuth Provider
+-- FIX: Changed table name from oauth_providers to user_social_accounts
+CREATE     PROCEDURE [dbo].[sp_UpsertOAuthProvider]
+    @user_id BIGINT,
+    @provider NVARCHAR(50),
+    @provider_user_id NVARCHAR(255),
+    @email NVARCHAR(320),
+    @access_token NVARCHAR(MAX),
+    @refresh_token NVARCHAR(MAX) = NULL,
+    @profile_data NVARCHAR(MAX) = NULL
+AS
 BEGIN
-    CREATE NONCLUSTERED INDEX IX_channels_activity
-    ON chat_channels (last_activity_at DESC)
-    INCLUDE (id, message_count, is_archived);
+    SET NOCOUNT ON;
+    
+    MERGE [dbo].[user_social_accounts] AS target
+    USING (SELECT @user_id AS user_id, @provider AS provider) AS source
+    ON (target.user_id = source.user_id AND target.provider = source.provider)
+    WHEN MATCHED THEN
+        UPDATE SET
+            access_token = @access_token,
+            refresh_token = @refresh_token,
+            profile_data = @profile_data,
+            updated_at = GETUTCDATE()
+    WHEN NOT MATCHED THEN
+        INSERT (user_id, provider, provider_user_id, provider_email, access_token, refresh_token, profile_data, created_at)
+        VALUES (@user_id, @provider, @provider_user_id, @email, @access_token, @refresh_token, @profile_data, GETUTCDATE())
+    OUTPUT INSERTED.*;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_UpsertSystemConfig]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+-- SP: Upsert System Config
+-- FIX: Removed environment parameter (column doesn't exist in table)
+CREATE     PROCEDURE [dbo].[sp_UpsertSystemConfig]
+    @config_key NVARCHAR(255),
+    @config_value NVARCHAR(MAX),
+    @config_type NVARCHAR(50) = 'string',
+    @is_encrypted BIT = 0,
+    @description NVARCHAR(MAX) = NULL,
+    @created_by BIGINT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    MERGE [dbo].[system_config] AS target
+    USING (SELECT @config_key AS config_key) AS source
+    ON (target.config_key = source.config_key)
+    WHEN MATCHED THEN
+        UPDATE SET
+            config_value = @config_value,
+            config_type = @config_type,
+            is_encrypted = @is_encrypted,
+            updated_at = GETUTCDATE(),
+            updated_by = @created_by
+    WHEN NOT MATCHED THEN
+        INSERT (config_key, config_value, config_type, is_encrypted, created_at, created_by)
+        VALUES (@config_key, @config_value, @config_type, @is_encrypted, GETUTCDATE(), @created_by)
+    OUTPUT INSERTED.*;
+END
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_ValidateMessageSend_Fast]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- ==================== 3. VALIDATE MESSAGE SEND ====================
+CREATE PROCEDURE [dbo].[sp_ValidateMessageSend_Fast]
+    @channelId BIGINT,
+    @userId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT 
+        CASE WHEN cp.user_id IS NOT NULL THEN 1 ELSE 0 END as isMember,
+        (
+            SELECT STRING_AGG(CAST(user_id AS VARCHAR(20)), ',')
+            FROM chat_participants WITH (NOLOCK)
+            WHERE channel_id = @channelId AND is_active = 1
+        ) as participant_ids
+    FROM chat_channels c WITH (NOLOCK)
+    LEFT JOIN chat_participants cp WITH (NOLOCK) 
+        ON cp.channel_id = c.id 
+        AND cp.user_id = @userId 
+        AND cp.is_active = 1
+    WHERE c.id = @channelId;
 END;
 GO
 
-PRINT '✅ Ultra-fast stored procedures and indexes created successfully';
-PRINT '🎯 Target: <80ms message delivery achieved with these optimizations';
+/****** Object:  StoredProcedure [dbo].[sp_VerifyTenantAccess]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
 
 
- ALTER TABLE chat_participants
-ADD is_pinned INT;
+
+-- ============================================
+-- 12. Verify Tenant Access
+-- ============================================
+CREATE     PROCEDURE [dbo].[sp_VerifyTenantAccess]
+    @userId BIGINT,
+    @tenantId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        CASE 
+            WHEN COUNT(*) > 0 THEN 1 
+            ELSE 0 
+        END AS has_access
+    FROM tenant_members
+    WHERE user_id = @userId
+      AND tenant_id = @tenantId
+      AND is_active = 1;
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_VerifyUserEmail]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE   PROCEDURE [dbo].[sp_VerifyUserEmail]
+    @email NVARCHAR(320),
+    @code NVARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    
+    BEGIN TRY
+        DECLARE @userId BIGINT;
+        DECLARE @codeId BIGINT;
+        
+        SELECT TOP 1 
+            @userId = user_id,
+            @codeId = id
+        FROM [dbo].[verification_codes]
+        WHERE email = @email 
+            AND code = @code
+            AND code_type = 'email_verify'  -- ✅ FIXED: Changed from 'email_verification'
+            AND used_at IS NULL
+            AND expires_at > GETUTCDATE()
+            AND attempts < max_attempts
+        ORDER BY created_at DESC;
+        
+        -- ✅ FIXED: Added error handling
+        IF @userId IS NULL
+        BEGIN
+            ROLLBACK TRANSACTION;
+            THROW 50001, 'Invalid or expired verification code', 1;
+        END
+        
+        -- Mark code as used
+        UPDATE [dbo].[verification_codes]
+        SET used_at = GETUTCDATE(),
+            attempts = attempts + 1
+        WHERE id = @codeId;
+        
+        -- Update user
+        UPDATE [dbo].[users]
+        SET email_verified_at = GETUTCDATE(),
+            status = 'active',
+            updated_at = GETUTCDATE()
+        WHERE id = @userId;
+        
+        -- Return updated user
+        SELECT * FROM [dbo].[users] WHERE id = @userId;
+        
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END
+GO
