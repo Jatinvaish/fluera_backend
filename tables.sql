@@ -1,7 +1,7 @@
 USE [fluera_new_structure]
 GO
 
-/****** Object:  Table [dbo].[activities]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[activities]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -31,7 +31,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[ai_conversations]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[ai_conversations]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -59,7 +59,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[ai_messages]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[ai_messages]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -92,7 +92,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[analytics_events]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[analytics_events]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -126,7 +126,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[audit_logs]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[audit_logs]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -157,7 +157,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[batch_payments]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[batch_payments]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -185,7 +185,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[bookmarks]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[bookmarks]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -217,7 +217,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[brand_profiles]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[brand_profiles]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -265,7 +265,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[calendar_events]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[calendar_events]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -306,7 +306,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[campaign_participants]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[campaign_participants]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -354,7 +354,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[campaign_tasks]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[campaign_tasks]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -390,7 +390,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[campaign_types]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[campaign_types]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -418,7 +418,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[campaigns]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[campaigns]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -477,7 +477,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[chat_channels]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[chat_channels]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -512,7 +512,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[chat_participants]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[chat_participants]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -537,6 +537,7 @@ CREATE TABLE [dbo].[chat_participants](
 	[updated_at] [datetime2](7) NULL,
 	[updated_by] [bigint] NULL,
 	[is_pinned] [int] NULL,
+	[mute_until] [datetime2](7) NULL,
 PRIMARY KEY CLUSTERED 
 (
 	[id] ASC
@@ -549,7 +550,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[comments]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[comments]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -581,7 +582,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[content_access_violations]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[content_access_violations]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -608,7 +609,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[content_performance]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[content_performance]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -650,7 +651,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[content_review_comments]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[content_review_comments]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -685,7 +686,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[content_reviews]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[content_reviews]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -720,7 +721,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[content_submissions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[content_submissions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -780,7 +781,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[contract_modifications]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[contract_modifications]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -815,7 +816,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[contract_review_rounds]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[contract_review_rounds]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -851,7 +852,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[contract_signatures]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[contract_signatures]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -887,7 +888,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[contract_stage_permissions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[contract_stage_permissions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -921,7 +922,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[contract_templates]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[contract_templates]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -955,7 +956,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[contract_versions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[contract_versions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -987,7 +988,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[contracts]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[contracts]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1046,7 +1047,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[creator_availability]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[creator_availability]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1077,7 +1078,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[creator_categories]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[creator_categories]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1114,7 +1115,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[creator_documents]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[creator_documents]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1146,7 +1147,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[creator_metrics]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[creator_metrics]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1188,7 +1189,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[creator_profiles]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[creator_profiles]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1236,7 +1237,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[creator_rate_cards]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[creator_rate_cards]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1275,7 +1276,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[creator_social_accounts]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[creator_social_accounts]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1319,7 +1320,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[dashboard_widgets]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[dashboard_widgets]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1350,7 +1351,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[email_accounts]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[email_accounts]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1397,7 +1398,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[email_attachments]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[email_attachments]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1432,7 +1433,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[email_folders]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[email_folders]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1467,7 +1468,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[email_messages]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[email_messages]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1527,7 +1528,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[email_rules]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[email_rules]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1557,7 +1558,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[email_templates]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[email_templates]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1586,7 +1587,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[encryption_audit_logs]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[encryption_audit_logs]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1618,7 +1619,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[encryption_keys]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[encryption_keys]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1651,7 +1652,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[error_logs]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[error_logs]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1690,7 +1691,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[event_attendees]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[event_attendees]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1722,7 +1723,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[file_processing_jobs]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[file_processing_jobs]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1752,7 +1753,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[file_shares]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[file_shares]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1790,7 +1791,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[files]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[files]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1845,7 +1846,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[financial_reports]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[financial_reports]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1887,7 +1888,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[integrations]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[integrations]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1919,7 +1920,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[invitations]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[invitations]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1958,7 +1959,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[invoice_items]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[invoice_items]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -1994,7 +1995,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[invoices]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[invoices]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2053,7 +2054,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[key_rotation_schedule]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[key_rotation_schedule]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2087,7 +2088,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[menu_permissions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[menu_permissions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2116,7 +2117,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[message_attachments]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[message_attachments]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2148,7 +2149,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[message_queue]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[message_queue]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2170,7 +2171,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[message_reactions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[message_reactions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2200,7 +2201,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[message_read_receipts]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[message_read_receipts]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2222,7 +2223,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[messages]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[messages]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2254,6 +2255,7 @@ CREATE TABLE [dbo].[messages](
 	[created_by] [bigint] NULL,
 	[updated_at] [datetime2](7) NULL,
 	[updated_by] [bigint] NULL,
+	[reply_count] [int] NULL,
 PRIMARY KEY CLUSTERED 
 (
 	[id] ASC
@@ -2261,7 +2263,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[notes]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[notes]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2297,7 +2299,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[notification_preferences]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[notification_preferences]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2332,7 +2334,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[notification_templates]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[notification_templates]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2361,7 +2363,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[notifications]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[notifications]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2402,7 +2404,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[password_reset_tokens]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[password_reset_tokens]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2432,7 +2434,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[payment_methods]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[payment_methods]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2474,7 +2476,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[payments]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[payments]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2529,7 +2531,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[payout_batches]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[payout_batches]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2569,7 +2571,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[permissions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[permissions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2600,7 +2602,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[portfolio_selections]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[portfolio_selections]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2628,7 +2630,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[portfolio_shares]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[portfolio_shares]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2664,7 +2666,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[portfolio_templates]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[portfolio_templates]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2692,7 +2694,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[portfolios]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[portfolios]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2732,7 +2734,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[report_instances]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[report_instances]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2761,7 +2763,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[reports]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[reports]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2791,7 +2793,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[resource_access_logs]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[resource_access_logs]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2816,7 +2818,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[resource_permissions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[resource_permissions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2851,7 +2853,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[resource_shares]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[resource_shares]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2890,7 +2892,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[role_limits]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[role_limits]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2921,7 +2923,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[role_permissions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[role_permissions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2948,7 +2950,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[roles]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[roles]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -2975,7 +2977,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[saved_filters]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[saved_filters]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3004,7 +3006,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[security_events]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[security_events]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3042,7 +3044,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[subscription_history]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[subscription_history]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3067,7 +3069,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[subscription_plans]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[subscription_plans]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3108,7 +3110,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[system_config]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[system_config]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3133,7 +3135,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[system_events]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[system_events]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3162,7 +3164,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[system_metrics]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[system_metrics]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3187,7 +3189,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[taggables]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[taggables]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3216,7 +3218,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[tags]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[tags]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3249,7 +3251,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[tasks]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[tasks]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3290,7 +3292,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[tenant_members]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[tenant_members]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3325,7 +3327,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[tenant_relationships]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[tenant_relationships]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3358,7 +3360,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[tenant_usage]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[tenant_usage]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3388,7 +3390,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[tenants]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[tenants]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3451,7 +3453,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[user_encryption_keys]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[user_encryption_keys]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3492,7 +3494,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[user_roles]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[user_roles]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3522,7 +3524,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[user_sessions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[user_sessions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3568,7 +3570,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[user_social_accounts]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[user_social_accounts]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3603,7 +3605,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[users]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[users]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3660,7 +3662,7 @@ UNIQUE NONCLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[verification_codes]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[verification_codes]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3690,7 +3692,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[webhook_deliveries]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[webhook_deliveries]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3723,7 +3725,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[webhooks]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[webhooks]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3754,7 +3756,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[workflow_executions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[workflow_executions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3792,7 +3794,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[workflow_step_executions]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[workflow_step_executions]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -3825,7 +3827,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[workflows]    Script Date: 23-11-2025 11:25:18 ******/
+/****** Object:  Table [dbo].[workflows]    Script Date: 23-11-2025 11:39:34 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -4946,6 +4948,9 @@ GO
 ALTER TABLE [dbo].[messages] ADD  DEFAULT (getutcdate()) FOR [updated_at]
 GO
 
+ALTER TABLE [dbo].[messages] ADD  DEFAULT ((0)) FOR [reply_count]
+GO
+
 ALTER TABLE [dbo].[notes] ADD  DEFAULT ('markdown') FOR [content_type]
 GO
 
@@ -5708,11 +5713,10 @@ GO
 
 
 
+USE [fluera_new_structure]
+GO
 
-
-
-
-/****** Object:  StoredProcedure [dbo].[sp_CheckResourcePermission]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CheckResourcePermission]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -5749,7 +5753,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CleanupExpiredSessions]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CleanupExpiredSessions]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -5774,7 +5778,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateAuditLog]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateAuditLog]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -5812,21 +5816,22 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateChannel_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateChannel_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
 SET QUOTED_IDENTIFIER ON
 GO
 
--- ==================== COMPLETELY FIXED: CREATE CHANNEL ====================
--- The issue is STRING_SPLIT returning duplicate values or userId already in participantIds
+
 CREATE PROCEDURE [dbo].[sp_CreateChannel_Fast]
     @tenantId BIGINT,
     @userId BIGINT,
     @name NVARCHAR(255),
     @channelType NVARCHAR(20),
     @participantIds NVARCHAR(MAX),
+    @description NVARCHAR(MAX) = NULL,
+    @isPrivate BIT = 1,
     @relatedType NVARCHAR(50) = NULL,
     @relatedId BIGINT = NULL
 AS
@@ -5840,31 +5845,33 @@ BEGIN
     
     -- Create channel
     INSERT INTO chat_channels (
-        created_by_tenant_id, name, channel_type,
-        related_type, related_id, participant_tenant_ids,
-        created_at, created_by
+        created_by_tenant_id, name, description, channel_type,
+        related_type, related_id, participant_tenant_ids, is_private,
+        created_at, created_by, updated_at, updated_by
     )
     VALUES (
-        @tenantId, @name, @channelType,
-        @relatedType, @relatedId, @participantIds,
-        GETUTCDATE(), @userId
+        @tenantId, @name, @description, @channelType,
+        @relatedType, @relatedId, @participantIds, @isPrivate,
+        GETUTCDATE(), @userId, GETUTCDATE(), @userId
     );
     
     SET @channelId = SCOPE_IDENTITY();
     
-    -- ✅ FIX: Use CTE to get DISTINCT participants and avoid duplicates
+    -- Add participants (ensuring no duplicates)
     WITH DistinctParticipants AS (
         SELECT DISTINCT CAST(value AS BIGINT) AS user_id
         FROM STRING_SPLIT(@participantIds, ',')
         WHERE RTRIM(value) <> '' 
         AND ISNUMERIC(value) = 1
     )
-    INSERT INTO chat_participants (channel_id, tenant_id, user_id, role, created_at, created_by)
+    INSERT INTO chat_participants (channel_id, tenant_id, user_id, role, created_at, created_by, updated_at, updated_by)
     SELECT 
         @channelId,
         @tenantId,
         dp.user_id,
-        CASE WHEN dp.user_id = @userId THEN 'admin' ELSE 'member' END,
+        CASE WHEN dp.user_id = @userId THEN 'owner' ELSE 'member' END,
+        GETUTCDATE(),
+        @userId,
         GETUTCDATE(),
         @userId
     FROM DistinctParticipants dp
@@ -5890,7 +5897,37 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateErrorLog]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateChatNotification]    Script Date: 23-11-2025 11:40:11 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- 3. Create notification helper procedure
+CREATE   PROCEDURE [dbo].[sp_CreateChatNotification]
+    @recipientId BIGINT,
+    @tenantId BIGINT,
+    @eventType NVARCHAR(100),
+    @message NVARCHAR(MAX),
+    @data NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO notifications (
+        recipient_id, tenant_id, event_type, channel, 
+        message, data, priority, status, created_at
+    )
+    VALUES (
+        @recipientId, @tenantId, @eventType, 'in_app',
+        @message, @data, 'normal', 'pending', GETUTCDATE()
+    );
+END;
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_CreateErrorLog]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -5928,7 +5965,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateNotification]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateNotification]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -5966,7 +6003,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateReadReceiptsBulk_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateReadReceiptsBulk_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -5998,7 +6035,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateSecurityEvent]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateSecurityEvent]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6046,7 +6083,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateSystemEvent]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateSystemEvent]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6086,7 +6123,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateTenant]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateTenant]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6192,7 +6229,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateUser]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateUser]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6231,7 +6268,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateUserEncryptionKey]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateUserEncryptionKey]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6297,7 +6334,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateUserSession]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateUserSession]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6335,7 +6372,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_CreateVerificationCode]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_CreateVerificationCode]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6379,7 +6416,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_DeleteEmailTemplate]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_DeleteEmailTemplate]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6404,7 +6441,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_EndUserSession]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_EndUserSession]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6428,7 +6465,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetActiveSession]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetActiveSession]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6452,7 +6489,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetAuditLogs]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetAuditLogs]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6486,7 +6523,7 @@ END
 
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetChannelMembers_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetChannelMembers_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6508,7 +6545,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetEmailTemplate]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetEmailTemplate]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6555,7 +6592,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetMessages_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetMessages_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6597,7 +6634,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetOrganizationTemplates]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetOrganizationTemplates]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6635,7 +6672,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetSystemConfigByKey]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetSystemConfigByKey]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6660,7 +6697,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetTenantMembers]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantMembers]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6700,7 +6737,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetTenantUsageStats]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetTenantUsageStats]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6752,7 +6789,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUnreadCount_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUnreadCount_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6779,7 +6816,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserAccessibleMenus]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAccessibleMenus]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -6977,7 +7014,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserAuthData]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserAuthData]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7069,7 +7106,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserChannels_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserChannels_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7109,7 +7146,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserChannels_Ultra]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserChannels_Ultra]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7154,7 +7191,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserEncryptionKey]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserEncryptionKey]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7186,7 +7223,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_GetUserSessions]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_GetUserSessions]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7222,7 +7259,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_IncrementTemplateUsage]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_IncrementTemplateUsage]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7246,7 +7283,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_ListMenuPermissions]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_ListMenuPermissions]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7334,7 +7371,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_ListPermissions]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_ListPermissions]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7406,7 +7443,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_ListRoles]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_ListRoles]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7480,7 +7517,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_MarkAsRead_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_MarkAsRead_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7518,7 +7555,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_RotateTenantKeys]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_RotateTenantKeys]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7584,7 +7621,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_RotateUserEncryptionKey]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_RotateUserEncryptionKey]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7664,7 +7701,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_SendMessage_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_SendMessage_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7733,7 +7770,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpdateSessionActivity]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpdateSessionActivity]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7757,7 +7794,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertEmailTemplate]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertEmailTemplate]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7816,7 +7853,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertOAuthProvider]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertOAuthProvider]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7857,7 +7894,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_UpsertSystemConfig]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_UpsertSystemConfig]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7896,7 +7933,7 @@ BEGIN
 END
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_ValidateMessageSend_Fast]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_ValidateMessageSend_Fast]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7928,7 +7965,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_VerifyTenantAccess]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_VerifyTenantAccess]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -7959,7 +7996,7 @@ BEGIN
 END;
 GO
 
-/****** Object:  StoredProcedure [dbo].[sp_VerifyUserEmail]    Script Date: 23-11-2025 11:25:36 ******/
+/****** Object:  StoredProcedure [dbo].[sp_VerifyUserEmail]    Script Date: 23-11-2025 11:40:11 ******/
 SET ANSI_NULLS ON
 GO
 
