@@ -19,7 +19,7 @@ export class InvitationService {
     private hashingService: HashingService,
     private rbacService: RbacService,
     private emailService: EmailService,
-  ) {}
+  ) { }
 
   async sendInvitation(tenantId: number, invitedBy: number, dto: any) {
     // Get inviter's user type for role validation
@@ -147,6 +147,7 @@ export class InvitationService {
          AND i.expires_at > GETUTCDATE()`,
       { token },
     );
+    console.log("🚀 ~ InvitationService ~ acceptInvitation ~ invitation:", invitation)
 
     if (invitation.length === 0) {
       throw new BadRequestException('Invalid or expired invitation');
@@ -178,6 +179,7 @@ export class InvitationService {
       `SELECT id FROM users WHERE email = @email`,
       { email: invite.invitee_email },
     );
+    console.log("🚀 ~ InvitationService ~ acceptInvitation ~ existingUser:", existingUser)
 
     if (existingUser.length > 0) {
       throw new BadRequestException(
@@ -202,17 +204,19 @@ export class InvitationService {
         .input(
           'lastName',
           userData.lastName ||
-            invite.invitee_name?.split(' ').slice(1).join(' ') ||
-            '',
+          invite.invitee_name?.split(' ').slice(1).join(' ') ||
+          '',
         )
         .input('userType', invite.invitee_type || 'staff').query(`
-          INSERT INTO users (
-            email, password_hash, first_name, last_name,
-            user_type, status, email_verified_at, created_at
-          ) OUTPUT INSERTED.*
-          VALUES (@email, @passwordHash, @firstName, @lastName,
-                  @userType, 'active', GETUTCDATE(), GETUTCDATE())
-        `);
+      INSERT INTO users (
+        email, password_hash, first_name, last_name,
+        user_type, status, email_verified_at, 
+        onboarding_completed_at, created_at
+      ) OUTPUT INSERTED.*
+      VALUES (@email, @passwordHash, @firstName, @lastName,
+              @userType, 'active', GETUTCDATE(), 
+              GETUTCDATE(), GETUTCDATE())
+    `);
 
       const user = userResult.recordset[0];
 
@@ -241,12 +245,11 @@ export class InvitationService {
       await transaction
         .request()
         .input('invitationId', invite.id)
-        .input('acceptedBy', user.id).query(`
+        .query(`
           UPDATE invitations 
           SET status = 'accepted', 
-              accepted_at = GETUTCDATE(),
-              accepted_by = @acceptedBy,
-              updated_at = GETUTCDATE()
+               accepted_at = GETUTCDATE(),
+               updated_at = GETUTCDATE()
           WHERE id = @invitationId
         `);
 
@@ -259,6 +262,8 @@ export class InvitationService {
             firstName: user.first_name,
             lastName: user.last_name,
             userType: user.user_type,
+            onboardingRequired: false,
+            onboardingCompleted: true,
           },
           tenant: {
             id: invite.tenant_id.toString(),

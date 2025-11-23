@@ -13,6 +13,7 @@ import {
   Query,
   Res,
   ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { InvitationService } from './invitation.service';
@@ -191,10 +192,85 @@ export class AuthController {
   @Post('invitation/accept')
   @Public()
   async acceptInvitation(@Body() dto: AcceptInvitationDto) {
-    return this.invitationService.acceptInvitation(dto.token, dto.password, {
-      firstName: dto.firstName,
-      lastName: dto.lastName,
+    console.log('🚀 ~ AuthController ~ acceptInvitation ~ dto:', dto);
+    const result = await this.invitationService.acceptInvitation(
+      dto.token,
+      dto.password,
+      {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+      },
+    );
+
+    // ✅ Generate tokens for auto-login
+    const tokens = await this.authService['generateTokens']({
+      id: parseInt(result.data.user.id),
+      email: result.data.user.email,
+      userType: result.data.user.userType,
+      tenantId: parseInt(result.data.tenant.id),
+      onboardingRequired: false, // ✅ CRITICAL: Set to false
     });
+
+    // ✅ Create session
+    await this.authService['createSession'](
+      parseInt(result.data.user.id),
+      tokens.refreshToken,
+      undefined,
+      parseInt(result.data.tenant.id),
+    );
+
+    return {
+      success: true,
+      message: 'Invitation accepted successfully',
+      user: {
+        ...result.data.user,
+        tenantId: result.data.tenant.id,
+        onboardingRequired: false, // ✅ Explicitly set
+        onboardingCompleted: true,
+      },
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
+  }
+  @Get('invitation/details')
+  @Public()
+  @Unencrypted()
+  async getInvitationDetails(@Query('token') token: string) {
+    if (!token) {
+      throw new BadRequestException('Invitation token is required');
+    }
+
+    try {
+      const details = await this.invitationService.getInvitationByToken(token);
+
+      // Check if invitation is still valid
+      if (details.status !== 'pending') {
+        throw new BadRequestException('This invitation has already been used');
+      }
+
+      const now = new Date();
+      if (new Date(details.expires_at) < now) {
+        throw new BadRequestException('This invitation has expired');
+      }
+
+      return {
+        success: true,
+        data: {
+          invitee_email: details.invitee_email,
+          invitee_name: details.invitee_name,
+          invitee_type: details.invitee_type,
+          tenant_name: details.tenant_name,
+          role_name: details.role_name,
+          role_display_name: details.role_display_name,
+          invitation_message: details.invitation_message,
+          expires_at: details.expires_at,
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to fetch invitation details',
+      );
+    }
   }
 
   @Post('invitation/cancel')
@@ -215,7 +291,6 @@ export class AuthController {
       tenantId,
     );
   }
-
   // ============================================
   // GOOGLE OAUTH FLOW
   // ============================================

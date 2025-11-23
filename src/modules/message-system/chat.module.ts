@@ -1,9 +1,7 @@
-// ============================================
 // src/modules/message-system/chat.module.ts
-// SIMPLIFIED - NO ENCRYPTION
-// ============================================
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { PresenceService } from './presence.service';
@@ -11,9 +9,18 @@ import { ChatGateway } from './chat.gateway';
 
 @Module({
   imports: [
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-secret-key',
-      signOptions: { expiresIn: '7d' },
+    ConfigModule, // ✅ Import ConfigModule
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('jwt.secret'),
+        signOptions: {
+          expiresIn: configService.get<string>('jwt.accessTokenExpiry') || '15m',
+          issuer: configService.get<string>('jwt.issuer'),
+          audience: configService.get<string>('jwt.audience'),
+        },
+      }),
     }),
   ],
   controllers: [ChatController],
@@ -24,4 +31,4 @@ import { ChatGateway } from './chat.gateway';
   ],
   exports: [ChatService, ChatGateway, PresenceService],
 })
-export class ChatModule {}
+export class ChatModule { }
