@@ -49,6 +49,9 @@ import { JwtService } from '@nestjs/jwt';
 import { ResourcePermissionGuard } from './core/guards/permissions.guard';
 import { TenantsController } from './modules/tenants/tenant.controller';
 import { TenantsModule } from './modules/tenants/tenant.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { UsageTrackingMiddleware } from './core/middlewares/usage-tracking.middleware';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -58,6 +61,7 @@ import { TenantsModule } from './modules/tenants/tenant.module';
       envFilePath: ['.env.local', '.env'],
       cache: true,
     }),
+    ScheduleModule.forRoot(),
 
     // Core
     DatabaseModule,
@@ -74,6 +78,7 @@ import { TenantsModule } from './modules/tenants/tenant.module';
     EmailModule,
     ChatModule,
     TenantsModule, //(Assuming TenantsModule is imported elsewhere if needed)
+    SubscriptionsModule,
   ],
 
   providers: [
@@ -104,6 +109,7 @@ export class AppModule implements NestModule {
         TenantContextMiddleware,
         SessionActivityMiddleware,
         LoggerMiddleware,
+        UsageTrackingMiddleware,
       )
       .forRoutes('*');
   }
