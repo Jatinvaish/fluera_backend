@@ -1,9 +1,9 @@
 // src/modules/message-system/chat.controller.ts - COMPLETE SLACK-LIKE FUNCTIONALITY
-import { Controller, Post, Get, Put, Delete, Body, Query, Param, UseGuards, HttpCode, HttpStatus, ParseIntPipe } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, Query, Param, UseGuards, HttpCode, HttpStatus, ParseIntPipe, BadRequestException, UsePipes, ValidationPipe } from '@nestjs/common';
 import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
 import { JwtAuthGuard } from 'src/core/guards';
 import { ChatService } from './chat.service';
-import { 
+import {
   SendMessageDto, CreateChannelDto, MarkAsReadDto, UpdateChannelDto,
   AddMemberDto, UpdateMemberRoleDto, EditMessageDto, SearchDto,
   PinMessageDto, ForwardMessageDto, MuteChannelDto
@@ -13,7 +13,7 @@ import {
 @UseGuards(JwtAuthGuard)
 @Unencrypted()
 export class ChatController {
-  constructor(private chatService: ChatService) {}
+  constructor(private chatService: ChatService) { }
 
   // ==================== MESSAGES ====================
 
@@ -238,14 +238,33 @@ export class ChatController {
     return this.chatService.getChannelMembers(id, userId);
   }
 
+  // FIX: Add proper validation and transform
   @Post('channels/:id/members')
   @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true
+  }))
   async addMembers(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AddMemberDto,
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
+    console.log('📥 Add Members Request:', {
+      channelId: id,
+      dto,
+      userIds: dto.userIds,
+      userIdsType: typeof dto.userIds,
+      isArray: Array.isArray(dto.userIds)
+    });
+
+    // Additional validation
+    if (!dto.userIds || !Array.isArray(dto.userIds) || dto.userIds.length === 0) {
+      throw new BadRequestException('userIds must be a non-empty array of numbers');
+    }
+
     return this.chatService.addMembers(id, dto.userIds, userId, tenantId);
   }
 
@@ -267,7 +286,6 @@ export class ChatController {
   ) {
     return this.chatService.updateMemberRole(channelId, targetUserId, dto.role, userId);
   }
-
   // ==================== SEARCH ====================
 
   @Get('search')
