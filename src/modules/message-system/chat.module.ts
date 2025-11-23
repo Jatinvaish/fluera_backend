@@ -1,4 +1,4 @@
-// src/modules/message-system/chat.module.ts
+// src/modules/message-system/chat.module.ts - UPDATED
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -6,10 +6,12 @@ import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { PresenceService } from './presence.service';
 import { ChatGateway } from './chat.gateway';
+import { ChatActivityService } from './chat-activity.service'; // ✅ NEW
+import { ChatNotificationService } from './chat-notification.service'; // ✅ NEW
 
 @Module({
   imports: [
-    ConfigModule, // ✅ Import ConfigModule
+    ConfigModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -28,7 +30,15 @@ import { ChatGateway } from './chat.gateway';
     ChatService,
     ChatGateway,
     PresenceService,
+    ChatActivityService, // ✅ NEW
+    ChatNotificationService, // ✅ NEW
   ],
-  exports: [ChatService, ChatGateway, PresenceService],
+  exports: [
+    ChatService, 
+    ChatGateway, 
+    PresenceService,
+    ChatActivityService, // ✅ NEW
+    ChatNotificationService, // ✅ NEW
+  ],
 })
 export class ChatModule { }

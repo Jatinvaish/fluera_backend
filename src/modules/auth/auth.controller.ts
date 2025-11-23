@@ -29,6 +29,7 @@ import {
   ResetPasswordRequestDto,
   ResetPasswordDto,
   ReSendInvitationDto,
+  CancelInvitationDto,
 } from './dto/auth.dto';
 import {
   Public,
@@ -49,7 +50,7 @@ export class AuthController {
     private authService: AuthService,
     private verificationService: VerificationService,
     private invitationService: InvitationService,
-  ) { }
+  ) {}
 
   // ============================================
   // MANUAL REGISTRATION & VERIFICATION
@@ -191,11 +192,15 @@ export class AuthController {
   @Post('invitation/accept')
   @Public()
   async acceptInvitation(@Body() dto: AcceptInvitationDto) {
-    console.log("🚀 ~ AuthController ~ acceptInvitation ~ dto:", dto)
-    const result = await this.invitationService.acceptInvitation(dto.token, dto.password, {
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-    });
+    console.log('🚀 ~ AuthController ~ acceptInvitation ~ dto:', dto);
+    const result = await this.invitationService.acceptInvitation(
+      dto.token,
+      dto.password,
+      {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+      },
+    );
 
     // ✅ Generate tokens for auto-login
     const tokens = await this.authService['generateTokens']({
@@ -263,9 +268,28 @@ export class AuthController {
       };
     } catch (error) {
       throw new BadRequestException(
-        error.message || 'Failed to fetch invitation details'
+        error.message || 'Failed to fetch invitation details',
       );
     }
+  }
+
+  @Post('invitation/cancel')
+  async cancelInvitation(
+    @Body() dto: CancelInvitationDto,
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
+    console.log(
+      'Received cancel invitation request:',
+      Number(dto.invitationId),
+      userId,
+      tenantId,
+    );
+    return this.invitationService.cancelInvitation(
+      Number(dto.invitationId),
+      userId,
+      tenantId,
+    );
   }
   // ============================================
   // GOOGLE OAUTH FLOW

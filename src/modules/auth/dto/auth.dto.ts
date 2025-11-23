@@ -142,3 +142,8 @@ export class ReSendInvitationDto {
   @IsNotEmpty()
   invitationId: any;
 }
+
+export class CancelInvitationDto {
+  @IsNotEmpty()
+  invitationId: any;
+}
