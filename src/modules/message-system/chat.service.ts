@@ -3,6 +3,8 @@ import { Injectable, Logger, ForbiddenException, BadRequestException, NotFoundEx
 import { SqlServerService } from 'src/core/database';
 import { RedisService } from 'src/core/redis/redis.service';
 import { CreateChannelDto, SendMessageDto, UpdateChannelDto } from './dto/chat.dto';
+import { ChatActivityService, ChatActivityType } from './chat-activity.service';
+import { ChatNotificationService } from './chat-notification.service';
 
 export interface MessageResponse {
   id: number;
@@ -21,28 +23,13 @@ export class ChatService {
   constructor(
     private sqlService: SqlServerService,
     private redisService: RedisService,
-  ) {}
+    private activityService: ChatActivityService, // ✅ NEW
+    private notificationService: ChatNotificationService, // ✅ NEW
+  ) { }
 
   // ==================== MESSAGES ====================
 
-  async sendMessage(dto: SendMessageDto, userId: number, tenantId: number): Promise<MessageResponse> {
-    const validation = await this.validateFromCache(dto.channelId, userId);
-    if (!validation.isMember) throw new ForbiddenException('Not a channel member');
-
-    const result = await this.sqlService.execute('sp_SendMessage_Fast', {
-      channelId: dto.channelId, userId, tenantId,
-      messageType: dto.messageType || 'text',
-      content: dto.content,
-      hasAttachments: dto.attachments && dto.attachments?.length > 0 ? 1 : 0,
-      hasMentions: dto.mentions && dto.mentions?.length > 0 ? 1 : 0,
-      replyToMessageId: dto.replyToMessageId || null,
-      threadId: dto.threadId || null,
-    });
-
-    const message = result[0] as MessageResponse;
-    setImmediate(() => this.processMessageAsync(message.id, dto.channelId, userId, validation.participant_ids));
-    return message;
-  }
+ 
 
   async getMessages(channelId: number, userId: number, limit = 50, beforeId?: number) {
     const cacheKey = `msgs:${channelId}:${limit}:${beforeId || 'latest'}`;
@@ -53,7 +40,7 @@ export class ChatService {
           new Promise((_, r) => setTimeout(() => r('timeout'), 10))
         ]);
         if (cached) return JSON.parse(cached as string);
-      } catch {}
+      } catch { }
     }
 
     const messages = await this.sqlService.execute('sp_GetMessages_Fast', {
@@ -66,44 +53,6 @@ export class ChatService {
     return messages;
   }
 
-  async editMessage(messageId: number, content: string, userId: number) {
-    const msg = await this.sqlService.query(
-      `SELECT id, sender_user_id, channel_id FROM messages WHERE id = @messageId AND is_deleted = 0`,
-      { messageId }
-    );
-    if (!msg.length) throw new NotFoundException('Message not found');
-    if (msg[0].sender_user_id !== userId) throw new ForbiddenException('Can only edit your own messages');
-
-    await this.sqlService.query(
-      `UPDATE messages SET content = @content, is_edited = 1, edited_at = GETUTCDATE(), updated_at = GETUTCDATE() WHERE id = @messageId`,
-      { messageId, content }
-    );
-
-    setImmediate(() => this.redisService.del(`msgs:${msg[0].channel_id}:*`));
-    return { success: true, messageId };
-  }
-
-  async deleteMessage(messageId: number, userId: number) {
-    const msg = await this.sqlService.query(
-      `SELECT m.id, m.sender_user_id, m.channel_id, cp.role 
-       FROM messages m
-       JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = @userId
-       WHERE m.id = @messageId`,
-      { messageId, userId }
-    );
-    if (!msg.length) throw new NotFoundException('Message not found');
-    if (msg[0].sender_user_id !== userId && !['admin', 'owner'].includes(msg[0].role)) {
-      throw new ForbiddenException('Cannot delete this message');
-    }
-
-    await this.sqlService.query(
-      `UPDATE messages SET is_deleted = 1, deleted_at = GETUTCDATE(), deleted_by = @userId WHERE id = @messageId`,
-      { messageId, userId }
-    );
-
-    setImmediate(() => this.redisService.del(`msgs:${msg[0].channel_id}:*`));
-    return { success: true };
-  }
 
   async pinMessage(messageId: number, isPinned: boolean, userId: number) {
     const msg = await this.sqlService.query(
@@ -193,21 +142,6 @@ export class ChatService {
 
   // ==================== REACTIONS ====================
 
-  async addReaction(messageId: number, userId: number, tenantId: number, emoji: string) {
-    const exists = await this.sqlService.query(
-      `SELECT id FROM message_reactions WHERE message_id = @messageId AND user_id = @userId AND emoji = @emoji`,
-      { messageId, userId, emoji }
-    );
-    if (exists.length) return { success: true, action: 'already_exists' };
-
-    await this.sqlService.query(
-      `INSERT INTO message_reactions (message_id, user_id, tenant_id, emoji, created_at, created_by)
-       VALUES (@messageId, @userId, @tenantId, @emoji, GETUTCDATE(), @userId)`,
-      { messageId, userId, tenantId, emoji }
-    );
-    return { success: true, action: 'added' };
-  }
-
   async removeReaction(messageId: number, userId: number, emoji: string) {
     await this.sqlService.query(
       `DELETE FROM message_reactions WHERE message_id = @messageId AND user_id = @userId AND emoji = @emoji`,
@@ -226,7 +160,7 @@ export class ChatService {
         new Promise((_, r) => setTimeout(() => r('timeout'), 10))
       ]);
       if (cached) return JSON.parse(cached as string);
-    } catch {}
+    } catch { }
 
     const channels = await this.sqlService.execute('sp_GetUserChannels_Fast', { userId, limit });
     setImmediate(() => this.redisService.set(cacheKey, JSON.stringify(channels), 300));
@@ -237,7 +171,7 @@ export class ChatService {
     if (!dto.participantIds?.length) throw new BadRequestException('At least one participant required');
 
     const allParticipants = Array.from(new Set([userId, ...dto.participantIds]));
-    
+
     // ✅ FIX: Match stored procedure parameters exactly (9 params, NOT 10)
     const result = await this.sqlService.execute('sp_CreateChannel_Fast', {
       tenantId,           // @tenantId BIGINT
@@ -480,7 +414,7 @@ export class ChatService {
       try {
         const cached = await this.redisService.get(cacheKey);
         if (cached) return JSON.parse(cached as string);
-      } catch {}
+      } catch { }
     }
 
     let query = `SELECT u.id, u.email, u.first_name, u.last_name, u.display_name, u.avatar_url, u.status, u.last_active_at
@@ -553,7 +487,7 @@ export class ChatService {
       try {
         await this.sqlService.execute('sp_MarkAsRead_Fast', { messageId, userId, channelId });
         await this.redisService.del(`user:${userId}:unread`);
-      } catch {}
+      } catch { }
     });
     return { success: true };
   }
@@ -563,7 +497,7 @@ export class ChatService {
     try {
       const cached = await this.redisService.get(cacheKey);
       if (cached) return parseInt(cached as string);
-    } catch {}
+    } catch { }
 
     const result = await this.sqlService.execute('sp_GetUnreadCount_Fast', { userId });
     const count = result[0]?.unread_count || 0;
@@ -578,7 +512,7 @@ export class ChatService {
     try {
       const cached = await Promise.race([this.redisService.get(cacheKey), new Promise((_, r) => setTimeout(() => r('timeout'), 10))]);
       if (cached) return JSON.parse(cached as string);
-    } catch {}
+    } catch { }
 
     const result = await this.sqlService.execute('sp_ValidateMessageSend_Fast', { channelId, userId });
     const validation = { isMember: result[0]?.isMember === 1, participant_ids: result[0]?.participant_ids || '' };
@@ -646,5 +580,268 @@ export class ChatService {
       } while (cursor !== '0');
       return keys;
     } catch { return []; }
+  }
+
+  // updated
+  async sendMessage(dto: SendMessageDto, userId: number, tenantId: number): Promise<MessageResponse> {
+    const validation = await this.validateFromCache(dto.channelId, userId);
+    if (!validation.isMember) throw new ForbiddenException('Not a channel member');
+
+    const result = await this.sqlService.execute('sp_SendMessage_Fast', {
+      channelId: dto.channelId, userId, tenantId,
+      messageType: dto.messageType || 'text',
+      content: dto.content,
+      hasAttachments: dto.attachments && dto.attachments?.length > 0 ? 1 : 0,
+      hasMentions: dto.mentions && dto.mentions?.length > 0 ? 1 : 0,
+      replyToMessageId: dto.replyToMessageId || null,
+      threadId: dto.threadId || null,
+    });
+
+    const message = result[0] as MessageResponse;
+
+    // ✅ Log activity asynchronously
+    setImmediate(() => this.logMessageActivity(message, userId, tenantId, dto, validation.participant_ids));
+
+    return message;
+  }
+
+  /**
+   * ✅ NEW: Log message activity and send notifications
+   */
+  private async logMessageActivity(
+    message: MessageResponse,
+    userId: number,
+    tenantId: number,
+    dto: SendMessageDto,
+    participantIdsStr: string
+  ): Promise<void> {
+    try {
+      // Get user and channel info
+      const [user, channel] = await Promise.all([
+        this.sqlService.query('SELECT first_name, last_name FROM users WHERE id = @userId', { userId }),
+        this.sqlService.query('SELECT name FROM chat_channels WHERE id = @channelId', { channelId: dto.channelId })
+      ]);
+
+      const senderName = `${user[0]?.first_name} ${user[0]?.last_name}`;
+      const channelName = channel[0]?.name || 'Unknown Channel';
+      const messagePreview = dto.content.substring(0, 100);
+
+      // Log activity
+      await this.activityService.logActivity({
+        tenantId,
+        userId,
+        activityType: dto.replyToMessageId ? ChatActivityType.THREAD_REPLIED : ChatActivityType.MESSAGE_SENT,
+        subjectType: 'message',
+        subjectId: message.id,
+        action: 'sent',
+        description: `${senderName} sent a message in ${channelName}`,
+        metadata: {
+          channelId: dto.channelId,
+          messageId: message.id,
+          messageType: dto.messageType,
+          hasAttachments: dto.attachments && dto.attachments?.length > 0,
+        },
+      });
+
+      // Parse participant IDs
+      const participantIds = participantIdsStr.split(',')
+        .map(id => parseInt(id.trim()))
+        .filter(id => !isNaN(id) && id !== userId);
+
+      // Send notifications for new message
+      if (dto.replyToMessageId || dto.threadId) {
+        // Thread reply notification
+        await this.notificationService.notifyThreadReply({
+          channelId: dto.channelId,
+          messageId: message.id,
+          threadId: dto.threadId || dto.replyToMessageId!,
+          senderId: userId,
+          senderName,
+          recipientIds: participantIds,
+          tenantId,
+          messagePreview,
+        });
+      } else {
+        // Regular message notification
+        await this.notificationService.notifyNewMessage({
+          channelId: dto.channelId,
+          messageId: message.id,
+          senderId: userId,
+          senderName,
+          recipientIds: participantIds,
+          tenantId,
+          messagePreview,
+          channelName,
+        });
+      }
+
+      // Handle mentions
+      if (dto.mentions && dto.mentions.length > 0) {
+        for (const mentionedUserId of dto.mentions) {
+          await this.activityService.logActivity({
+            tenantId,
+            userId: mentionedUserId,
+            activityType: ChatActivityType.USER_MENTIONED,
+            subjectType: 'message',
+            subjectId: message.id,
+            action: 'mentioned',
+            description: `${senderName} mentioned you in ${channelName}`,
+            metadata: { channelId: dto.channelId, messageId: message.id },
+          });
+
+          await this.notificationService.notifyMention({
+            channelId: dto.channelId,
+            messageId: message.id,
+            senderId: userId,
+            senderName,
+            mentionedUserId,
+            tenantId,
+            messagePreview,
+            channelName,
+          });
+        }
+      }
+
+      // Create read receipts
+      await this.sqlService.execute('sp_CreateReadReceiptsBulk_Fast', {
+        messageId: message.id,
+        channelId: dto.channelId,
+        senderId: userId
+      });
+
+      // Invalidate caches
+      await this.invalidateCaches(dto.channelId, participantIds);
+
+    } catch (error) {
+      this.logger.error(`Failed to log message activity: ${error.message}`);
+    }
+  }
+
+  async editMessage(messageId: number, content: string, userId: number) {
+    const msg = await this.sqlService.query(
+      `SELECT id, sender_user_id, channel_id FROM messages WHERE id = @messageId AND is_deleted = 0`,
+      { messageId }
+    );
+    if (!msg.length) throw new NotFoundException('Message not found');
+    if (msg[0].sender_user_id !== userId) throw new ForbiddenException('Can only edit your own messages');
+
+    await this.sqlService.query(
+      `UPDATE messages SET content = @content, is_edited = 1, edited_at = GETUTCDATE(), updated_at = GETUTCDATE() WHERE id = @messageId`,
+      { messageId, content }
+    );
+
+    // ✅ Log activity
+    setImmediate(async () => {
+      try {
+        const user = await this.sqlService.query('SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId', { userId });
+        await this.activityService.logActivity({
+          tenantId: user[0]?.tenant_id || 0,
+          userId,
+          activityType: ChatActivityType.MESSAGE_EDITED,
+          subjectType: 'message',
+          subjectId: messageId,
+          action: 'edited',
+          description: `${user[0]?.first_name} ${user[0]?.last_name} edited a message`,
+          metadata: { channelId: msg[0].channel_id },
+        });
+      } catch (error) {
+        this.logger.error(`Failed to log edit activity: ${error.message}`);
+      }
+    });
+
+    setImmediate(() => this.redisService.del(`msgs:${msg[0].channel_id}:*`));
+    return { success: true, messageId };
+  }
+
+  async deleteMessage(messageId: number, userId: number) {
+    const msg = await this.sqlService.query(
+      `SELECT m.id, m.sender_user_id, m.channel_id, cp.role 
+       FROM messages m
+       JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = @userId
+       WHERE m.id = @messageId`,
+      { messageId, userId }
+    );
+    if (!msg.length) throw new NotFoundException('Message not found');
+    if (msg[0].sender_user_id !== userId && !['admin', 'owner'].includes(msg[0].role)) {
+      throw new ForbiddenException('Cannot delete this message');
+    }
+
+    await this.sqlService.query(
+      `UPDATE messages SET is_deleted = 1, deleted_at = GETUTCDATE(), deleted_by = @userId WHERE id = @messageId`,
+      { messageId, userId }
+    );
+
+    // ✅ Log activity
+    setImmediate(async () => {
+      try {
+        const user = await this.sqlService.query('SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId', { userId });
+        await this.activityService.logActivity({
+          tenantId: user[0]?.tenant_id || 0,
+          userId,
+          activityType: ChatActivityType.MESSAGE_DELETED,
+          subjectType: 'message',
+          subjectId: messageId,
+          action: 'deleted',
+          description: `${user[0]?.first_name} ${user[0]?.last_name} deleted a message`,
+          metadata: { channelId: msg[0].channel_id },
+        });
+      } catch (error) {
+        this.logger.error(`Failed to log delete activity: ${error.message}`);
+      }
+    });
+
+    setImmediate(() => this.redisService.del(`msgs:${msg[0].channel_id}:*`));
+    return { success: true };
+  }
+
+  async addReaction(messageId: number, userId: number, tenantId: number, emoji: string) {
+    const exists = await this.sqlService.query(
+      `SELECT id FROM message_reactions WHERE message_id = @messageId AND user_id = @userId AND emoji = @emoji`,
+      { messageId, userId, emoji }
+    );
+    if (exists.length) return { success: true, action: 'already_exists' };
+
+    await this.sqlService.query(
+      `INSERT INTO message_reactions (message_id, user_id, tenant_id, emoji, created_at, created_by)
+       VALUES (@messageId, @userId, @tenantId, @emoji, GETUTCDATE(), @userId)`,
+      { messageId, userId, tenantId, emoji }
+    );
+
+    // ✅ Log activity and notify
+    setImmediate(async () => {
+      try {
+        const [user, message] = await Promise.all([
+          this.sqlService.query('SELECT first_name, last_name FROM users WHERE id = @userId', { userId }),
+          this.sqlService.query('SELECT sender_user_id, channel_id FROM messages WHERE id = @messageId', { messageId })
+        ]);
+
+        const reactorName = `${user[0]?.first_name} ${user[0]?.last_name}`;
+
+        await this.activityService.logActivity({
+          tenantId,
+          userId,
+          activityType: ChatActivityType.REACTION_ADDED,
+          subjectType: 'message',
+          subjectId: messageId,
+          action: 'reacted',
+          description: `${reactorName} reacted with ${emoji}`,
+          metadata: { channelId: message[0]?.channel_id, emoji },
+        });
+
+        await this.notificationService.notifyReaction({
+          messageId,
+          channelId: message[0]?.channel_id,
+          reactorId: userId,
+          reactorName,
+          messageAuthorId: message[0]?.sender_user_id,
+          tenantId,
+          emoji,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to log reaction activity: ${error.message}`);
+      }
+    });
+
+    return { success: true, action: 'added' };
   }
 }

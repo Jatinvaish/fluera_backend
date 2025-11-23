@@ -4,10 +4,11 @@ import { EncryptionService } from './encryption.service';
 import { HashingService } from './hashing.service';
 import { EmailService } from 'src/modules/email-templates/email.service';
 import { EnhancedEncryptionService } from './enhanced-encryption.service';
+import { TwilioService } from './twilio.service';
 
 @Global()
 @Module({
-  providers: [EncryptionService, EnhancedEncryptionService, HashingService, EmailService],
-  exports: [EncryptionService, EnhancedEncryptionService, HashingService, EmailService],
+  providers: [EncryptionService, EnhancedEncryptionService, HashingService, EmailService,TwilioService],
+  exports: [EncryptionService, EnhancedEncryptionService, HashingService, EmailService,TwilioService],
 })
 export class CommonModule { }
