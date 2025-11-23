@@ -1,6 +1,6 @@
-// src/modules/message-system/dto/chat.dto.ts - FIXED
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsEnum, MaxLength, IsBoolean, IsDateString, ArrayMinSize } from 'class-validator';
-import { Type } from 'class-transformer';
+// src/modules/message-system/dto/chat.dto.ts - FIXED VALIDATION
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsEnum, MaxLength, IsBoolean, IsDateString, ArrayMinSize, ValidateNested } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 
 // ==================== MESSAGE DTOs ====================
 
@@ -68,7 +68,9 @@ export class ForwardMessageDto {
   messageId: number;
 
   @IsArray()
-  @IsNotEmpty()
+  @IsNumber({}, { each: true })
+  @ArrayMinSize(1)
+  @Type(() => Number)
   targetChannelIds: number[];
 }
 
@@ -94,6 +96,12 @@ export class CreateChannelDto {
   @IsNumber({}, { each: true })
   @Type(() => Number)
   @ArrayMinSize(1)
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) {
+      return value.map(v => typeof v === 'string' ? parseInt(v, 10) : v);
+    }
+    return value;
+  })
   participantIds: number[];
 
   @IsBoolean()
@@ -139,8 +147,19 @@ export class MuteChannelDto {
 export class AddMemberDto {
   @IsArray()
   @IsNumber({}, { each: true })
-  @Type(() => Number)
   @ArrayMinSize(1)
+  @Type(() => Number)
+  @Transform(({ value }) => {
+    // Handle both array and object formats
+    if (Array.isArray(value)) {
+      return value.map(v => typeof v === 'string' ? parseInt(v, 10) : v);
+    }
+    if (typeof value === 'object' && value !== null) {
+      // If it's an object with numeric keys, convert to array
+      return Object.values(value).map(v => typeof v === 'string' ? parseInt(v, 10) : Number(v));
+    }
+    return [];
+  })
   userIds: number[];
 
   @IsString()
