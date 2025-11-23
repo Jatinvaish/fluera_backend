@@ -1,17 +1,26 @@
-
-
 // ============================================
-// src/modules/tenants/tenants.service.ts - V3.0
+// src/modules/tenants/tenants.service.ts - V4.0
 // ============================================
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { SqlServerService } from '../../core/database/sql-server.service';
 import { EncryptionService } from 'src/common/encryption.service';
+import { GetTenantMembersQueryDto } from './dto/tenant.dto';
+
+export interface PaginatedMembersResponse {
+  data: any[];
+  pagination: {
+    currentPage: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+  };
+}
 
 @Injectable()
 export class TenantsService {
-  constructor(private sqlService: SqlServerService,
-        private encryptionService: EncryptionService
-    
+  constructor(
+    private sqlService: SqlServerService,
+    private encryptionService: EncryptionService
   ) { }
 
   /**
@@ -98,7 +107,7 @@ export class TenantsService {
     }
 
     if (updates.length === 0) {
-      throw new ForbiddenException('No fields to update');
+      throw new BadRequestException('No fields to update');
     }
 
     updates.push('updated_at = GETUTCDATE()');
@@ -113,20 +122,72 @@ export class TenantsService {
   }
 
   /**
-   * Get tenant members
+   * Get tenant members with pagination, sorting, and search
    */
-  async getTenantMembers(tenantId: number, userId: number) {
-    console.log("Getting members for tenant:", tenantId, "by user:", userId);
+  async getTenantMembers(
+    tenantId: number,
+    userId: number,
+    query: GetTenantMembersQueryDto
+  ): Promise<PaginatedMembersResponse> {
     const hasAccess = await this.verifyUserAccess(userId, tenantId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this tenant');
     }
 
-    const members = await this.sqlService.execute('sp_GetTenantMembers', {
-      tenantId,
-    });
+    // Use defaults from DTO or override with provided values
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const search = query.search?.trim() || null;
+    const sortBy = query.sortBy || 'joined_at';
+    const sortOrder = query.sortOrder || 'DESC';
 
-    return members;
+    try {
+      const results = await this.sqlService.execute('sp_GetTenantMembers', {
+        tenantId,
+        page,
+        limit,
+        search,
+        sortBy,
+        sortOrder,
+      });
+
+      if (!results || results.length === 0) {
+        return {
+          data: [],
+          pagination: {
+            currentPage: page,
+            pageSize: limit,
+            totalCount: 0,
+            totalPages: 0,
+          },
+        };
+      }
+
+      // Extract pagination info from first row
+      const firstRow = results[0];
+      const totalCount = firstRow.total_count || 0;
+      const totalPages = firstRow.total_pages || 0;
+
+      // Remove pagination fields from data
+      const data = results.map(row => {
+        const { total_count, current_page, page_size, total_pages, ...cleanRow } = row;
+        return cleanRow;
+      });
+
+      return {
+        data,
+        pagination: {
+          currentPage: page,
+          pageSize: limit,
+          totalCount,
+          totalPages,
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to fetch tenant members: ${error.message}`
+      );
+    }
   }
 
   /**
@@ -138,7 +199,6 @@ export class TenantsService {
       throw new ForbiddenException('You do not have access to this tenant');
     }
 
-    // ✅ USE SP INSTEAD OF INLINE SQL
     const stats = await this.sqlService.execute('sp_GetTenantUsageStats', {
       tenantId,
     });
@@ -173,9 +233,10 @@ export class TenantsService {
       },
     };
   }
-  // ============================================
-  // NEW METHOD: Rotate Tenant Encryption Keys
-  // ============================================
+
+  /**
+   * Rotate Tenant Encryption Keys
+   */
   async rotateTenantKeys(tenantId: number, userId: number) {
     const hasAccess = await this.verifyUserAccess(userId, tenantId);
     if (!hasAccess) {
@@ -185,7 +246,6 @@ export class TenantsService {
     // Generate new keys
     const newKeys = this.encryptionService.generateTenantKey();
 
-    // ✅ USE SP FOR KEY ROTATION
     const result = await this.sqlService.execute('sp_RotateTenantKeys', {
       tenantId,
       newPublicKey: newKeys.publicKey,
@@ -204,7 +264,6 @@ export class TenantsService {
    * Verify user has access to tenant
    */
   private async verifyUserAccess(userId: number, tenantId: number): Promise<boolean> {
-    // ✅ USE SP INSTEAD OF INLINE SQL
     const result = await this.sqlService.execute('sp_VerifyTenantAccess', {
       userId,
       tenantId,
