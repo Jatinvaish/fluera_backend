@@ -946,6 +946,8 @@ export class AuthService {
       });
 
       const tenantId = tenantResult[0].id;
+      // ✅ ASSIGN DEFAULT FREE PLAN
+      await this.assignDefaultFreePlan(tenantId, 'agency');
 
       // Update user details
       await transaction
@@ -1065,6 +1067,8 @@ export class AuthService {
       });
 
       const tenantId = tenantResult[0].id;
+      // ✅ ASSIGN DEFAULT FREE PLAN
+      await this.assignDefaultFreePlan(tenantId, 'brand');
 
       await transaction
         .request()
@@ -1189,6 +1193,8 @@ export class AuthService {
       });
 
       const tenantId = tenantResult[0].id;
+      // ✅ ASSIGN DEFAULT FREE PLAN
+      await this.assignDefaultFreePlan(tenantId, 'creator');
 
       await transaction
         .request()
@@ -1418,6 +1424,91 @@ export class AuthService {
     } catch (error) {
       this.logger.error('Admin recovery failed', error);
       throw error;
+    }
+  }
+
+  private async assignDefaultFreePlan(
+    tenantId: number,
+    tenantType: string,
+  ): Promise<void> {
+    try {
+      // Get default free plan for tenant type
+      const planSlug = `${tenantType}-free`;
+
+      const plans: any = await this.sqlService.query(
+        `SELECT id, trial_days FROM subscription_plans 
+       WHERE plan_slug = @planSlug AND is_active = 1`,
+        { planSlug },
+      );
+
+      if (plans && plans.length > 0) {
+        const plan = plans[0];
+        const trialDays = plan.trial_days || 0;
+
+        const now = new Date();
+        const trialEndsAt =
+          trialDays > 0
+            ? new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000)
+            : null;
+
+        // Update tenant with free plan
+        await this.sqlService.query(
+          `UPDATE tenants
+         SET 
+           subscription_plan_id = @planId,
+           subscription_status = @status,
+           is_trial = @isTrial,
+           trial_started_at = @trialStartedAt,
+           trial_ends_at = @trialEndsAt,
+           subscription_started_at = GETUTCDATE(),
+           billing_cycle = 'monthly',
+           auto_renew = 0,
+           -- Set limits from plan
+           max_staff = (SELECT max_staff FROM subscription_plans WHERE id = @planId),
+           max_storage_gb = (SELECT max_storage_gb FROM subscription_plans WHERE id = @planId),
+           max_campaigns = (SELECT max_campaigns FROM subscription_plans WHERE id = @planId),
+           max_invitations = (SELECT max_invitations FROM subscription_plans WHERE id = @planId),
+           max_creators = (SELECT max_creators FROM subscription_plans WHERE id = @planId),
+           max_brands = (SELECT max_brands FROM subscription_plans WHERE id = @planId),
+           max_integrations = (SELECT max_integrations FROM subscription_plans WHERE id = @planId),
+           updated_at = GETUTCDATE()
+         WHERE id = @tenantId`,
+          {
+            tenantId,
+            planId: plan.id,
+            status: trialDays > 0 ? 'trial' : 'active',
+            isTrial: trialDays > 0 ? 1 : 0,
+            trialStartedAt: trialDays > 0 ? now : null,
+            trialEndsAt: trialEndsAt,
+          },
+        );
+
+        // Record in subscription history
+        await this.sqlService.query(
+          `INSERT INTO subscription_history (
+          tenant_id, from_plan_id, to_plan_id, change_type,
+          change_reason, effective_date, created_at
+        )
+        VALUES (
+          @tenantId, NULL, @planId, 'initial',
+          'Default free plan assigned on tenant creation',
+          CAST(GETUTCDATE() AS DATE), GETUTCDATE()
+        )`,
+          { tenantId, planId: plan.id },
+        );
+
+        this.logger.log(
+          `Assigned free plan (${planSlug}) to tenant ${tenantId}`,
+        );
+      } else {
+        this.logger.warn(`No free plan found for tenant type: ${tenantType}`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to assign free plan to tenant ${tenantId}:`,
+        error,
+      );
+      // Don't throw - tenant creation should still succeed
     }
   }
 }

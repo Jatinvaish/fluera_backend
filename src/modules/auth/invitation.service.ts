@@ -19,7 +19,7 @@ export class InvitationService {
     private hashingService: HashingService,
     private rbacService: RbacService,
     private emailService: EmailService,
-  ) { }
+  ) {}
 
   async sendInvitation(tenantId: number, invitedBy: number, dto: any) {
     // Get inviter's user type for role validation
@@ -147,7 +147,10 @@ export class InvitationService {
          AND i.expires_at > GETUTCDATE()`,
       { token },
     );
-    console.log("🚀 ~ InvitationService ~ acceptInvitation ~ invitation:", invitation)
+    console.log(
+      '🚀 ~ InvitationService ~ acceptInvitation ~ invitation:',
+      invitation,
+    );
 
     if (invitation.length === 0) {
       throw new BadRequestException('Invalid or expired invitation');
@@ -179,7 +182,10 @@ export class InvitationService {
       `SELECT id FROM users WHERE email = @email`,
       { email: invite.invitee_email },
     );
-    console.log("🚀 ~ InvitationService ~ acceptInvitation ~ existingUser:", existingUser)
+    console.log(
+      '🚀 ~ InvitationService ~ acceptInvitation ~ existingUser:',
+      existingUser,
+    );
 
     if (existingUser.length > 0) {
       throw new BadRequestException(
@@ -204,8 +210,8 @@ export class InvitationService {
         .input(
           'lastName',
           userData.lastName ||
-          invite.invitee_name?.split(' ').slice(1).join(' ') ||
-          '',
+            invite.invitee_name?.split(' ').slice(1).join(' ') ||
+            '',
         )
         .input('userType', invite.invitee_type || 'staff').query(`
       INSERT INTO users (
@@ -242,10 +248,7 @@ export class InvitationService {
         `);
 
       // Mark invitation as accepted
-      await transaction
-        .request()
-        .input('invitationId', invite.id)
-        .query(`
+      await transaction.request().input('invitationId', invite.id).query(`
           UPDATE invitations 
           SET status = 'accepted', 
                accepted_at = GETUTCDATE(),
@@ -378,7 +381,6 @@ export class InvitationService {
   }
 
   async resendInvitation(invitationId: number, tenantId: number) {
-
     console.log('Resending invitation:', { invitationId, tenantId });
     const invitation = await this.sqlService.query(
       `SELECT * FROM invitations 

@@ -1,5 +1,6 @@
-// src/modules/message-system/dto/chat.dto.ts - COMPLETE DTOs
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsEnum, MaxLength, IsBoolean, IsDateString } from 'class-validator';
+// src/modules/message-system/dto/chat.dto.ts - FIXED
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsEnum, MaxLength, IsBoolean, IsDateString, ArrayMinSize } from 'class-validator';
+import { Type } from 'class-transformer';
 
 // ==================== MESSAGE DTOs ====================
 
@@ -90,7 +91,9 @@ export class CreateChannelDto {
   channelType?: string;
 
   @IsArray()
-  @IsNotEmpty()
+  @IsNumber({}, { each: true })
+  @Type(() => Number)
+  @ArrayMinSize(1)
   participantIds: number[];
 
   @IsBoolean()
@@ -131,11 +134,13 @@ export class MuteChannelDto {
   muteUntil?: string;
 }
 
-// ==================== MEMBER DTOs ====================
+// ==================== MEMBER DTOs - FIXED ====================
 
 export class AddMemberDto {
   @IsArray()
-  @IsNotEmpty()
+  @IsNumber({}, { each: true })
+  @Type(() => Number)
+  @ArrayMinSize(1)
   userIds: number[];
 
   @IsString()
