@@ -503,7 +503,7 @@ export class ChatService {
         `SELECT c.id, c.name FROM chat_channels c
          JOIN chat_participants cp1 ON c.id = cp1.channel_id AND cp1.user_id = @p1 AND cp1.is_active = 1
          JOIN chat_participants cp2 ON c.id = cp2.channel_id AND cp2.user_id = @p2 AND cp2.is_active = 1
-         WHERE c.channel_type = 'direct' AND c.is_deleted = 0`,
+         WHERE c.channel_type = 'direct' `,
         { p1: allParticipants[0], p2: allParticipants[1] }
       );
       if (existing.length) return { id: existing[0].id, name: existing[0].name, isExisting: true };
