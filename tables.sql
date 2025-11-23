@@ -3244,3 +3244,7 @@ GO
 
 PRINT '✅ Ultra-fast stored procedures and indexes created successfully';
 PRINT '🎯 Target: <80ms message delivery achieved with these optimizations';
+
+
+ ALTER TABLE chat_participants
+ADD is_pinned INT;
