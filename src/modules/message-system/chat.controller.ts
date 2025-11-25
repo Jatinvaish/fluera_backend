@@ -385,4 +385,122 @@ export class ChatController {
   ) {
     return this.chatService.getMessageReadStatus(messageId);
   }
+  @Get('mentions')
+  async getUserMentions(
+    @Query('limit') limit: number = 50,
+    @CurrentUser('id') userId: number,
+  ) {
+    const mentions = await this.chatService.getUserMentions(userId, +limit);
+    return {
+      success: true,
+      data: mentions,
+      total: mentions.length,
+    };
+  }
+
+  /**
+   * ✅ Get unread mentions count
+   */
+  @Get('mentions/unread-count')
+  async getUnreadMentionsCount(
+    @CurrentUser('id') userId: number,
+  ) {
+    // Query messages where user is mentioned and hasn't been read
+    const count = await this.chatService['sqlService'].query(
+      `SELECT COUNT(*) as count
+       FROM message_mentions mm
+       INNER JOIN messages m ON mm.message_id = m.id
+       INNER JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = mm.user_id
+       WHERE mm.user_id = @userId
+       AND m.is_deleted = 0
+       AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)`,
+      { userId }
+    );
+
+    return {
+      success: true,
+      count: count[0]?.count || 0,
+    };
+  }
+  @Get('messages/:messageId/attachments')
+  async getMessageAttachments(
+    @Param('messageId', ParseIntPipe) messageId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    const attachments = await this.chatService['sqlService'].execute(
+      'sp_GetMessageAttachments_Fast',
+      { messageId }
+    );
+
+    return {
+      success: true,
+      data: attachments,
+      total: attachments.length,
+    };
+  }
+
+  /**
+   * ✅ Get message reactions
+   */
+  @Get('messages/:messageId/reactions')
+  async getMessageReactions(
+    @Param('messageId', ParseIntPipe) messageId: number,
+  ) {
+    const reactions = await this.chatService['sqlService'].execute(
+      'sp_GetMessageReactions_Fast',
+      { messageId }
+    );
+
+    return {
+      success: true,
+      data: reactions,
+      total: reactions.length,
+    };
+  }
+
+  // ==================== NEW: ENHANCED MESSAGE ENDPOINTS ====================
+
+  /**
+   * ✅ Get message with full details (reactions, attachments, mentions)
+   */
+  @Get('messages/:messageId/details')
+  async getMessageDetails(
+    @Param('messageId', ParseIntPipe) messageId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    // Get message
+    const message = await this.chatService.getMessage(messageId);
+
+    // Get reactions
+    const reactions = await this.chatService['sqlService'].execute(
+      'sp_GetMessageReactions_Fast',
+      { messageId }
+    );
+
+    // Get attachments
+    const attachments = await this.chatService['sqlService'].execute(
+      'sp_GetMessageAttachments_Fast',
+      { messageId }
+    );
+
+    // Get mentions
+    const mentions = await this.chatService['sqlService'].query(
+      `SELECT mm.user_id, u.first_name, u.last_name, u.avatar_url
+       FROM message_mentions mm
+       INNER JOIN users u ON mm.user_id = u.id
+       WHERE mm.message_id = @messageId`,
+      { messageId }
+    );
+
+    return {
+      success: true,
+      data: {
+        ...message,
+        reactions,
+        attachments,
+        mentions,
+      },
+    };
+  }
+
 }
