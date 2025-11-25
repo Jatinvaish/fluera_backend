@@ -2,14 +2,14 @@
 // src/modules/message-system/chat.gateway.ts
 // FIXED WEBSOCKET WITH PROPER AUTH
 // ============================================
-import { 
-  WebSocketGateway, 
-  WebSocketServer, 
-  SubscribeMessage, 
-  MessageBody, 
-  ConnectedSocket, 
-  OnGatewayConnection, 
-  OnGatewayDisconnect 
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
+  OnGatewayConnection,
+  OnGatewayDisconnect
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
@@ -25,9 +25,9 @@ interface AuthSocket extends Socket {
 }
 
 @WebSocketGateway({
-  cors: { 
-    origin: '*', 
-    credentials: true 
+  cors: {
+    origin: '*',
+    credentials: true
   },
   namespace: '/chat',
   transports: ['websocket', 'polling'],
@@ -45,19 +45,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private chatService: ChatService,
     private jwtService: JwtService,
     private configService: ConfigService, // ✅ ADD THIS
-  ) {}
+  ) { }
 
   @SubscribeMessage('send_message')
   async handleSendMessage(
-    @ConnectedSocket() client: AuthSocket, 
+    @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: SendMessageDto
   ) {
     const start = Date.now();
 
     try {
       const message = await this.chatService.sendMessage(
-        data, 
-        client.userId, 
+        data,
+        client.userId,
         client.tenantId
       );
 
@@ -87,7 +87,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('typing_start')
   handleTypingStart(
-    @ConnectedSocket() client: AuthSocket, 
+    @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: { channelId: number }
   ) {
     client.to(`channel-${data.channelId}`).emit('user_typing', {
@@ -99,7 +99,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('typing_stop')
   handleTypingStop(
-    @ConnectedSocket() client: AuthSocket, 
+    @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: { channelId: number }
   ) {
     client.to(`channel-${data.channelId}`).emit('user_typing', {
@@ -113,11 +113,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       // ✅ EXTRACT TOKEN FROM MULTIPLE SOURCES
       let token = client.handshake.auth?.token;
-      
+
       if (!token && client.handshake.headers.authorization) {
         token = client.handshake.headers.authorization.replace('Bearer ', '');
       }
-      
+
       if (!token && client.handshake.query?.token) {
         token = client.handshake.query.token as string;
       }
@@ -133,7 +133,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // ✅ VERIFY TOKEN WITH PROPER SECRET
       const jwtSecret = this.configService.get<string>('jwt.secret');
-      
+
       if (!jwtSecret) {
         this.logger.error('JWT_SECRET not configured!');
         client.emit('error', { message: 'Server configuration error' });
@@ -143,7 +143,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       let user;
       try {
-        user = this.jwtService.verify(token, { 
+        user = this.jwtService.verify(token, {
           secret: jwtSecret,
           issuer: this.configService.get<string>('jwt.issuer'),
           audience: this.configService.get<string>('jwt.audience'),
@@ -178,10 +178,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.joinUserChannels(client);
 
       // ✅ SEND CONFIRMATION
-      client.emit('connected', { 
-        userId: client.userId, 
+      client.emit('connected', {
+        userId: client.userId,
         tenantId: client.tenantId,
-        timestamp: new Date().toISOString() 
+        timestamp: new Date().toISOString()
       });
 
       this.logger.log(`✅ User ${client.userId} connected (Socket: ${client.id})`);
@@ -213,7 +213,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!members || members.size === 0) {
       try {
         const result = await this.chatService['sqlService'].execute(
-          'sp_GetChannelMembers_Fast', 
+          'sp_GetChannelMembers_Fast',
           { channelId }
         );
         members = new Set(result.map((r: any) => r.user_id));
@@ -237,11 +237,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async joinUserChannels(client: AuthSocket) {
     try {
       const channels = await this.chatService.getUserChannels(client.userId);
-      
+
       channels.forEach((ch: any) => {
         const channelRoom = `channel-${ch.channel_id}`;
         client.join(channelRoom);
-        
+
         if (!this.channelMembers.has(ch.channel_id)) {
           this.channelMembers.set(ch.channel_id, new Set());
         }
@@ -251,6 +251,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.log(`User ${client.userId} joined ${channels.length} channels`);
     } catch (error) {
       this.logger.error(`Failed to join channels: ${error.message}`);
+    }
+  }
+  @SubscribeMessage('update_delivery_status')
+  async handleDeliveryStatus(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { messageId: number; status: 'delivered' | 'read' }
+  ) {
+    try {
+      await this.chatService.updateMessageDeliveryStatus(
+        data.messageId,
+        client.userId,
+        data.status
+      );
+
+      // Broadcast to sender
+      const message = await this.chatService.getMessage(data.messageId);
+      const senderSockets = this.userSockets.get(message.sender_user_id);
+
+      if (senderSockets) {
+        senderSockets.forEach(socketId => {
+          this.server.to(socketId).emit('message_status_updated', {
+            messageId: data.messageId,
+            userId: client.userId,
+            status: data.status,
+            timestamp: new Date().toISOString(),
+          });
+        });
+      }
+    } catch (error) {
+      this.logger.error('Delivery status update error:', error.message);
     }
   }
 }
