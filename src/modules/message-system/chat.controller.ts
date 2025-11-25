@@ -363,4 +363,26 @@ export class ChatController {
   ) {
     return this.chatService.getChannelFiles(channelId, userId, +limit);
   }
+
+  @Post('messages/:id/delivery-status')
+  @HttpCode(HttpStatus.OK)
+  async updateDeliveryStatus(
+    @Param('id', ParseIntPipe) messageId: number,
+    @Body() dto: { status: 'delivered' | 'read' },
+    @CurrentUser('id') userId: number,
+  ) {
+    await this.chatService.updateMessageDeliveryStatus(
+      messageId,
+      userId,
+      dto.status
+    );
+    return { success: true };
+  }
+
+  @Get('messages/:id/read-status')
+  async getReadStatus(
+    @Param('id', ParseIntPipe) messageId: number,
+  ) {
+    return this.chatService.getMessageReadStatus(messageId);
+  }
 }
