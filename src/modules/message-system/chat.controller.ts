@@ -34,6 +34,7 @@ export class ChatController {
     @CurrentUser('id') userId: number,
     @Query('beforeId') beforeId?: string,
   ) {
+    console.log("🚀 ~ ChatController ~ getMessages ~ userId:", userId)
     return this.chatService.getMessages(channelId, userId, +limit, beforeId ? +beforeId : undefined);
   }
 
@@ -362,5 +363,249 @@ export class ChatController {
     @CurrentUser('id') userId: number,
   ) {
     return this.chatService.getChannelFiles(channelId, userId, +limit);
+  }
+
+  @Post('messages/:id/delivery-status')
+  @HttpCode(HttpStatus.OK)
+  async updateDeliveryStatus(
+    @Param('id', ParseIntPipe) messageId: number,
+    @Body() dto: { status: 'delivered' | 'read' },
+    @CurrentUser('id') userId: number,
+  ) {
+    await this.chatService.updateMessageDeliveryStatus(
+      messageId,
+      userId,
+      dto.status
+    );
+    return { success: true };
+  }
+
+  @Get('messages/:id/read-status')
+  async getReadStatus(
+    @Param('id', ParseIntPipe) messageId: number,
+  ) {
+    return this.chatService.getMessageReadStatus(messageId);
+  }
+  @Get('mentions')
+  async getUserMentions(
+    @Query('limit') limit: number = 50,
+    @CurrentUser('id') userId: number,
+  ) {
+    const mentions = await this.chatService.getUserMentions(userId, +limit);
+    return {
+      success: true,
+      data: mentions,
+      total: mentions.length,
+    };
+  }
+
+  
+  @Get('messages/:messageId/attachments')
+  async getMessageAttachments(
+    @Param('messageId', ParseIntPipe) messageId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    const attachments = await this.chatService['sqlService'].execute(
+      'sp_GetMessageAttachments_Fast',
+      { messageId }
+    );
+
+    return {
+      success: true,
+      data: attachments,
+      total: attachments.length,
+    };
+  }
+
+  /**
+   * ✅ Get message reactions
+   */
+  @Get('messages/:messageId/reactions')
+  async getMessageReactions(
+    @Param('messageId', ParseIntPipe) messageId: number,
+  ) {
+    const reactions = await this.chatService['sqlService'].execute(
+      'sp_GetMessageReactions_Fast',
+      { messageId }
+    );
+
+    return {
+      success: true,
+      data: reactions,
+      total: reactions.length,
+    };
+  }
+
+  // ==================== NEW: ENHANCED MESSAGE ENDPOINTS ====================
+
+
+  @Post('messages/bulk-mark-read')
+  @HttpCode(HttpStatus.OK)
+  async bulkMarkAsRead(
+    @Body() dto: { channelId: number; upToMessageId: number },
+    @CurrentUser('id') userId: number,
+  ) {
+    await this.chatService.bulkMarkAsRead(
+      dto.channelId,
+      userId,
+      dto.upToMessageId
+    );
+
+    return {
+      success: true,
+      message: 'Messages marked as read',
+    };
+  }
+
+  /**
+   * ✅ Get detailed read status for a message
+   */
+  @Get('messages/:messageId/read-status-detailed')
+  async getDetailedReadStatus(
+    @Param('messageId', ParseIntPipe) messageId: number,
+  ) {
+    const status = await this.chatService.getMessageReadStatus(messageId);
+
+    // ✅ Get user details for read/delivered users
+    const userIds = [
+      ...status.readByUserIds,
+      ...status.deliveredToUserIds
+    ].filter((id, index, self) => self.indexOf(id) === index);
+
+    let users = [];
+    if (userIds.length > 0) {
+      users = await this.chatService['sqlService'].query(
+        `SELECT id, first_name, last_name, avatar_url
+       FROM users
+       WHERE id IN (${userIds.join(',')})`,
+        {}
+      );
+    }
+
+    const userMap = new Map(users.map((u: any) => [u.id, u]));
+
+    return {
+      success: true,
+      data: {
+        readCount: status.readCount,
+        deliveredCount: status.deliveredCount,
+        readBy: status.readByUserIds.map(id => userMap.get(id)).filter(Boolean),
+        deliveredTo: status.deliveredToUserIds.map(id => userMap.get(id)).filter(Boolean),
+      },
+    };
+  }
+
+  /**
+   * ✅ Get thread with enhanced details
+   */
+  @Get('threads/:messageId/enhanced')
+  async getEnhancedThread(
+    @Param('messageId', ParseIntPipe) messageId: number,
+    @Query('limit') limit: number = 50,
+    @CurrentUser('id') userId: number,
+  ) {
+    const messages = await this.chatService.getThreadMessages(
+      messageId,
+      userId,
+      +limit
+    );
+
+    // Get parent message
+    const parent = await this.chatService.getMessage(messageId);
+
+    return {
+      success: true,
+      data: {
+        parent,
+        replies: messages,
+        totalReplies: messages.length,
+      },
+    };
+  }
+
+  /**
+   * ✅ Mark message as delivered (called automatically by frontend)
+   */
+  @Post('messages/:id/mark-delivered')
+  @HttpCode(HttpStatus.OK)
+  async markAsDelivered(
+    @Param('id', ParseIntPipe) messageId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    await this.chatService.markAsDelivered(messageId, userId);
+
+    return { success: true };
+  }
+
+
+  //
+  @Get('mentions/unread-count')
+  async getUnreadMentionsCount(
+    @CurrentUser('id') userId: number,
+  ) {
+    const userIdStr = userId.toString();
+
+    // ✅ FIXED: Query messages.mentioned_user_ids instead of deleted message_mentions table
+    const count = await this.chatService['sqlService'].query(
+      `SELECT COUNT(*) as count
+     FROM messages m
+     INNER JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = @userId
+     WHERE m.mentioned_user_ids LIKE '%' + @userIdStr + '%'
+       AND m.is_deleted = 0
+       AND cp.is_active = 1
+       AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)`,
+      { userId, userIdStr }
+    );
+
+    return {
+      success: true,
+      count: count[0]?.count || 0,
+    };
+  }
+
+  /**
+   * ✅ UPDATED: Get message details (fixed for removed message_mentions table)
+   */
+  @Get('messages/:messageId/details')
+  async getMessageDetails(
+    @Param('messageId', ParseIntPipe) messageId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    const message = await this.chatService.getMessage(messageId);
+
+    const reactions = await this.chatService['sqlService'].execute(
+      'sp_GetMessageReactions_Fast',
+      { messageId }
+    );
+
+    const attachments = await this.chatService['sqlService'].execute(
+      'sp_GetMessageAttachments_Fast',
+      { messageId }
+    );
+
+    // ✅ FIXED: Parse mentioned_user_ids from message instead of querying deleted table
+    let mentions = [];
+    if (message.mentioned_user_ids) {
+      const mentionedIds = message.mentioned_user_ids.split(',').map((id: string) => parseInt(id.trim()));
+
+      if (mentionedIds.length > 0) {
+        mentions = await this.chatService['sqlService'].query(
+          `SELECT id as user_id, first_name, last_name, avatar_url
+         FROM users
+         WHERE id IN (${mentionedIds.join(',')})`,
+          {}
+        );
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        ...message,
+        reactions,
+        attachments,
+        mentions,
+      },
+    };
   }
 }

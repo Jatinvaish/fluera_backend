@@ -1,6 +1,10 @@
-// src/modules/message-system/dto/chat.dto.ts - FIXED
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsEnum, MaxLength, IsBoolean, IsDateString, ArrayMinSize } from 'class-validator';
-import { Type } from 'class-transformer';
+// ==================== COMPLETE dto/chat.dto.ts ====================
+
+import { 
+  IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, 
+  IsEnum, MaxLength, IsBoolean, IsDateString, ArrayMinSize 
+} from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 
 // ==================== MESSAGE DTOs ====================
 
@@ -21,10 +25,12 @@ export class SendMessageDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Number)
   attachments?: number[];
 
   @IsArray()
   @IsOptional()
+  @Type(() => Number)
   mentions?: number[];
 
   @IsNumber()
@@ -41,6 +47,11 @@ export class EditMessageDto {
   @IsNotEmpty()
   @MaxLength(10000)
   content: string;
+
+  @IsArray()
+  @IsOptional()
+  @Type(() => Number)
+  mentions?: number[];
 }
 
 export class MarkAsReadDto {
@@ -68,8 +79,30 @@ export class ForwardMessageDto {
   messageId: number;
 
   @IsArray()
-  @IsNotEmpty()
+  @IsNumber({}, { each: true })
+  @ArrayMinSize(1)
+  @Type(() => Number)
   targetChannelIds: number[];
+}
+
+export class BulkMarkAsReadDto {
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  upToMessageId: number;
+}
+
+export class MessageDeliveryDto {
+  @IsNumber()
+  @IsNotEmpty()
+  messageId: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
 }
 
 // ==================== CHANNEL DTOs ====================
@@ -94,6 +127,12 @@ export class CreateChannelDto {
   @IsNumber({}, { each: true })
   @Type(() => Number)
   @ArrayMinSize(1)
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) {
+      return value.map(v => typeof v === 'string' ? parseInt(v, 10) : v);
+    }
+    return value;
+  })
   participantIds: number[];
 
   @IsBoolean()
@@ -134,14 +173,23 @@ export class MuteChannelDto {
   muteUntil?: string;
 }
 
-// ==================== MEMBER DTOs - FIXED ====================
+// ==================== MEMBER DTOs ====================
 
 export class AddMemberDto {
   @IsArray()
   @IsNumber({}, { each: true })
-  @Type(() => Number)
   @ArrayMinSize(1)
-  userIds: number[];
+  @Type(() => Number)
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) {
+      return value.map(v => Number(v)).filter(n => !isNaN(n));
+    }
+    if (typeof value === 'object' && value !== null) {
+      return Object.values(value).map(v => Number(v)).filter(n => !isNaN(n));
+    }
+    return [];
+  })
+  userIds!: number[];
 
   @IsString()
   @IsOptional()
@@ -188,6 +236,25 @@ export class AddReactionDto {
   @IsNotEmpty()
   @MaxLength(10)
   emoji: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
+}
+
+export class RemoveReactionDto {
+  @IsNumber()
+  @IsNotEmpty()
+  messageId: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10)
+  emoji: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
 }
 
 // ==================== TYPING DTOs ====================
@@ -196,6 +263,32 @@ export class TypingDto {
   @IsNumber()
   @IsNotEmpty()
   channelId: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isTyping?: boolean;
+}
+
+// ==================== THREAD DTOs ====================
+
+export class ThreadReplyDto {
+  @IsNumber()
+  @IsNotEmpty()
+  parentMessageId: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10000)
+  content: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  channelId: number;
+
+  @IsArray()
+  @IsOptional()
+  @Type(() => Number)
+  mentions?: number[];
 }
 
 // ==================== FILE DTOs ====================
@@ -222,4 +315,77 @@ export class UpdatePresenceDto {
   @IsOptional()
   @MaxLength(100)
   statusMessage?: string;
+}
+
+//
+export interface MessageResponse {
+  id: number;
+  channel_id: number;
+  sender_user_id: number;
+  sender_tenant_id: number;
+  message_type: string;
+  content: string;
+  sent_at: string;
+  has_attachments: boolean;
+  has_mentions: boolean;
+  mentioned_user_ids?: string; // ✅ NEW: Comma-separated user IDs
+  reply_to_message_id?: number;
+  thread_id?: number;
+  reply_count?: number;
+  is_edited?: boolean;
+  edited_at?: string;
+  is_pinned?: boolean;
+  pinned_at?: string;
+  pinned_by?: number;
+  is_deleted?: boolean;
+  deleted_at?: string;
+  deleted_by?: number;
+  read_by_user_ids?: string; // ✅ NEW: Comma-separated user IDs who read
+  delivered_to_user_ids?: string; // ✅ NEW: Comma-separated user IDs delivered to
+  metadata?: string;
+}
+
+export interface EnrichedMessageResponse extends MessageResponse {
+  sender_first_name?: string;
+  sender_last_name?: string;
+  sender_avatar_url?: string;
+  reaction_count?: number;
+  attachment_count?: number;
+  read_count?: number;
+  delivered_count?: number;
+  is_read_by_me?: boolean;
+  am_i_mentioned?: boolean;
+  
+  reactions?: MessageReaction[];
+  attachments?: MessageAttachment[];
+  mentions?: number[];
+}
+
+export interface MessageReaction {
+  id: number;
+  emoji: string;
+  user_id: number;
+  created_at: string;
+  first_name: string;
+  last_name: string;
+  avatar_url: string;
+}
+
+export interface MessageAttachment {
+  id: number;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  file_url: string;
+  thumbnail_url?: string;
+  created_at: string;
+}
+
+export interface MessageReadStatus {
+  messageId: number;
+  readByUserIds: number[];
+  deliveredToUserIds: number[];
+  readCount: number;
+  deliveredCount: number;
+  totalRecipients?: number;
 }
