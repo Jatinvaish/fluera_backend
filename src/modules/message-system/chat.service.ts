@@ -6,7 +6,7 @@ import { CreateChannelDto, EnrichedMessageResponse, MessageReadStatus, MessageRe
 import { ChatActivityService, ChatActivityType } from './chat-activity.service';
 import { ChatNotificationService } from './chat-notification.service';
 
- 
+
 
 @Injectable()
 export class ChatService {
@@ -616,112 +616,6 @@ export class ChatService {
   }
 
 
-  /**
-   * ✅ NEW: Log message activity and send notifications
-   */
-  private async logMessageActivity(
-    message: MessageResponse,
-    userId: number,
-    tenantId: number,
-    dto: SendMessageDto,
-    participantIdsStr: string
-  ): Promise<void> {
-    try {
-      const [user, channel] = await Promise.all([
-        this.sqlService.query('SELECT first_name, last_name FROM users WHERE id = @userId', { userId }),
-        this.sqlService.query('SELECT name FROM chat_channels WHERE id = @channelId', { channelId: dto.channelId })
-      ]);
-
-      const senderName = `${user[0]?.first_name} ${user[0]?.last_name}`;
-      const channelName = channel[0]?.name || 'Unknown Channel';
-      const messagePreview = dto.content.substring(0, 100);
-
-      await this.activityService.logActivity({
-        tenantId,
-        userId,
-        activityType: dto.replyToMessageId ? ChatActivityType.THREAD_REPLIED : ChatActivityType.MESSAGE_SENT,
-        subjectType: 'message',
-        subjectId: message.id,
-        action: 'sent',
-        description: `${senderName} sent a message in ${channelName}`,
-        metadata: {
-          channelId: dto.channelId,
-          messageId: message.id,
-          messageType: dto.messageType,
-          hasAttachments: dto.attachments && dto.attachments?.length > 0,
-          hasMentions: dto.mentions && dto.mentions?.length > 0,
-        },
-      });
-
-      const participantIds = participantIdsStr.split(',')
-        .map(id => parseInt(id.trim()))
-        .filter(id => !isNaN(id) && id !== userId);
-
-      if (dto.replyToMessageId || dto.threadId) {
-        await this.notificationService.notifyThreadReply({
-          channelId: dto.channelId,
-          messageId: message.id,
-          threadId: dto.threadId || dto.replyToMessageId!,
-          senderId: userId,
-          senderName,
-          recipientIds: participantIds,
-          tenantId,
-          messagePreview,
-        });
-      } else {
-        await this.notificationService.notifyNewMessage({
-          channelId: dto.channelId,
-          messageId: message.id,
-          senderId: userId,
-          senderName,
-          recipientIds: participantIds,
-          tenantId,
-          messagePreview,
-          channelName,
-        });
-      }
-
-      // ✅ Handle mentions properly
-      if (dto.mentions && dto.mentions.length > 0) {
-        for (const mentionedUserId of dto.mentions) {
-          await this.activityService.logActivity({
-            tenantId,
-            userId: mentionedUserId,
-            activityType: ChatActivityType.USER_MENTIONED,
-            subjectType: 'message',
-            subjectId: message.id,
-            action: 'mentioned',
-            description: `${senderName} mentioned you in ${channelName}`,
-            metadata: { channelId: dto.channelId, messageId: message.id },
-          });
-
-          await this.notificationService.notifyMention({
-            channelId: dto.channelId,
-            messageId: message.id,
-            senderId: userId,
-            senderName,
-            mentionedUserId,
-            tenantId,
-            messagePreview,
-            channelName,
-          });
-        }
-      }
-
-      await this.sqlService.execute('sp_CreateReadReceiptsBulk_Fast', {
-        messageId: message.id,
-        channelId: dto.channelId,
-        senderId: userId
-      });
-
-      await this.invalidateCaches(dto.channelId, participantIds);
-
-    } catch (error) {
-      this.logger.error(`Failed to log message activity: ${error.message}`);
-    }
-  }
-
-
   async editMessage(messageId: number, content: string, userId: number) {
     const msg = await this.sqlService.query(
       `SELECT id, sender_user_id, channel_id FROM messages WHERE id = @messageId AND is_deleted = 0`,
@@ -858,37 +752,6 @@ export class ChatService {
     return { success: true, action: 'added' };
   }
 
-
-  /**
-   * ✅ FIXED: Update delivery status without WebSocket emit
-   * Gateway handles broadcasting via handleDeliveryStatus
-   */
-  async updateMessageDeliveryStatus(
-    messageId: number,
-    userId: number,
-    status: 'delivered' | 'read'
-  ): Promise<void> {
-    try {
-      const now = new Date().toISOString();
-
-      await this.sqlService.query(
-        `UPDATE message_read_receipts
-       SET status = @status,
-           ${status === 'delivered' ? 'delivered_at' : 'read_at'} = @now
-       WHERE message_id = @messageId 
-         AND user_id = @userId`,
-        { messageId, userId, status, now }
-      );
-
-      this.logger.debug(`Updated ${status} status for message ${messageId} by user ${userId}`);
-
-    } catch (error) {
-      this.logger.error(`Failed to update delivery status: ${error.message}`);
-      throw error;
-    }
-  }
-
-
   //TODO
   async uploadAttachment(params: {
     messageId?: number;
@@ -945,7 +808,7 @@ export class ChatService {
     }
   }
 
-   
+
   /**
    * ✅ Get user mentions (UPDATED to use new table structure)
    */
@@ -1120,5 +983,154 @@ export class ChatService {
     ));
 
     return message;
+  }
+
+  //
+  // ==================== UPDATED METHODS IN chat.service.ts ====================
+
+  /**
+   * ✅ UPDATED: Remove sp_CreateReadReceiptsBulk_Fast call (table deleted)
+   * This method now only logs activity and sends notifications
+   */
+  private async logMessageActivity(
+    message: MessageResponse,
+    userId: number,
+    tenantId: number,
+    dto: SendMessageDto,
+    participantIdsStr: string
+  ): Promise<void> {
+    try {
+      const [user, channel] = await Promise.all([
+        this.sqlService.query('SELECT first_name, last_name FROM users WHERE id = @userId', { userId }),
+        this.sqlService.query('SELECT name FROM chat_channels WHERE id = @channelId', { channelId: dto.channelId })
+      ]);
+
+      const senderName = `${user[0]?.first_name} ${user[0]?.last_name}`;
+      const channelName = channel[0]?.name || 'Unknown Channel';
+      const messagePreview = dto.content.substring(0, 100);
+
+      await this.activityService.logActivity({
+        tenantId,
+        userId,
+        activityType: dto.replyToMessageId ? ChatActivityType.THREAD_REPLIED : ChatActivityType.MESSAGE_SENT,
+        subjectType: 'message',
+        subjectId: message.id,
+        action: 'sent',
+        description: `${senderName} sent a message in ${channelName}`,
+        metadata: {
+          channelId: dto.channelId,
+          messageId: message.id,
+          messageType: dto.messageType,
+          hasAttachments: dto.attachments && dto.attachments?.length > 0,
+          hasMentions: dto.mentions && dto.mentions?.length > 0,
+        },
+      });
+
+      const participantIds = participantIdsStr.split(',')
+        .map(id => parseInt(id.trim()))
+        .filter(id => !isNaN(id) && id !== userId);
+
+      if (dto.replyToMessageId || dto.threadId) {
+        await this.notificationService.notifyThreadReply({
+          channelId: dto.channelId,
+          messageId: message.id,
+          threadId: dto.threadId || dto.replyToMessageId!,
+          senderId: userId,
+          senderName,
+          recipientIds: participantIds,
+          tenantId,
+          messagePreview,
+        });
+      } else {
+        await this.notificationService.notifyNewMessage({
+          channelId: dto.channelId,
+          messageId: message.id,
+          senderId: userId,
+          senderName,
+          recipientIds: participantIds,
+          tenantId,
+          messagePreview,
+          channelName,
+        });
+      }
+
+      // ✅ Handle mentions properly
+      if (dto.mentions && dto.mentions.length > 0) {
+        for (const mentionedUserId of dto.mentions) {
+          await this.activityService.logActivity({
+            tenantId,
+            userId: mentionedUserId,
+            activityType: ChatActivityType.USER_MENTIONED,
+            subjectType: 'message',
+            subjectId: message.id,
+            action: 'mentioned',
+            description: `${senderName} mentioned you in ${channelName}`,
+            metadata: { channelId: dto.channelId, messageId: message.id },
+          });
+
+          await this.notificationService.notifyMention({
+            channelId: dto.channelId,
+            messageId: message.id,
+            senderId: userId,
+            senderName,
+            mentionedUserId,
+            tenantId,
+            messagePreview,
+            channelName,
+          });
+        }
+      }
+
+      // ✅ REMOVED: sp_CreateReadReceiptsBulk_Fast call (table deleted)
+      // Read/delivery tracking now handled directly in messages table via:
+      // - delivered_to_user_ids field (populated on send)
+      // - read_by_user_ids field (updated via sp_MarkAsRead_Fast)
+
+      await this.invalidateCaches(dto.channelId, participantIds);
+
+    } catch (error) {
+      this.logger.error(`Failed to log message activity: ${error.message}`);
+    }
+  }
+
+  /**
+   * ✅ UPDATED: Simplified - no longer queries separate receipts table
+   * Now reads directly from messages.read_by_user_ids and messages.delivered_to_user_ids
+   */
+  async updateMessageDeliveryStatus(
+    messageId: number,
+    userId: number,
+    status: 'delivered' | 'read'
+  ): Promise<void> {
+    try {
+      if (status === 'delivered') {
+        // Use existing stored procedure for delivery
+        await this.sqlService.execute('sp_MarkAsDelivered_Fast', {
+          messageId,
+          userId
+        });
+      } else if (status === 'read') {
+        // Use existing stored procedure for read
+        // Note: This also needs channelId, get it first
+        const msg = await this.sqlService.query(
+          'SELECT channel_id FROM messages WHERE id = @messageId',
+          { messageId }
+        );
+
+        if (msg.length > 0) {
+          await this.sqlService.execute('sp_MarkAsRead_Fast', {
+            messageId,
+            userId,
+            channelId: msg[0].channel_id
+          });
+        }
+      }
+
+      this.logger.debug(`Updated ${status} status for message ${messageId} by user ${userId}`);
+
+    } catch (error) {
+      this.logger.error(`Failed to update delivery status: ${error.message}`);
+      throw error;
+    }
   }
 }

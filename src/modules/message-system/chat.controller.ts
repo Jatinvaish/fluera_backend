@@ -398,30 +398,7 @@ export class ChatController {
     };
   }
 
-  /**
-   * ✅ Get unread mentions count
-   */
-  @Get('mentions/unread-count')
-  async getUnreadMentionsCount(
-    @CurrentUser('id') userId: number,
-  ) {
-    // Query messages where user is mentioned and hasn't been read
-    const count = await this.chatService['sqlService'].query(
-      `SELECT COUNT(*) as count
-       FROM message_mentions mm
-       INNER JOIN messages m ON mm.message_id = m.id
-       INNER JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = mm.user_id
-       WHERE mm.user_id = @userId
-       AND m.is_deleted = 0
-       AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)`,
-      { userId }
-    );
-
-    return {
-      success: true,
-      count: count[0]?.count || 0,
-    };
-  }
+  
   @Get('messages/:messageId/attachments')
   async getMessageAttachments(
     @Param('messageId', ParseIntPipe) messageId: number,
@@ -459,49 +436,6 @@ export class ChatController {
   }
 
   // ==================== NEW: ENHANCED MESSAGE ENDPOINTS ====================
-
-  /**
-   * ✅ Get message with full details (reactions, attachments, mentions)
-   */
-  @Get('messages/:messageId/details')
-  async getMessageDetails(
-    @Param('messageId', ParseIntPipe) messageId: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    // Get message
-    const message = await this.chatService.getMessage(messageId);
-
-    // Get reactions
-    const reactions = await this.chatService['sqlService'].execute(
-      'sp_GetMessageReactions_Fast',
-      { messageId }
-    );
-
-    // Get attachments
-    const attachments = await this.chatService['sqlService'].execute(
-      'sp_GetMessageAttachments_Fast',
-      { messageId }
-    );
-
-    // Get mentions
-    const mentions = await this.chatService['sqlService'].query(
-      `SELECT mm.user_id, u.first_name, u.last_name, u.avatar_url
-       FROM message_mentions mm
-       INNER JOIN users u ON mm.user_id = u.id
-       WHERE mm.message_id = @messageId`,
-      { messageId }
-    );
-
-    return {
-      success: true,
-      data: {
-        ...message,
-        reactions,
-        attachments,
-        mentions,
-      },
-    };
-  }
 
 
   @Post('messages/bulk-mark-read')
@@ -600,5 +534,77 @@ export class ChatController {
     await this.chatService.markAsDelivered(messageId, userId);
 
     return { success: true };
+  }
+
+
+  //
+  @Get('mentions/unread-count')
+  async getUnreadMentionsCount(
+    @CurrentUser('id') userId: number,
+  ) {
+    const userIdStr = userId.toString();
+
+    // ✅ FIXED: Query messages.mentioned_user_ids instead of deleted message_mentions table
+    const count = await this.chatService['sqlService'].query(
+      `SELECT COUNT(*) as count
+     FROM messages m
+     INNER JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = @userId
+     WHERE m.mentioned_user_ids LIKE '%' + @userIdStr + '%'
+       AND m.is_deleted = 0
+       AND cp.is_active = 1
+       AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)`,
+      { userId, userIdStr }
+    );
+
+    return {
+      success: true,
+      count: count[0]?.count || 0,
+    };
+  }
+
+  /**
+   * ✅ UPDATED: Get message details (fixed for removed message_mentions table)
+   */
+  @Get('messages/:messageId/details')
+  async getMessageDetails(
+    @Param('messageId', ParseIntPipe) messageId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    const message = await this.chatService.getMessage(messageId);
+
+    const reactions = await this.chatService['sqlService'].execute(
+      'sp_GetMessageReactions_Fast',
+      { messageId }
+    );
+
+    const attachments = await this.chatService['sqlService'].execute(
+      'sp_GetMessageAttachments_Fast',
+      { messageId }
+    );
+
+    // ✅ FIXED: Parse mentioned_user_ids from message instead of querying deleted table
+    let mentions = [];
+    if (message.mentioned_user_ids) {
+      const mentionedIds = message.mentioned_user_ids.split(',').map((id: string) => parseInt(id.trim()));
+
+      if (mentionedIds.length > 0) {
+        mentions = await this.chatService['sqlService'].query(
+          `SELECT id as user_id, first_name, last_name, avatar_url
+         FROM users
+         WHERE id IN (${mentionedIds.join(',')})`,
+          {}
+        );
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        ...message,
+        reactions,
+        attachments,
+        mentions,
+      },
+    };
   }
 }
