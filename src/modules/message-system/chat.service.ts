@@ -2,23 +2,11 @@
 import { Injectable, Logger, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { SqlServerService } from 'src/core/database';
 import { RedisService } from 'src/core/redis/redis.service';
-import { CreateChannelDto, SendMessageDto, UpdateChannelDto } from './dto/chat.dto';
+import { CreateChannelDto, EnrichedMessageResponse, MessageReadStatus, MessageResponse, SendMessageDto, UpdateChannelDto } from './dto/chat.dto';
 import { ChatActivityService, ChatActivityType } from './chat-activity.service';
 import { ChatNotificationService } from './chat-notification.service';
 
-export interface MessageResponse {
-  id: number;
-  channel_id: number;
-  sender_user_id: number;
-  sender_tenant_id: number;
-  message_type: string;
-  content: string;
-  sent_at: string;
-  has_attachments: boolean;
-  has_mentions: boolean;
-  reply_to_message_id?: number;
-  thread_id?: number;
-}
+ 
 
 @Injectable()
 export class ChatService {
@@ -165,24 +153,6 @@ export class ChatService {
   }
 
   // ==================== THREADS ====================
-
-  async getThreadMessages(parentMessageId: number, userId: number, limit = 50) {
-    const parent = await this.sqlService.query(
-      `SELECT m.channel_id FROM messages m
-       JOIN chat_participants cp ON m.channel_id = cp.channel_id
-       WHERE m.id = @parentMessageId AND cp.user_id = @userId AND cp.is_active = 1`,
-      { parentMessageId, userId }
-    );
-    if (!parent.length) throw new ForbiddenException('Access denied');
-
-    // ✅ Use stored procedure that includes all fields
-    const messages = await this.sqlService.execute('sp_GetThreadMessages_Fast', {
-      parentMessageId,
-      limit
-    });
-
-    return messages;
-  }
 
   async replyInThread(parentMessageId: number, content: string, userId: number, tenantId: number) {
     const parent = await this.sqlService.query(
@@ -645,43 +615,6 @@ export class ChatService {
     } catch { return []; }
   }
 
-  // updated
-  async sendMessage(dto: SendMessageDto, userId: number, tenantId: number): Promise<MessageResponse> {
-    const validation = await this.validateFromCache(dto.channelId, userId);
-    if (!validation.isMember) throw new ForbiddenException('Not a channel member');
-
-    // ✅ Prepare mentions and attachments as comma-separated strings
-    const mentions = dto.mentions && dto.mentions.length > 0
-      ? dto.mentions.join(',')
-      : null;
-
-    const attachmentIds = dto.attachments && dto.attachments.length > 0
-      ? dto.attachments.join(',')
-      : null;
-
-    // ✅ Call enhanced stored procedure with ALL fields
-    const result = await this.sqlService.execute('sp_SendMessage_Fast', {
-      channelId: dto.channelId,
-      userId,
-      tenantId,
-      messageType: dto.messageType || 'text',
-      content: dto.content,
-      hasAttachments: dto.attachments && dto.attachments.length > 0 ? 1 : 0,
-      hasMentions: dto.mentions && dto.mentions.length > 0 ? 1 : 0,
-      replyToMessageId: dto.replyToMessageId || null,
-      threadId: dto.threadId || null,
-      mentions: mentions, // ✅ NEW
-      attachmentIds: attachmentIds, // ✅ NEW
-    });
-
-    const message = result[0] as MessageResponse;
-
-    // ✅ Log activity asynchronously
-    setImmediate(() => this.logMessageActivity(message, userId, tenantId, dto, validation.participant_ids));
-
-    return message;
-  }
-
 
   /**
    * ✅ NEW: Log message activity and send notifications
@@ -926,26 +859,6 @@ export class ChatService {
   }
 
 
-
-  async getMessage(messageId: number): Promise<MessageResponse> {
-    const result = await this.sqlService.query(
-      `SELECT m.*, 
-            u.first_name as sender_first_name, 
-            u.last_name as sender_last_name, 
-            u.avatar_url as sender_avatar_url
-     FROM messages m
-     JOIN users u ON m.sender_user_id = u.id
-     WHERE m.id = @messageId AND m.is_deleted = 0`,
-      { messageId }
-    );
-
-    if (!result.length) {
-      throw new NotFoundException('Message not found');
-    }
-
-    return result[0];
-  }
-
   /**
    * ✅ FIXED: Update delivery status without WebSocket emit
    * Gateway handles broadcasting via handleDeliveryStatus
@@ -975,32 +888,6 @@ export class ChatService {
     }
   }
 
-  /**
-   * ✅ Get aggregated read status for message
-   */
-  async getMessageReadStatus(messageId: number): Promise<{
-    total: number;
-    delivered: number;
-    read: number;
-  }> {
-    const result = await this.sqlService.query(
-      `SELECT 
-      COUNT(*) as total,
-      SUM(CASE WHEN status = 'delivered' OR status = 'read' THEN 1 ELSE 0 END) as delivered,
-      SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) as read
-     FROM message_read_receipts
-     WHERE message_id = @messageId`,
-      { messageId }
-    );
-
-    return result[0] || { total: 0, delivered: 0, read: 0 };
-  }
-  async getUserMentions(userId: number, limit = 50) {
-    return this.sqlService.execute('sp_GetUserMentions_Fast', {
-      userId,
-      limit
-    });
-  }
 
   //TODO
   async uploadAttachment(params: {
@@ -1017,5 +904,221 @@ export class ChatService {
     const result = await this.sqlService.execute('sp_UploadAttachment_Fast', params);
     return { attachmentId: result[0]?.attachment_id };
   }
+  ///
+  // ==================== NEW/UPDATED METHODS IN chat.service.ts ====================
 
+  /**
+   * ✅ Mark message as delivered (NEW)
+   */
+  async markAsDelivered(messageId: number, userId: number): Promise<void> {
+    try {
+      await this.sqlService.execute('sp_MarkAsDelivered_Fast', {
+        messageId,
+        userId
+      });
+    } catch (error) {
+      this.logger.error(`Failed to mark as delivered: ${error.message}`);
+    }
+  }
+
+  /**
+   * ✅ Bulk mark messages as read (NEW)
+   */
+  async bulkMarkAsRead(
+    channelId: number,
+    userId: number,
+    upToMessageId: number
+  ): Promise<void> {
+    try {
+      await this.sqlService.execute('sp_BulkMarkAsRead_Fast', {
+        channelId,
+        userId,
+        upToMessageId
+      });
+
+      // Invalidate cache
+      await this.redisService.del(`user:${userId}:unread`);
+      await this.redisService.del(`msgs:${channelId}:*`);
+    } catch (error) {
+      this.logger.error(`Failed to bulk mark as read: ${error.message}`);
+      throw error;
+    }
+  }
+
+   
+  /**
+   * ✅ Get user mentions (UPDATED to use new table structure)
+   */
+  async getUserMentions(userId: number, limit = 50) {
+    return this.sqlService.execute('sp_GetUserMentions_Fast', {
+      userId,
+      limit
+    });
+  }
+
+  /**
+   * ✅ Get thread messages with enhanced details (UPDATED)
+   */
+  async getThreadMessages(parentMessageId: number, userId: number, limit = 50) {
+    const parent = await this.sqlService.query(
+      `SELECT m.channel_id FROM messages m
+     JOIN chat_participants cp ON m.channel_id = cp.channel_id
+     WHERE m.id = @parentMessageId AND cp.user_id = @userId AND cp.is_active = 1`,
+      { parentMessageId, userId }
+    );
+    if (!parent.length) throw new ForbiddenException('Access denied');
+
+    const messages = await this.sqlService.execute('sp_GetThreadMessages_Fast', {
+      parentMessageId,
+      userId, // ✅ Pass userId for is_read_by_me calculation
+      limit
+    });
+
+    // ✅ Enrich with reactions and attachments
+    const enrichedMessages = await Promise.all(
+      messages.map(async (msg: any) => {
+        if (msg.reaction_count > 0) {
+          msg.reactions = await this.sqlService.execute('sp_GetMessageReactions_Fast', {
+            messageId: msg.id
+          });
+        }
+
+        if (msg.has_attachments) {
+          msg.attachments = await this.sqlService.execute('sp_GetMessageAttachments_Fast', {
+            messageId: msg.id
+          });
+        }
+
+        return msg;
+      })
+    );
+
+    return enrichedMessages;
+  }
+
+
+  //
+  async getMessageReadStatus(messageId: number): Promise<MessageReadStatus> {
+    try {
+      const result = await this.sqlService.execute('sp_GetMessageReadStatus_Fast', {
+        messageId
+      });
+
+      const data = result[0];
+
+      if (!data) {
+        return {
+          messageId,
+          readByUserIds: [],
+          deliveredToUserIds: [],
+          readCount: 0,
+          deliveredCount: 0,
+          totalRecipients: 0,
+        };
+      }
+
+      return {
+        messageId,
+        readByUserIds: data.read_by_user_ids
+          ? data.read_by_user_ids.split(',').map((id: string) => parseInt(id.trim()))
+          : [],
+        deliveredToUserIds: data.delivered_to_user_ids
+          ? data.delivered_to_user_ids.split(',').map((id: string) => parseInt(id.trim()))
+          : [],
+        readCount: data.read_count || 0,
+        deliveredCount: data.delivered_count || 0,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get read status: ${error.message}`);
+      return {
+        messageId,
+        readByUserIds: [],
+        deliveredToUserIds: [],
+        readCount: 0,
+        deliveredCount: 0,
+      };
+    }
+  }
+
+  /**
+   * ✅ UPDATED: Get message with proper return type
+   */
+  async getMessage(messageId: number): Promise<EnrichedMessageResponse> {
+    const result = await this.sqlService.query(
+      `SELECT 
+      m.*,
+      u.first_name as sender_first_name, 
+      u.last_name as sender_last_name, 
+      u.avatar_url as sender_avatar_url,
+      ISNULL((SELECT COUNT(*) FROM message_reactions WHERE message_id = m.id), 0) as reaction_count,
+      ISNULL((SELECT COUNT(*) FROM message_attachments WHERE message_id = m.id AND is_deleted = 0), 0) as attachment_count,
+      CASE 
+        WHEN LEN(m.read_by_user_ids) > 0 
+        THEN LEN(m.read_by_user_ids) - LEN(REPLACE(m.read_by_user_ids, ',', '')) + 1
+        ELSE 0 
+      END as read_count,
+      CASE 
+        WHEN LEN(m.delivered_to_user_ids) > 0 
+        THEN LEN(m.delivered_to_user_ids) - LEN(REPLACE(m.delivered_to_user_ids, ',', '')) + 1
+        ELSE 0 
+      END as delivered_count
+     FROM messages m
+     JOIN users u ON m.sender_user_id = u.id
+     WHERE m.id = @messageId AND m.is_deleted = 0`,
+      { messageId }
+    );
+
+    if (!result.length) {
+      throw new NotFoundException('Message not found');
+    }
+
+    return result[0];
+  }
+
+  /**
+   * ✅ UPDATED: Send message with proper return type
+   */
+  async sendMessage(
+    dto: SendMessageDto,
+    userId: number,
+    tenantId: number
+  ): Promise<MessageResponse> {
+    const validation = await this.validateFromCache(dto.channelId, userId);
+    if (!validation.isMember) throw new ForbiddenException('Not a channel member');
+
+    const mentions = dto.mentions && dto.mentions.length > 0
+      ? dto.mentions.join(',')
+      : null;
+
+    const attachmentIds = dto.attachments && dto.attachments.length > 0
+      ? dto.attachments.join(',')
+      : null;
+
+    const result = await this.sqlService.execute('sp_SendMessage_Fast', {
+      channelId: dto.channelId,
+      userId,
+      tenantId,
+      messageType: dto.messageType || 'text',
+      content: dto.content,
+      hasAttachments: dto.attachments && dto.attachments.length > 0 ? 1 : 0,
+      hasMentions: dto.mentions && dto.mentions.length > 0 ? 1 : 0,
+      mentionedUserIds: mentions, // ✅ Pass as string
+      replyToMessageId: dto.replyToMessageId || null,
+      threadId: dto.threadId || null,
+      attachmentIds: attachmentIds,
+    });
+
+    const message = result[0] as MessageResponse;
+
+    // ✅ Log activity asynchronously
+    setImmediate(() => this.logMessageActivity(
+      message,
+      userId,
+      tenantId,
+      dto,
+      validation.participant_ids
+    ));
+
+    return message;
+  }
 }
