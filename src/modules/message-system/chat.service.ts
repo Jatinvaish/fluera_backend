@@ -25,6 +25,7 @@ export class ChatService {
 
   async getMessages(channelId: number, userId: number, limit = 50, beforeId?: number) {
     const cacheKey = `msgs:${channelId}:${limit}:${beforeId || 'latest'}`;
+    console.log("🚀 ~ ChatService ~ getMessages ~ beforeId:", beforeId)
     if (!beforeId) {
       try {
         const cached = await Promise.race([
@@ -38,6 +39,7 @@ export class ChatService {
     // ✅ Get messages with ALL fields including reactions, mentions, attachments
     const messages = await this.sqlService.execute('sp_GetMessages_Fast', {
       channelId,
+      userId,
       limit: Math.min(limit, 100),
       beforeId: beforeId || null,
     });
@@ -81,7 +83,7 @@ export class ChatService {
     const msg = await this.sqlService.query(
       `SELECT m.id, m.channel_id, cp.role FROM messages m
        JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = @userId
-       WHERE m.id = @messageId AND m.is_deleted = 0`,
+       WHERE m.id = @messageId  `,
       { messageId, userId }
     );
     if (!msg.length) throw new NotFoundException('Message not found');
@@ -124,7 +126,7 @@ export class ChatService {
     return this.sqlService.query(
       `SELECT m.*, u.first_name as sender_first_name, u.last_name as sender_last_name, u.avatar_url as sender_avatar_url
        FROM messages m JOIN users u ON m.sender_user_id = u.id
-       WHERE m.channel_id = @channelId AND m.is_pinned = 1 AND m.is_deleted = 0
+       WHERE m.channel_id = @channelId AND m.is_pinned = 1  
        ORDER BY m.pinned_at DESC`,
       { channelId }
     );
@@ -132,7 +134,7 @@ export class ChatService {
 
   async forwardMessage(messageId: number, targetChannelIds: number[], userId: number, tenantId: number) {
     const original = await this.sqlService.query(
-      `SELECT content, message_type FROM messages WHERE id = @messageId AND is_deleted = 0`,
+      `SELECT content, message_type FROM messages WHERE id = @messageId  `,
       { messageId }
     );
     if (!original.length) throw new NotFoundException('Message not found');
@@ -156,7 +158,7 @@ export class ChatService {
 
   async replyInThread(parentMessageId: number, content: string, userId: number, tenantId: number) {
     const parent = await this.sqlService.query(
-      `SELECT channel_id FROM messages WHERE id = @parentMessageId AND is_deleted = 0`,
+      `SELECT channel_id FROM messages WHERE id = @parentMessageId  `,
       { parentMessageId }
     );
     if (!parent.length) throw new NotFoundException('Parent message not found');
@@ -413,7 +415,7 @@ export class ChatService {
          JOIN chat_channels c ON m.channel_id = c.id
          JOIN chat_participants cp ON c.id = cp.channel_id
          JOIN users u ON m.sender_user_id = u.id
-         WHERE cp.user_id = @userId AND cp.is_active = 1 AND m.is_deleted = 0
+         WHERE cp.user_id = @userId AND cp.is_active = 1  
          AND m.content LIKE @searchTerm ${opts.channelId ? 'AND m.channel_id = @channelId' : ''}
          ORDER BY m.sent_at DESC`,
         { userId, searchTerm, limit: opts.limit, channelId: opts.channelId }
@@ -511,7 +513,7 @@ export class ChatService {
        FROM message_attachments ma
        JOIN messages m ON ma.message_id = m.id
        JOIN users u ON m.sender_user_id = u.id
-       WHERE m.channel_id = @channelId AND m.is_deleted = 0
+       WHERE m.channel_id = @channelId  
        ORDER BY ma.created_at DESC`,
       { channelId, limit }
     );
@@ -617,8 +619,9 @@ export class ChatService {
 
 
   async editMessage(messageId: number, content: string, userId: number) {
+    console.log("🚀 ~ ChatService ~ editMessage ~ messageId:", messageId)
     const msg = await this.sqlService.query(
-      `SELECT id, sender_user_id, channel_id FROM messages WHERE id = @messageId AND is_deleted = 0`,
+      `SELECT id, sender_user_id, channel_id FROM messages WHERE id = @messageId  `,
       { messageId }
     );
     if (!msg.length) throw new NotFoundException('Message not found');
@@ -914,7 +917,7 @@ export class ChatService {
       u.last_name as sender_last_name, 
       u.avatar_url as sender_avatar_url,
       ISNULL((SELECT COUNT(*) FROM message_reactions WHERE message_id = m.id), 0) as reaction_count,
-      ISNULL((SELECT COUNT(*) FROM message_attachments WHERE message_id = m.id AND is_deleted = 0), 0) as attachment_count,
+      ISNULL((SELECT COUNT(*) FROM message_attachments WHERE message_id = m.id ), 0) as attachment_count,
       CASE 
         WHEN LEN(m.read_by_user_ids) > 0 
         THEN LEN(m.read_by_user_ids) - LEN(REPLACE(m.read_by_user_ids, ',', '')) + 1
