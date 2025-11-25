@@ -29,7 +29,7 @@ export class ChatService {
 
   // ==================== MESSAGES ====================
 
- 
+
 
   async getMessages(channelId: number, userId: number, limit = 50, beforeId?: number) {
     const cacheKey = `msgs:${channelId}:${limit}:${beforeId || 'latest'}`;
@@ -843,5 +843,73 @@ export class ChatService {
     });
 
     return { success: true, action: 'added' };
+  }
+  async getMessage(messageId: number): Promise<MessageResponse> {
+    const result = await this.sqlService.query(
+      `SELECT m.*, 
+            u.first_name as sender_first_name, 
+            u.last_name as sender_last_name, 
+            u.avatar_url as sender_avatar_url
+     FROM messages m
+     JOIN users u ON m.sender_user_id = u.id
+     WHERE m.id = @messageId AND m.is_deleted = 0`,
+      { messageId }
+    );
+
+    if (!result.length) {
+      throw new NotFoundException('Message not found');
+    }
+
+    return result[0];
+  }
+
+  /**
+   * ✅ FIXED: Update delivery status without WebSocket emit
+   * Gateway handles broadcasting via handleDeliveryStatus
+   */
+  async updateMessageDeliveryStatus(
+    messageId: number,
+    userId: number,
+    status: 'delivered' | 'read'
+  ): Promise<void> {
+    try {
+      const now = new Date().toISOString();
+
+      await this.sqlService.query(
+        `UPDATE message_read_receipts
+       SET status = @status,
+           ${status === 'delivered' ? 'delivered_at' : 'read_at'} = @now
+       WHERE message_id = @messageId 
+         AND user_id = @userId`,
+        { messageId, userId, status, now }
+      );
+
+      this.logger.debug(`Updated ${status} status for message ${messageId} by user ${userId}`);
+
+    } catch (error) {
+      this.logger.error(`Failed to update delivery status: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ Get aggregated read status for message
+   */
+  async getMessageReadStatus(messageId: number): Promise<{
+    total: number;
+    delivered: number;
+    read: number;
+  }> {
+    const result = await this.sqlService.query(
+      `SELECT 
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'delivered' OR status = 'read' THEN 1 ELSE 0 END) as delivered,
+      SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) as read
+     FROM message_read_receipts
+     WHERE message_id = @messageId`,
+      { messageId }
+    );
+
+    return result[0] || { total: 0, delivered: 0, read: 0 };
   }
 }
