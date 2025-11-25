@@ -144,23 +144,22 @@ export class MuteChannelDto {
 
 // ==================== MEMBER DTOs - FIXED ====================
 
+// src/modules/message-system/dto/chat.dto.ts - FIXED
 export class AddMemberDto {
   @IsArray()
   @IsNumber({}, { each: true })
   @ArrayMinSize(1)
   @Type(() => Number)
   @Transform(({ value }) => {
-    // Handle both array and object formats
     if (Array.isArray(value)) {
-      return value.map(v => typeof v === 'string' ? parseInt(v, 10) : v);
+      return value.map(v => Number(v)).filter(n => !isNaN(n));
     }
     if (typeof value === 'object' && value !== null) {
-      // If it's an object with numeric keys, convert to array
-      return Object.values(value).map(v => typeof v === 'string' ? parseInt(v, 10) : Number(v));
+      return Object.values(value).map(v => Number(v)).filter(n => !isNaN(n));
     }
     return [];
   })
-  userIds: number[];
+  userIds!: number[];
 
   @IsString()
   @IsOptional()
