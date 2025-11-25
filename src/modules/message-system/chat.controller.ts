@@ -34,6 +34,7 @@ export class ChatController {
     @CurrentUser('id') userId: number,
     @Query('beforeId') beforeId?: string,
   ) {
+    console.log("🚀 ~ ChatController ~ getMessages ~ userId:", userId)
     return this.chatService.getMessages(channelId, userId, +limit, beforeId ? +beforeId : undefined);
   }
 
