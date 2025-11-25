@@ -960,6 +960,12 @@ export class ChatService {
       ? dto.attachments.join(',')
       : null;
 
+    // ✅ NEW: Get online participants for auto-delivery
+    const participants = validation.participant_ids
+      .split(',')
+      .map(id => parseInt(id.trim()))
+      .filter(id => !isNaN(id) && id !== userId); // Exclude sender
+
     const result = await this.sqlService.execute('sp_SendMessage_Fast', {
       channelId: dto.channelId,
       userId,
@@ -968,7 +974,7 @@ export class ChatService {
       content: dto.content,
       hasAttachments: dto.attachments && dto.attachments.length > 0 ? 1 : 0,
       hasMentions: dto.mentions && dto.mentions.length > 0 ? 1 : 0,
-      mentionedUserIds: mentions, // ✅ Pass as string
+      mentionedUserIds: mentions,
       replyToMessageId: dto.replyToMessageId || null,
       threadId: dto.threadId || null,
       attachmentIds: attachmentIds,
@@ -976,7 +982,20 @@ export class ChatService {
 
     const message = result[0] as MessageResponse;
 
-    // ✅ Log activity asynchronously
+    // ✅ NEW: Auto-mark as delivered to all participants
+    if (participants.length > 0) {
+      message.delivered_to_user_ids = participants.join(',');
+      await this.sqlService.query(
+        `UPDATE messages 
+       SET delivered_to_user_ids = @deliveredTo 
+       WHERE id = @messageId`,
+        {
+          messageId: message.id,
+          deliveredTo: message.delivered_to_user_ids
+        }
+      );
+    }
+
     setImmediate(() => this.logMessageActivity(
       message,
       userId,
