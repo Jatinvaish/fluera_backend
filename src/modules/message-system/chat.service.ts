@@ -14,6 +14,10 @@ export interface MessageResponse {
   message_type: string;
   content: string;
   sent_at: string;
+  has_attachments: boolean;
+  has_mentions: boolean;
+  reply_to_message_id?: number;
+  thread_id?: number;
 }
 
 @Injectable()
@@ -43,15 +47,46 @@ export class ChatService {
       } catch { }
     }
 
+    // ✅ Get messages with ALL fields including reactions, mentions, attachments
     const messages = await this.sqlService.execute('sp_GetMessages_Fast', {
-      channelId, limit: Math.min(limit, 100), beforeId: beforeId || null,
+      channelId,
+      limit: Math.min(limit, 100),
+      beforeId: beforeId || null,
     });
 
+    // ✅ Enrich messages with reactions and attachments details
+    const enrichedMessages = await Promise.all(
+      messages.map(async (msg: any) => {
+        // Get reactions if count > 0
+        if (msg.reaction_count > 0) {
+          msg.reactions = await this.sqlService.execute('sp_GetMessageReactions_Fast', {
+            messageId: msg.id
+          });
+        }
+
+        // Get attachments if count > 0
+        if (msg.attachment_count > 0) {
+          msg.attachments = await this.sqlService.execute('sp_GetMessageAttachments_Fast', {
+            messageId: msg.id
+          });
+        }
+
+        // Parse mention IDs
+        if (msg.mention_ids) {
+          msg.mentions = msg.mention_ids.split(',').map((id: string) => parseInt(id));
+        }
+
+        return msg;
+      })
+    );
+
     if (!beforeId && messages.length > 0) {
-      setImmediate(() => this.redisService.set(cacheKey, JSON.stringify(messages), 30));
+      setImmediate(() => this.redisService.set(cacheKey, JSON.stringify(enrichedMessages), 30));
     }
-    return messages;
+
+    return enrichedMessages;
   }
+
 
 
   async pinMessage(messageId: number, isPinned: boolean, userId: number) {
@@ -63,12 +98,38 @@ export class ChatService {
     );
     if (!msg.length) throw new NotFoundException('Message not found');
 
-    await this.sqlService.query(
-      `UPDATE messages SET is_pinned = @isPinned, pinned_at = ${isPinned ? 'GETUTCDATE()' : 'NULL'}, pinned_by = ${isPinned ? '@userId' : 'NULL'} WHERE id = @messageId`,
-      { messageId, isPinned: isPinned ? 1 : 0, userId }
-    );
+    // ✅ Use stored procedure for proper field updates
+    await this.sqlService.execute('sp_PinMessage_Fast', {
+      messageId,
+      userId,
+      isPinned: isPinned ? 1 : 0
+    });
+
+    // ✅ Log activity
+    setImmediate(async () => {
+      try {
+        const user = await this.sqlService.query(
+          'SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId',
+          { userId }
+        );
+        await this.activityService.logActivity({
+          tenantId: user[0]?.tenant_id || 0,
+          userId,
+          activityType: isPinned ? ChatActivityType.MESSAGE_PINNED : ChatActivityType.MESSAGE_UNPINNED,
+          subjectType: 'message',
+          subjectId: messageId,
+          action: isPinned ? 'pinned' : 'unpinned',
+          description: `${user[0]?.first_name} ${user[0]?.last_name} ${isPinned ? 'pinned' : 'unpinned'} a message`,
+          metadata: { channelId: msg[0].channel_id },
+        });
+      } catch (error) {
+        this.logger.error(`Failed to log pin activity: ${error.message}`);
+      }
+    });
+
     return { success: true };
   }
+
 
   async getPinnedMessages(channelId: number, userId: number) {
     await this.validateMembership(channelId, userId);
@@ -114,13 +175,13 @@ export class ChatService {
     );
     if (!parent.length) throw new ForbiddenException('Access denied');
 
-    return this.sqlService.query(
-      `SELECT m.*, u.first_name as sender_first_name, u.last_name as sender_last_name, u.avatar_url as sender_avatar_url
-       FROM messages m JOIN users u ON m.sender_user_id = u.id
-       WHERE (m.thread_id = @parentMessageId OR m.reply_to_message_id = @parentMessageId) AND m.is_deleted = 0
-       ORDER BY m.sent_at ASC OFFSET 0 ROWS FETCH NEXT @limit ROWS ONLY`,
-      { parentMessageId, limit }
-    );
+    // ✅ Use stored procedure that includes all fields
+    const messages = await this.sqlService.execute('sp_GetThreadMessages_Fast', {
+      parentMessageId,
+      limit
+    });
+
+    return messages;
   }
 
   async replyInThread(parentMessageId: number, content: string, userId: number, tenantId: number) {
@@ -143,12 +204,18 @@ export class ChatService {
   // ==================== REACTIONS ====================
 
   async removeReaction(messageId: number, userId: number, emoji: string) {
-    await this.sqlService.query(
-      `DELETE FROM message_reactions WHERE message_id = @messageId AND user_id = @userId AND emoji = @emoji`,
-      { messageId, userId, emoji }
-    );
-    return { success: true };
+    const result = await this.sqlService.execute('sp_RemoveReaction_Fast', {
+      messageId,
+      userId,
+      emoji
+    });
+
+    return {
+      success: true,
+      deleted: result[0]?.deleted_count > 0
+    };
   }
+
 
   // ==================== CHANNELS ====================
 
@@ -510,12 +577,18 @@ export class ChatService {
   private async validateFromCache(channelId: number, userId: number) {
     const cacheKey = `validate:${channelId}:${userId}`;
     try {
-      const cached = await Promise.race([this.redisService.get(cacheKey), new Promise((_, r) => setTimeout(() => r('timeout'), 10))]);
+      const cached = await Promise.race([
+        this.redisService.get(cacheKey),
+        new Promise((_, r) => setTimeout(() => r('timeout'), 10))
+      ]);
       if (cached) return JSON.parse(cached as string);
     } catch { }
 
     const result = await this.sqlService.execute('sp_ValidateMessageSend_Fast', { channelId, userId });
-    const validation = { isMember: result[0]?.isMember === 1, participant_ids: result[0]?.participant_ids || '' };
+    const validation = {
+      isMember: result[0]?.isMember === 1,
+      participant_ids: result[0]?.participant_ids || ''
+    };
     setImmediate(() => this.redisService.set(cacheKey, JSON.stringify(validation), 60));
     return validation;
   }
@@ -546,21 +619,11 @@ export class ChatService {
     if (result[0].role !== 'owner') throw new ForbiddenException('Owner access required');
   }
 
-  private async processMessageAsync(messageId: number, channelId: number, senderId: number, participantIdsStr: string) {
-    try {
-      const participantIds = participantIdsStr.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id) && id !== senderId);
-      await Promise.allSettled([
-        this.sqlService.execute('sp_CreateReadReceiptsBulk_Fast', { messageId, channelId, senderId }),
-        this.invalidateCaches(channelId, participantIds),
-      ]);
-    } catch (err) {
-      this.logger.error(`Async processing error: ${err.message}`);
-    }
-  }
 
   private async invalidateCaches(channelId: number, participantIds: number[]) {
     const patterns = [
-      `validate:${channelId}:*`, `msgs:${channelId}:*`,
+      `validate:${channelId}:*`,
+      `msgs:${channelId}:*`,
       ...participantIds.slice(0, 10).map(id => `user:${id}:unread`),
       ...participantIds.slice(0, 10).map(id => `user:${id}:channels`),
     ];
@@ -587,14 +650,28 @@ export class ChatService {
     const validation = await this.validateFromCache(dto.channelId, userId);
     if (!validation.isMember) throw new ForbiddenException('Not a channel member');
 
+    // ✅ Prepare mentions and attachments as comma-separated strings
+    const mentions = dto.mentions && dto.mentions.length > 0
+      ? dto.mentions.join(',')
+      : null;
+
+    const attachmentIds = dto.attachments && dto.attachments.length > 0
+      ? dto.attachments.join(',')
+      : null;
+
+    // ✅ Call enhanced stored procedure with ALL fields
     const result = await this.sqlService.execute('sp_SendMessage_Fast', {
-      channelId: dto.channelId, userId, tenantId,
+      channelId: dto.channelId,
+      userId,
+      tenantId,
       messageType: dto.messageType || 'text',
       content: dto.content,
-      hasAttachments: dto.attachments && dto.attachments?.length > 0 ? 1 : 0,
-      hasMentions: dto.mentions && dto.mentions?.length > 0 ? 1 : 0,
+      hasAttachments: dto.attachments && dto.attachments.length > 0 ? 1 : 0,
+      hasMentions: dto.mentions && dto.mentions.length > 0 ? 1 : 0,
       replyToMessageId: dto.replyToMessageId || null,
       threadId: dto.threadId || null,
+      mentions: mentions, // ✅ NEW
+      attachmentIds: attachmentIds, // ✅ NEW
     });
 
     const message = result[0] as MessageResponse;
@@ -604,6 +681,7 @@ export class ChatService {
 
     return message;
   }
+
 
   /**
    * ✅ NEW: Log message activity and send notifications
@@ -616,7 +694,6 @@ export class ChatService {
     participantIdsStr: string
   ): Promise<void> {
     try {
-      // Get user and channel info
       const [user, channel] = await Promise.all([
         this.sqlService.query('SELECT first_name, last_name FROM users WHERE id = @userId', { userId }),
         this.sqlService.query('SELECT name FROM chat_channels WHERE id = @channelId', { channelId: dto.channelId })
@@ -626,7 +703,6 @@ export class ChatService {
       const channelName = channel[0]?.name || 'Unknown Channel';
       const messagePreview = dto.content.substring(0, 100);
 
-      // Log activity
       await this.activityService.logActivity({
         tenantId,
         userId,
@@ -640,17 +716,15 @@ export class ChatService {
           messageId: message.id,
           messageType: dto.messageType,
           hasAttachments: dto.attachments && dto.attachments?.length > 0,
+          hasMentions: dto.mentions && dto.mentions?.length > 0,
         },
       });
 
-      // Parse participant IDs
       const participantIds = participantIdsStr.split(',')
         .map(id => parseInt(id.trim()))
         .filter(id => !isNaN(id) && id !== userId);
 
-      // Send notifications for new message
       if (dto.replyToMessageId || dto.threadId) {
-        // Thread reply notification
         await this.notificationService.notifyThreadReply({
           channelId: dto.channelId,
           messageId: message.id,
@@ -662,7 +736,6 @@ export class ChatService {
           messagePreview,
         });
       } else {
-        // Regular message notification
         await this.notificationService.notifyNewMessage({
           channelId: dto.channelId,
           messageId: message.id,
@@ -675,7 +748,7 @@ export class ChatService {
         });
       }
 
-      // Handle mentions
+      // ✅ Handle mentions properly
       if (dto.mentions && dto.mentions.length > 0) {
         for (const mentionedUserId of dto.mentions) {
           await this.activityService.logActivity({
@@ -702,20 +775,19 @@ export class ChatService {
         }
       }
 
-      // Create read receipts
       await this.sqlService.execute('sp_CreateReadReceiptsBulk_Fast', {
         messageId: message.id,
         channelId: dto.channelId,
         senderId: userId
       });
 
-      // Invalidate caches
       await this.invalidateCaches(dto.channelId, participantIds);
 
     } catch (error) {
       this.logger.error(`Failed to log message activity: ${error.message}`);
     }
   }
+
 
   async editMessage(messageId: number, content: string, userId: number) {
     const msg = await this.sqlService.query(
@@ -725,15 +797,20 @@ export class ChatService {
     if (!msg.length) throw new NotFoundException('Message not found');
     if (msg[0].sender_user_id !== userId) throw new ForbiddenException('Can only edit your own messages');
 
-    await this.sqlService.query(
-      `UPDATE messages SET content = @content, is_edited = 1, edited_at = GETUTCDATE(), updated_at = GETUTCDATE() WHERE id = @messageId`,
-      { messageId, content }
-    );
+    // ✅ Use stored procedure for proper field updates
+    await this.sqlService.execute('sp_EditMessage_Fast', {
+      messageId,
+      userId,
+      content
+    });
 
     // ✅ Log activity
     setImmediate(async () => {
       try {
-        const user = await this.sqlService.query('SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId', { userId });
+        const user = await this.sqlService.query(
+          'SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId',
+          { userId }
+        );
         await this.activityService.logActivity({
           tenantId: user[0]?.tenant_id || 0,
           userId,
@@ -752,6 +829,7 @@ export class ChatService {
     setImmediate(() => this.redisService.del(`msgs:${msg[0].channel_id}:*`));
     return { success: true, messageId };
   }
+
 
   async deleteMessage(messageId: number, userId: number) {
     const msg = await this.sqlService.query(
@@ -795,17 +873,19 @@ export class ChatService {
   }
 
   async addReaction(messageId: number, userId: number, tenantId: number, emoji: string) {
-    const exists = await this.sqlService.query(
-      `SELECT id FROM message_reactions WHERE message_id = @messageId AND user_id = @userId AND emoji = @emoji`,
-      { messageId, userId, emoji }
-    );
-    if (exists.length) return { success: true, action: 'already_exists' };
+    // ✅ Use stored procedure that handles duplicate check
+    const result = await this.sqlService.execute('sp_AddReaction_Fast', {
+      messageId,
+      userId,
+      tenantId,
+      emoji
+    });
 
-    await this.sqlService.query(
-      `INSERT INTO message_reactions (message_id, user_id, tenant_id, emoji, created_at, created_by)
-       VALUES (@messageId, @userId, @tenantId, @emoji, GETUTCDATE(), @userId)`,
-      { messageId, userId, tenantId, emoji }
-    );
+    const action = result[0]?.result;
+
+    if (action === 'already_exists') {
+      return { success: true, action: 'already_exists' };
+    }
 
     // ✅ Log activity and notify
     setImmediate(async () => {
@@ -844,6 +924,9 @@ export class ChatService {
 
     return { success: true, action: 'added' };
   }
+
+
+
   async getMessage(messageId: number): Promise<MessageResponse> {
     const result = await this.sqlService.query(
       `SELECT m.*, 
@@ -912,4 +995,27 @@ export class ChatService {
 
     return result[0] || { total: 0, delivered: 0, read: 0 };
   }
+  async getUserMentions(userId: number, limit = 50) {
+    return this.sqlService.execute('sp_GetUserMentions_Fast', {
+      userId,
+      limit
+    });
+  }
+
+  //TODO
+  async uploadAttachment(params: {
+    messageId?: number;
+    tenantId: number;
+    userId: number;
+    filename: string;
+    fileSize: number;
+    mimeType: string;
+    fileUrl: string;
+    fileHash: string;
+    thumbnailUrl?: string;
+  }) {
+    const result = await this.sqlService.execute('sp_UploadAttachment_Fast', params);
+    return { attachmentId: result[0]?.attachment_id };
+  }
+
 }
