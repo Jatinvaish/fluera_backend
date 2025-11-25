@@ -503,4 +503,102 @@ export class ChatController {
     };
   }
 
+
+  @Post('messages/bulk-mark-read')
+  @HttpCode(HttpStatus.OK)
+  async bulkMarkAsRead(
+    @Body() dto: { channelId: number; upToMessageId: number },
+    @CurrentUser('id') userId: number,
+  ) {
+    await this.chatService.bulkMarkAsRead(
+      dto.channelId,
+      userId,
+      dto.upToMessageId
+    );
+
+    return {
+      success: true,
+      message: 'Messages marked as read',
+    };
+  }
+
+  /**
+   * ✅ Get detailed read status for a message
+   */
+  @Get('messages/:messageId/read-status-detailed')
+  async getDetailedReadStatus(
+    @Param('messageId', ParseIntPipe) messageId: number,
+  ) {
+    const status = await this.chatService.getMessageReadStatus(messageId);
+
+    // ✅ Get user details for read/delivered users
+    const userIds = [
+      ...status.readByUserIds,
+      ...status.deliveredToUserIds
+    ].filter((id, index, self) => self.indexOf(id) === index);
+
+    let users = [];
+    if (userIds.length > 0) {
+      users = await this.chatService['sqlService'].query(
+        `SELECT id, first_name, last_name, avatar_url
+       FROM users
+       WHERE id IN (${userIds.join(',')})`,
+        {}
+      );
+    }
+
+    const userMap = new Map(users.map((u: any) => [u.id, u]));
+
+    return {
+      success: true,
+      data: {
+        readCount: status.readCount,
+        deliveredCount: status.deliveredCount,
+        readBy: status.readByUserIds.map(id => userMap.get(id)).filter(Boolean),
+        deliveredTo: status.deliveredToUserIds.map(id => userMap.get(id)).filter(Boolean),
+      },
+    };
+  }
+
+  /**
+   * ✅ Get thread with enhanced details
+   */
+  @Get('threads/:messageId/enhanced')
+  async getEnhancedThread(
+    @Param('messageId', ParseIntPipe) messageId: number,
+    @Query('limit') limit: number = 50,
+    @CurrentUser('id') userId: number,
+  ) {
+    const messages = await this.chatService.getThreadMessages(
+      messageId,
+      userId,
+      +limit
+    );
+
+    // Get parent message
+    const parent = await this.chatService.getMessage(messageId);
+
+    return {
+      success: true,
+      data: {
+        parent,
+        replies: messages,
+        totalReplies: messages.length,
+      },
+    };
+  }
+
+  /**
+   * ✅ Mark message as delivered (called automatically by frontend)
+   */
+  @Post('messages/:id/mark-delivered')
+  @HttpCode(HttpStatus.OK)
+  async markAsDelivered(
+    @Param('id', ParseIntPipe) messageId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    await this.chatService.markAsDelivered(messageId, userId);
+
+    return { success: true };
+  }
 }
