@@ -669,7 +669,6 @@ export class ChatService {
 
 
   async editMessage(messageId: number, content: string, userId: number) {
-    console.log("🚀 ~ ChatService ~ editMessage ~ messageId:", messageId)
     const msg = await this.sqlService.query(
       `SELECT id, sender_user_id, channel_id FROM messages WHERE id = @messageId  `,
       { messageId }

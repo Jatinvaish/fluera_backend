@@ -222,17 +222,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: { channelId: number }
   ) {
-    if (!data.channelId) return;
-
-    this.logger.debug(`⌨️ User ${client.userId} typing in channel ${data.channelId}`);
-
-    this.broadcastToChannel(data.channelId, {
+    const payload = Array.isArray(data) ? data[0] : data;
+    console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ payload:", payload)
+    // This broadcasts to everyone INCLUDING the sender
+    this.broadcastToChannel(payload.channelId, {
       event: 'user_typing',
-      channelId: data.channelId,
+      channelId: payload.channelId,
       userId: client.userId,
       userName: `${client.user.firstName} ${client.user.lastName}`,
       isTyping: true,
-    }, client.userId);
+    }, client.userId);  
   }
 
   @SubscribeMessage('typing_stop')
@@ -609,17 +608,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     let members = this.channelMembers.get(channelId);
 
     if (!members || members.size === 0) {
-      try {
-        const result = await this.chatService['sqlService'].execute(
-          'sp_GetChannelMembers_Fast',
-          { channelId }
-        );
-        members = new Set(result.map((r: any) => r.user_id));
-        this.channelMembers.set(channelId, members);
-      } catch (error) {
-        this.logger.error(`Failed to get channel members: ${error.message}`);
-        return;
-      }
+      // Fetches from DB
+      const result = await this.chatService['sqlService'].execute(
+        'sp_GetChannelMembers_Fast',
+        { channelId }
+      );
+      members = new Set(result.map((r: any) => r.user_id));
+      this.channelMembers.set(channelId, members);
     }
 
     let broadcastCount = 0;
@@ -628,12 +623,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
       const sockets = this.userSockets.get(userId);
       if (sockets) {
+        console.log("🚀 ~ sockets:", sockets)
         sockets.forEach(socketId => {
           this.server.to(socketId).emit('message', payload);
           broadcastCount++;
         });
       }
     });
+
 
     this.logger.debug(`📡 Broadcast ${payload.event} to ${broadcastCount} sockets in channel ${channelId}`);
   }
