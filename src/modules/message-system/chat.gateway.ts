@@ -47,98 +47,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private configService: ConfigService,
   ) { }
 
-  // ==================== MESSAGE SENDING ====================
-
-
-  // ==================== TYPING INDICATORS ====================
-
-  @SubscribeMessage('typing_start')
-  handleTypingStart(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { channelId: number }
-  ) {
-    this.broadcastToChannel(data.channelId, {
-      event: 'user_typing',
-      channelId: data.channelId,
-      userId: client.userId,
-      userName: `${client.user.firstName} ${client.user.lastName}`,
-      isTyping: true,
-    }, client.userId); // Exclude sender
-  }
-
-  @SubscribeMessage('typing_stop')
-  handleTypingStop(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { channelId: number }
-  ) {
-    this.broadcastToChannel(data.channelId, {
-      event: 'user_typing',
-      channelId: data.channelId,
-      userId: client.userId,
-      isTyping: false,
-    }, client.userId);
-  }
-
-  // ==================== REACTIONS (REAL-TIME) ====================
-
-  @SubscribeMessage('add_reaction')
-  async handleAddReaction(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; emoji: string; channelId: number }
-  ) {
-    try {
-      const result = await this.chatService.addReaction(
-        data.messageId,
-        client.userId,
-        client.tenantId,
-        data.emoji
-      );
-
-      if (result.success) {
-        // ✅ Broadcast reaction to all channel members
-        await this.broadcastToChannel(data.channelId, {
-          event: 'reaction_added',
-          messageId: data.messageId,
-          emoji: data.emoji,
-          userId: client.userId,
-          userName: `${client.user.firstName} ${client.user.lastName}`,
-          avatarUrl: client.user.avatarUrl,
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Add reaction error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  @SubscribeMessage('remove_reaction')
-  async handleRemoveReaction(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; emoji: string; channelId: number }
-  ) {
-    try {
-      await this.chatService.removeReaction(data.messageId, client.userId, data.emoji);
-
-      // ✅ Broadcast reaction removal
-      await this.broadcastToChannel(data.channelId, {
-        event: 'reaction_removed',
-        messageId: data.messageId,
-        emoji: data.emoji,
-        userId: client.userId,
-        timestamp: new Date().toISOString(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Remove reaction error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-
+  // ==================== BULK READ ====================
   @SubscribeMessage('bulk_mark_as_read')
   async handleBulkMarkAsRead(
     @ConnectedSocket() client: AuthSocket,
@@ -163,51 +72,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ==================== THREAD REPLIES (REAL-TIME) ====================
-
-  @SubscribeMessage('thread_reply')
-  async handleThreadReply(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: {
-      parentMessageId: number;
-      content: string;
-      channelId: number;
-      mentions?: number[];
-    }
-  ) {
-    try {
-      const reply = await this.chatService.replyInThread(
-        data.parentMessageId,
-        data.content,
-        client.userId,
-        client.tenantId
-      );
-
-      // ✅ Broadcast thread reply to channel
-      await this.broadcastToChannel(data.channelId, {
-        event: 'thread_reply',
-        parentMessageId: data.parentMessageId,
-        message: {
-          ...reply,
-          sender: {
-            id: client.user.id,
-            firstName: client.user.firstName,
-            lastName: client.user.lastName,
-            avatarUrl: client.user.avatarUrl,
-          },
-        },
-        timestamp: new Date().toISOString(),
-      });
-
-      return { success: true, messageId: reply.id };
-    } catch (error) {
-      this.logger.error('Thread reply error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // ==================== MESSAGE EDITING (REAL-TIME) ====================
-
+  // ==================== MESSAGE EDITING ====================
   @SubscribeMessage('edit_message')
   async handleEditMessage(
     @ConnectedSocket() client: AuthSocket,
@@ -261,8 +126,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ==================== MESSAGE PINNING (REAL-TIME) ====================
-
+  // ==================== MESSAGE PINNING ====================
   @SubscribeMessage('pin_message')
   async handlePinMessage(
     @ConnectedSocket() client: AuthSocket,
@@ -288,7 +152,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // ==================== CONNECTION HANDLING ====================
-
   async handleConnection(client: AuthSocket) {
     try {
       let token = client.handshake.auth?.token;
@@ -379,7 +242,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // ==================== HELPER METHODS ====================
-
   /**
    * ✅ Broadcast message to all members of a channel
    */
@@ -451,104 +313,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-
-
-  //
-  @SubscribeMessage('send_message')
-  async handleSendMessage(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: SendMessageDto
-  ) {
-    const start = Date.now();
-
-    try {
-      const message = await this.chatService.sendMessage(
-        data,
-        client.userId,
-        client.tenantId
-      );
-
-      // ✅ Properly typed broadcast payload
-      const broadcastPayload = {
-        event: 'new_message',
-        message: {
-          id: message.id,
-          channel_id: message.channel_id,
-          sender_user_id: message.sender_user_id,
-          sender_tenant_id: message.sender_tenant_id,
-          message_type: message.message_type,
-          content: data.content,
-          sent_at: message.sent_at,
-          has_attachments: message.has_attachments,
-          has_mentions: message.has_mentions,
-          mentioned_user_ids: message.mentioned_user_ids,
-          reply_to_message_id: message.reply_to_message_id,
-          thread_id: message.thread_id,
-          delivered_to_user_ids: message.delivered_to_user_ids,
-          read_by_user_ids: null, // Just sent, not read yet
-          sender: {
-            id: client.user.id,
-            firstName: client.user.firstName,
-            lastName: client.user.lastName,
-            avatarUrl: client.user.avatarUrl,
-          },
-        },
-      };
-
-      await this.broadcastToChannel(data.channelId, broadcastPayload);
-
-      this.logger.debug(`Message delivered in ${Date.now() - start}ms`);
-      return {
-        success: true,
-        messageId: message.id,
-        latency: Date.now() - start
-      };
-    } catch (error) {
-      this.logger.error('Send message error:', error.message);
-      client.emit('error', { event: 'send_message', message: error.message });
-      return { success: false, error: error.message };
-    }
-  }
-
-  @SubscribeMessage('mark_as_read')
-  async handleMarkAsRead(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: MessageDeliveryDto
-  ) {
-    try {
-      await this.chatService.markAsRead(
-        data.channelId,
-        data.messageId,
-        client.userId
-      );
-
-      // ✅ Get status with proper typing
-      const status: MessageReadStatus = await this.chatService.getMessageReadStatus(
-        data.messageId
-      );
-
-      // ✅ Get message with proper typing
-      const message: EnrichedMessageResponse = await this.chatService.getMessage(
-        data.messageId
-      );
-
-      // ✅ Notify sender with typed payload
-      this.broadcastToUser(message.sender_user_id, {
-        event: 'message_read',
-        messageId: data.messageId,
-        readBy: client.userId,
-        readByName: `${client.user.firstName} ${client.user.lastName}`,
-        readCount: status.readCount,
-        timestamp: new Date().toISOString(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Mark as read error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
+  // ==================== DELIVERY TRACKING ====================
   @SubscribeMessage('mark_as_delivered')
   async handleMarkAsDelivered(
     @ConnectedSocket() client: AuthSocket,
@@ -579,6 +344,250 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { success: true };
     } catch (error) {
       this.logger.error('Mark as delivered error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ==================== SEND MESSAGE ====================
+  @SubscribeMessage('send_message')
+  async handleSendMessage(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: SendMessageDto
+  ) {
+    const start = Date.now();
+
+    try {
+      const message = await this.chatService.sendMessage(
+        data,
+        client.userId,
+        client.tenantId
+      );
+
+      // ✅ Broadcast with complete message object including sender info
+      const broadcastPayload = {
+        event: 'new_message',
+        message: {
+          ...message,
+          // Ensure sender info is always included
+          sender_first_name: message.sender_first_name || client.user.firstName,
+          sender_last_name: message.sender_last_name || client.user.lastName,
+          sender_avatar_url: message.sender_avatar_url || client.user.avatarUrl,
+        },
+      };
+
+      await this.broadcastToChannel(data.channelId, broadcastPayload);
+
+      // Handle mentions
+      if (data.mentions && data.mentions.length > 0) {
+        for (const mentionedUserId of data.mentions) {
+          this.broadcastToUser(mentionedUserId, {
+            event: 'user_mentioned',
+            channelId: data.channelId,
+            messageId: message.id,
+            mentionedBy: client.userId,
+            mentionedByName: `${client.user.firstName} ${client.user.lastName}`,
+            messagePreview: data.content.substring(0, 100),
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      return {
+        success: true,
+        messageId: message.id,
+        latency: Date.now() - start
+      };
+    } catch (error) {
+      this.logger.error('Send message error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ==================== TYPING INDICATORS ====================
+  @SubscribeMessage('typing_start')
+  handleTypingStart(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { channelId: number }
+  ) {
+    if (!data.channelId) return;
+
+    this.broadcastToChannel(data.channelId, {
+      event: 'user_typing',
+      channelId: data.channelId,
+      userId: client.userId,
+      userName: `${client.user.firstName} ${client.user.lastName}`,
+      isTyping: true,
+    }, client.userId); // Exclude sender
+  }
+
+  @SubscribeMessage('typing_stop')
+  handleTypingStop(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { channelId: number }
+  ) {
+    if (!data.channelId) return;
+
+    this.broadcastToChannel(data.channelId, {
+      event: 'user_typing',
+      channelId: data.channelId,
+      userId: client.userId,
+      isTyping: false,
+    }, client.userId);
+  }
+
+  // ==================== REACTIONS ====================
+  @SubscribeMessage('add_reaction')
+  async handleAddReaction(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { messageId: number; emoji: string; channelId: number }
+  ) {
+    try {
+      const result = await this.chatService.addReaction(
+        data.messageId,
+        client.userId,
+        client.tenantId,
+        data.emoji
+      );
+
+      if (result.success) {
+        // ✅ Broadcast reaction with user info
+        await this.broadcastToChannel(data.channelId, {
+          event: 'reaction_added',
+          messageId: data.messageId,
+          emoji: data.emoji,
+          userId: client.userId,
+          userName: `${client.user.firstName} ${client.user.lastName}`,
+          avatarUrl: client.user.avatarUrl,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Add reaction error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('remove_reaction')
+  async handleRemoveReaction(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { messageId: number; emoji: string; channelId: number }
+  ) {
+    try {
+      await this.chatService.removeReaction(data.messageId, client.userId, data.emoji);
+
+      // ✅ Broadcast reaction removal
+      await this.broadcastToChannel(data.channelId, {
+        event: 'reaction_removed',
+        messageId: data.messageId,
+        emoji: data.emoji,
+        userId: client.userId,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Remove reaction error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ==================== THREAD REPLIES (FIXED) ====================
+  @SubscribeMessage('thread_reply')
+  async handleThreadReply(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: {
+      parentMessageId: number;
+      content: string;
+      channelId: number;
+      mentions?: number[];
+    }
+  ) {
+    try {
+      // ✅ FIX: replyInThread now returns EnrichedMessageResponse with all sender fields
+      const reply: EnrichedMessageResponse = await this.chatService.replyInThread(
+        data.parentMessageId,
+        data.content,
+        client.userId,
+        client.tenantId
+      );
+
+      // ✅ Broadcast thread reply with complete info
+      await this.broadcastToChannel(data.channelId, {
+        event: 'thread_reply',
+        parentMessageId: data.parentMessageId,
+        message: {
+          ...reply,
+          // These fields now come from the database query in replyInThread
+          sender_first_name: reply.sender_first_name,
+          sender_last_name: reply.sender_last_name,
+          sender_avatar_url: reply.sender_avatar_url,
+        },
+        timestamp: new Date().toISOString(),
+      });
+
+      // Handle mentions in thread
+      if (data.mentions && data.mentions.length > 0) {
+        for (const mentionedUserId of data.mentions) {
+          this.broadcastToUser(mentionedUserId, {
+            event: 'mentioned_in_thread',
+            channelId: data.channelId,
+            messageId: reply.id,
+            parentMessageId: data.parentMessageId,
+            mentionedBy: client.userId,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      return { success: true, messageId: reply.id };
+    } catch (error) {
+      this.logger.error('Thread reply error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ==================== MEMBER INVITATION ====================
+  @SubscribeMessage('invite_members')
+  async handleInviteMembers(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { channelId: number; userIds: number[] }
+  ) {
+    try {
+      await this.chatService.addMembers(
+        data.channelId,
+        data.userIds,
+        client.userId,
+        client.tenantId
+      );
+
+      const channel = await this.chatService.getChannelById(data.channelId, client.userId);
+
+      // Notify new members
+      for (const userId of data.userIds) {
+        this.broadcastToUser(userId, {
+          event: 'member_invited',
+          channelId: data.channelId,
+          channelName: channel.name,
+          invitedBy: client.userId,
+          inviterName: `${client.user.firstName} ${client.user.lastName}`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Notify existing channel members
+      await this.broadcastToChannel(data.channelId, {
+        event: 'members_added',
+        channelId: data.channelId,
+        userIds: data.userIds,
+        addedBy: client.userId,
+        timestamp: new Date().toISOString(),
+      }, client.userId);
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Invite members error:', error.message);
       return { success: false, error: error.message };
     }
   }

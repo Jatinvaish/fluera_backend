@@ -156,22 +156,72 @@ export class ChatService {
 
   // ==================== THREADS ====================
 
-  async replyInThread(parentMessageId: number, content: string, userId: number, tenantId: number) {
-    const parent = await this.sqlService.query(
-      `SELECT channel_id FROM messages WHERE id = @parentMessageId  `,
+  async replyInThread(
+    parentMessageId: number,
+    content: string,
+    userId: number,
+    tenantId: number
+  ): Promise<EnrichedMessageResponse> {
+    // Get parent message and channel
+    const parent = await this.sqlService.query<{ channel_id: number }>(
+      `SELECT channel_id FROM messages WHERE id = @parentMessageId`,
       { parentMessageId }
     );
-    if (!parent.length) throw new NotFoundException('Parent message not found');
 
-    const msg = await this.sendMessage({
-      channelId: parent[0].channel_id, content, messageType: 'text',
-      replyToMessageId: parentMessageId, threadId: parentMessageId
-    }, userId, tenantId);
+    if (!parent.length) {
+      throw new NotFoundException('Parent message not found');
+    }
 
-    // ✅ FIX: Don't update reply_count - column doesn't exist
-    // Just return the message - thread replies are tracked by reply_to_message_id
-    return msg;
+    // Send the reply message
+    const msg = await this.sendMessage(
+      {
+        channelId: parent[0].channel_id,
+        content,
+        messageType: 'text',
+        replyToMessageId: parentMessageId,
+        threadId: parentMessageId
+      },
+      userId,
+      tenantId
+    );
+
+    // ✅ Enrich with sender information from the database
+    const enrichedMsg = await this.sqlService.query<EnrichedMessageResponse>(
+      `
+    SELECT 
+      m.id,
+      m.channel_id,
+      m.sender_user_id,
+      m.sender_tenant_id,
+      m.message_type,
+      m.content,
+      m.has_attachments,
+      m.has_mentions,
+      m.reply_to_message_id,
+      m.thread_id,
+      m.is_edited,
+      m.edited_at,
+      m.is_deleted,
+      m.is_pinned,
+      m.sent_at,
+      m.created_at,
+      u.first_name as sender_first_name,
+      u.last_name as sender_last_name,
+      u.avatar_url as sender_avatar_url
+    FROM messages m
+    INNER JOIN users u ON m.sender_user_id = u.id
+    WHERE m.id = @messageId
+    `,
+      { messageId: msg.id }
+    );
+
+    if (!enrichedMsg.length) {
+      throw new NotFoundException('Message not found after creation');
+    }
+
+    return enrichedMsg[0];
   }
+
 
   // ==================== REACTIONS ====================
 
@@ -942,8 +992,10 @@ export class ChatService {
   }
 
   /**
-   * ✅ UPDATED: Send message with proper return type
+   * ✅ UPDATED: Send message wit h proper return type
    */
+
+
   async sendMessage(
     dto: SendMessageDto,
     userId: number,
@@ -960,11 +1012,16 @@ export class ChatService {
       ? dto.attachments.join(',')
       : null;
 
-    // ✅ NEW: Get online participants for auto-delivery
     const participants = validation.participant_ids
       .split(',')
       .map(id => parseInt(id.trim()))
-      .filter(id => !isNaN(id) && id !== userId); // Exclude sender
+      .filter(id => !isNaN(id) && id !== userId);
+
+    // ✅ Get user info FIRST
+    const user = await this.sqlService.query(
+      'SELECT first_name, last_name, avatar_url FROM users WHERE id = @userId',
+      { userId }
+    );
 
     const result = await this.sqlService.execute('sp_SendMessage_Fast', {
       channelId: dto.channelId,
@@ -982,7 +1039,14 @@ export class ChatService {
 
     const message = result[0] as MessageResponse;
 
-    // ✅ NEW: Auto-mark as delivered to all participants
+    // ✅ Attach sender info to message
+    if (user.length > 0) {
+      (message as any).sender_first_name = user[0].first_name;
+      (message as any).sender_last_name = user[0].last_name;
+      (message as any).sender_avatar_url = user[0].avatar_url;
+    }
+
+    // Auto-mark as delivered
     if (participants.length > 0) {
       message.delivered_to_user_ids = participants.join(',');
       await this.sqlService.query(
@@ -1006,6 +1070,7 @@ export class ChatService {
 
     return message;
   }
+
 
   //
   // ==================== UPDATED METHODS IN chat.service.ts ====================
