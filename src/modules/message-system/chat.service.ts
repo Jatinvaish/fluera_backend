@@ -915,12 +915,14 @@ export class ChatService {
 
   //
   async getMessageReadStatus(messageId: number): Promise<MessageReadStatus> {
+    console.log("🚀 ~ ChatService ~ getMessageReadStatus ~ messageId:", messageId)
     try {
       const result = await this.sqlService.execute('sp_GetMessageReadStatus_Fast', {
         messageId
       });
 
       const data = result[0];
+      console.log("🚀 ~ ChatService ~ getMessageReadStatus ~ data:", data)
 
       if (!data) {
         return {
