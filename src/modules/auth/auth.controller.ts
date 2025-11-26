@@ -398,7 +398,7 @@ export class AuthController {
       `client_id=${process.env.MICROSOFT_CLIENT_ID}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&response_type=code` +
-      `&scope=${encodeURIComponent('openid profile email User.Read')}` +
+      `&scope=${encodeURIComponent('openid profile email offline_access')}` +
       `&response_mode=query`;
 
     return res.redirect(authUrl, 302);

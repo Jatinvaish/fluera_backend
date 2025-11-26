@@ -1,8 +1,8 @@
 // ==================== COMPLETE dto/chat.dto.ts ====================
 
-import { 
-  IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, 
-  IsEnum, MaxLength, IsBoolean, IsDateString, ArrayMinSize 
+import {
+  IsString, IsNotEmpty, IsOptional, IsArray, IsNumber,
+  IsEnum, MaxLength, IsBoolean, IsDateString, ArrayMinSize
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
@@ -336,6 +336,9 @@ export interface MessageResponse {
   edited_at?: string;
   is_pinned?: boolean;
   pinned_at?: string;
+  sender_first_name?: string;
+  sender_last_name?: string;
+  sender_avatar_url?: string;
   pinned_by?: number;
   is_deleted?: boolean;
   deleted_at?: string;
@@ -346,16 +349,13 @@ export interface MessageResponse {
 }
 
 export interface EnrichedMessageResponse extends MessageResponse {
-  sender_first_name?: string;
-  sender_last_name?: string;
-  sender_avatar_url?: string;
   reaction_count?: number;
   attachment_count?: number;
   read_count?: number;
   delivered_count?: number;
   is_read_by_me?: boolean;
   am_i_mentioned?: boolean;
-  
+
   reactions?: MessageReaction[];
   attachments?: MessageAttachment[];
   mentions?: number[];
