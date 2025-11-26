@@ -349,10 +349,6 @@ export class CheckFeatureDto {
 // LIST PLANS QUERY
 // ============================================
 export class ListPlansQueryDto {
-  @IsEnum(PlanType)
-  @IsOptional()
-  planType?: PlanType;
-
   @IsEnum(PlanTier)
   @IsOptional()
   planTier?: PlanTier;

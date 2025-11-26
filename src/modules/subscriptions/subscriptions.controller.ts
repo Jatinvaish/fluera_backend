@@ -25,6 +25,7 @@ import {
 } from './dto/subscription.dto';
 
 @Controller('subscriptions')
+@Unencrypted()
 export class SubscriptionsController {
   constructor(
     private subscriptionsService: SubscriptionsService,
@@ -37,8 +38,12 @@ export class SubscriptionsController {
 
   @Get('plans')
   @Unencrypted()
-  async listPlans(@Query() query: ListPlansQueryDto) {
-    return this.subscriptionsService.listPlans(query);
+  async listPlans(
+    @Query() query: ListPlansQueryDto,
+    @TenantId() tenantId: number,
+  ) {
+    console.log('User Type:', tenantId);
+    return this.subscriptionsService.listPlans(query, tenantId);
   }
 
   @Get('plans/:id')
@@ -105,7 +110,9 @@ export class SubscriptionsController {
 
   @Get('tenant/:tenantId')
   @Unencrypted()
-  async getTenantSubscription(@Param('tenantId', ParseIntPipe) tenantId: number) {
+  async getTenantSubscription(
+    @Param('tenantId', ParseIntPipe) tenantId: number,
+  ) {
     return this.subscriptionsService.getTenantSubscription(tenantId);
   }
 
@@ -147,10 +154,7 @@ export class SubscriptionsController {
 
   @Post('check-limit')
   @Unencrypted()
-  async checkLimit(
-    @Body() dto: CheckLimitDto,
-    @TenantId() tenantId: number,
-  ) {
+  async checkLimit(@Body() dto: CheckLimitDto, @TenantId() tenantId: number) {
     const result = await this.subscriptionCheckService.checkLimit(
       tenantId,
       dto.limitType as any,
@@ -174,9 +178,8 @@ export class SubscriptionsController {
   @Get('status')
   @Unencrypted()
   async getSubscriptionStatus(@TenantId() tenantId: number) {
-    const status = await this.subscriptionCheckService.checkSubscriptionStatus(
-      tenantId,
-    );
+    const status =
+      await this.subscriptionCheckService.checkSubscriptionStatus(tenantId);
     return { success: true, data: status };
   }
 }

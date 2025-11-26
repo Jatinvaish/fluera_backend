@@ -33,13 +33,24 @@ export class SubscriptionsService {
   /**
    * List all subscription plans
    */
-  async listPlans(query: ListPlansQueryDto) {
+  async listPlans(query: ListPlansQueryDto, tenantId: number) {
     try {
-      const result: any = await this.sqlService.execute('sp_ListSubscriptionPlans', {
-        planType: query.planType || null,
-        planTier: query.planTier || null,
-        includeInactive: query.includeInactive || false,
-      });
+      // Get tenant type from tenantId
+      const tenant = await this.sqlService.query(
+        'SELECT tenant_type FROM tenants WHERE id = @tenantId',
+        { tenantId },
+      );
+
+      const planType = tenant?.[0]?.tenant_type || null;
+
+      const result: any = await this.sqlService.execute(
+        'sp_ListSubscriptionPlans',
+        {
+          planType: planType,
+          planTier: query.planTier || null,
+          includeInactive: query.includeInactive || false,
+        },
+      );
 
       return {
         success: true,
@@ -56,9 +67,12 @@ export class SubscriptionsService {
    */
   async getPlanById(planId: number) {
     try {
-      const result: any = await this.sqlService.execute('sp_GetSubscriptionPlan', {
-        planId,
-      });
+      const result: any = await this.sqlService.execute(
+        'sp_GetSubscriptionPlan',
+        {
+          planId,
+        },
+      );
 
       if (!result || result.length === 0) {
         throw new NotFoundException('Plan not found');
@@ -158,7 +172,12 @@ export class SubscriptionsService {
   /**
    * Update plan (Admin only)
    */
-  async updatePlan(planId: number, dto: UpdatePlanDto, userId: number, userType: string) {
+  async updatePlan(
+    planId: number,
+    dto: UpdatePlanDto,
+    userId: number,
+    userType: string,
+  ) {
     if (userType !== 'super_admin' && userType !== 'owner') {
       throw new ForbiddenException('Only super admins can update plans');
     }
@@ -310,7 +329,11 @@ export class SubscriptionsService {
   /**
    * Create custom plan for tenant (Admin only)
    */
-  async createCustomPlan(dto: CreateCustomPlanDto, userId: number, userType: string) {
+  async createCustomPlan(
+    dto: CreateCustomPlanDto,
+    userId: number,
+    userType: string,
+  ) {
     if (userType !== 'super_admin' && userType !== 'owner') {
       throw new ForbiddenException('Only super admins can create custom plans');
     }
@@ -393,7 +416,10 @@ export class SubscriptionsService {
         data: result[0],
       };
     } catch (error) {
-      this.logger.error(`Failed to get custom plan for tenant ${tenantId}:`, error);
+      this.logger.error(
+        `Failed to get custom plan for tenant ${tenantId}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -407,9 +433,12 @@ export class SubscriptionsService {
    */
   async getTenantSubscription(tenantId: number) {
     try {
-      const result: any = await this.sqlService.execute('sp_GetTenantSubscription', {
-        tenantId,
-      });
+      const result: any = await this.sqlService.execute(
+        'sp_GetTenantSubscription',
+        {
+          tenantId,
+        },
+      );
 
       if (!result || result.length === 0) {
         throw new NotFoundException('Tenant subscription not found');
@@ -428,7 +457,9 @@ export class SubscriptionsService {
 
       if (subscription.custom_features) {
         try {
-          subscription.custom_features = JSON.parse(subscription.custom_features);
+          subscription.custom_features = JSON.parse(
+            subscription.custom_features,
+          );
         } catch (e) {
           // Keep as string if parsing fails
         }
@@ -439,7 +470,10 @@ export class SubscriptionsService {
         data: subscription,
       };
     } catch (error) {
-      this.logger.error(`Failed to get subscription for tenant ${tenantId}:`, error);
+      this.logger.error(
+        `Failed to get subscription for tenant ${tenantId}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -453,10 +487,8 @@ export class SubscriptionsService {
     userId: number,
   ) {
     try {
-      // Validate new plan exists
       await this.getPlanById(dto.planId);
 
-      // Determine change type
       const currentSub = await this.getTenantSubscription(tenantId);
       const currentPlanId = currentSub.data.subscription_plan_id;
 
@@ -474,22 +506,22 @@ export class SubscriptionsService {
             ? newPlan.data.price_yearly
             : newPlan.data.price_monthly;
 
-        if (newPrice > currentPrice) {
-          changeType = 'upgrade';
-        } else if (newPrice < currentPrice) {
-          changeType = 'downgrade';
-        }
+        if (newPrice > currentPrice) changeType = 'upgrade';
+        else if (newPrice < currentPrice) changeType = 'downgrade';
       }
 
-      const result: any = await this.sqlService.execute('sp_ChangeSubscriptionPlan', {
-        tenantId,
-        newPlanId: dto.planId,
-        billingCycle: dto.billingCycle,
-        changeType,
-        changeReason: dto.changeReason || null,
-        changedBy: userId,
-        effectiveDate: dto.effectiveDate || null,
-      });
+      const result: any = await this.sqlService.execute(
+        'sp_ChangeSubscriptionPlan',
+        {
+          tenantId,
+          newPlanId: dto.planId,
+          billingCycle: dto.billingCycle,
+          changeType,
+          changeReason: dto.changeReason || null,
+          changedBy: userId,
+          effectiveDate: dto.effectiveDate || null,
+        },
+      );
 
       await this.auditLogger.log({
         tenantId,
@@ -528,12 +560,15 @@ export class SubscriptionsService {
     userId: number,
   ) {
     try {
-      const result: any = await this.sqlService.execute('sp_CancelSubscription', {
-        tenantId,
-        cancelReason: dto.cancelReason,
-        cancelImmediately: dto.cancelImmediately || false,
-        cancelledBy: userId,
-      });
+      const result: any = await this.sqlService.execute(
+        'sp_CancelSubscription',
+        {
+          tenantId,
+          cancelReason: dto.cancelReason,
+          cancelImmediately: dto.cancelImmediately || false,
+          cancelledBy: userId,
+        },
+      );
 
       await this.auditLogger.log({
         tenantId,
@@ -556,7 +591,10 @@ export class SubscriptionsService {
         data: result,
       };
     } catch (error) {
-      this.logger.error(`Failed to cancel subscription for tenant ${tenantId}:`, error);
+      this.logger.error(
+        `Failed to cancel subscription for tenant ${tenantId}:`,
+        error,
+      );
       throw error;
     }
   }
