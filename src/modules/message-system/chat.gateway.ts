@@ -1,6 +1,6 @@
 // ============================================
 // src/modules/message-system/chat.gateway.ts
-// ENHANCED WITH REAL-TIME REACTIONS, DELIVERY, THREADS
+// SOCKET.IO COMPATIBLE - NO BREAKING CHANGES
 // ============================================
 import {
   WebSocketGateway,
@@ -9,7 +9,8 @@ import {
   MessageBody,
   ConnectedSocket,
   OnGatewayConnection,
-  OnGatewayDisconnect
+  OnGatewayDisconnect,
+  OnGatewayInit
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
@@ -26,15 +27,20 @@ interface AuthSocket extends Socket {
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
-    credentials: true
+    origin: process.env.FRONTEND_URL || '*',
+    credentials: true,
+    methods: ['GET', 'POST']
   },
   namespace: '/chat',
   transports: ['websocket', 'polling'],
-  perMessageDeflate: false,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  upgradeTimeout: 30000,
+  maxHttpBufferSize: 1e8,
   allowEIO3: true,
+  cookie: false,
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(ChatGateway.name);
 
@@ -47,116 +53,26 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private configService: ConfigService,
   ) { }
 
-  // ==================== BULK READ ====================
-  @SubscribeMessage('bulk_mark_as_read')
-  async handleBulkMarkAsRead(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { channelId: number; upToMessageId: number }
-  ) {
-    try {
-      await this.chatService.bulkMarkAsRead(data.channelId, client.userId, data.upToMessageId);
-
-      // ✅ Notify channel of bulk read
-      this.broadcastToChannel(data.channelId, {
-        event: 'bulk_read_update',
-        channelId: data.channelId,
-        userId: client.userId,
-        upToMessageId: data.upToMessageId,
-        timestamp: new Date().toISOString(),
-      }, client.userId);
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Bulk mark as read error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // ==================== MESSAGE EDITING ====================
-  @SubscribeMessage('edit_message')
-  async handleEditMessage(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: {
-      messageId: number;
-      content: string;
-      channelId: number;
-      mentions?: number[];
-    }
-  ) {
-    try {
-      await this.chatService.editMessage(data.messageId, data.content, client.userId);
-
-      // ✅ Broadcast message edit
-      await this.broadcastToChannel(data.channelId, {
-        event: 'message_edited',
-        messageId: data.messageId,
-        content: data.content,
-        mentions: data.mentions,
-        editedBy: client.userId,
-        editedAt: new Date().toISOString(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Edit message error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  @SubscribeMessage('delete_message')
-  async handleDeleteMessage(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; channelId: number }
-  ) {
-    try {
-      await this.chatService.deleteMessage(data.messageId, client.userId);
-
-      // ✅ Broadcast message deletion
-      await this.broadcastToChannel(data.channelId, {
-        event: 'message_deleted',
-        messageId: data.messageId,
-        deletedBy: client.userId,
-        deletedAt: new Date().toISOString(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Delete message error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // ==================== MESSAGE PINNING ====================
-  @SubscribeMessage('pin_message')
-  async handlePinMessage(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; channelId: number; isPinned: boolean }
-  ) {
-    try {
-      await this.chatService.pinMessage(data.messageId, data.isPinned, client.userId);
-
-      // ✅ Broadcast pin status change
-      await this.broadcastToChannel(data.channelId, {
-        event: data.isPinned ? 'message_pinned' : 'message_unpinned',
-        messageId: data.messageId,
-        pinnedBy: client.userId,
-        pinnedByName: `${client.user.firstName} ${client.user.lastName}`,
-        timestamp: new Date().toISOString(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Pin message error:', error.message);
-      return { success: false, error: error.message };
-    }
+  // ==================== GATEWAY INITIALIZATION ====================
+  afterInit(server: Server) {
+    this.logger.log('🚀 Socket.IO Gateway initialized');
+    this.logger.log(`📡 Namespace: /chat`);
+    this.logger.log(`🔗 Transports: websocket, polling`);
   }
 
   // ==================== CONNECTION HANDLING ====================
   async handleConnection(client: AuthSocket) {
     try {
+      this.logger.log(`🔌 New connection attempt: ${client.id}`);
+
+      // Extract token from multiple sources
       let token = client.handshake.auth?.token;
 
+      console.log("🚀 ~ ChatGateway ~ handleConnection ~ token:", token)
+      console.log("🚀 ~ ChatGateway ~ headers.authorization:", client.handshake.headers.authorization)
       if (!token && client.handshake.headers.authorization) {
+      console.log("🚀 ~ innnnnnnnnnnn:", token)
+
         token = client.handshake.headers.authorization.replace('Bearer ', '');
       }
 
@@ -165,7 +81,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       if (!token) {
-        this.logger.warn(`Connection rejected - No token provided`);
+        this.logger.warn(`❌ Connection rejected - No token provided (${client.id})`);
         client.emit('error', { message: 'Authentication required' });
         client.disconnect();
         return;
@@ -174,7 +90,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const jwtSecret = this.configService.get<string>('jwt.secret');
 
       if (!jwtSecret) {
-        this.logger.error('JWT_SECRET not configured!');
+        this.logger.error('❌ JWT_SECRET not configured!');
         client.emit('error', { message: 'Server configuration error' });
         client.disconnect();
         return;
@@ -188,14 +104,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           audience: this.configService.get<string>('jwt.audience'),
         });
       } catch (verifyError) {
-        this.logger.error(`Token verification failed: ${verifyError.message}`);
+        this.logger.error(`❌ Token verification failed: ${verifyError.message}`);
         client.emit('error', { message: 'Invalid or expired token' });
         client.disconnect();
         return;
       }
 
       if (!user || (!user.sub && !user.id)) {
-        this.logger.warn('Token valid but no user ID found');
+        this.logger.warn('❌ Token valid but no user ID found');
         client.emit('error', { message: 'Invalid token payload' });
         client.disconnect();
         return;
@@ -212,15 +128,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       await this.joinUserChannels(client);
 
+      // ✅ Emit connected event (Socket.IO style)
       client.emit('connected', {
         userId: client.userId,
         tenantId: client.tenantId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        socketId: client.id
       });
 
       this.logger.log(`✅ User ${client.userId} connected (Socket: ${client.id})`);
     } catch (error) {
-      this.logger.error(`Connection error: ${error.message}`, error.stack);
+      this.logger.error(`❌ Connection error: ${error.message}`, error.stack);
       client.emit('error', { message: 'Connection failed: ' + error.message });
       client.disconnect();
     }
@@ -233,118 +151,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         sockets.delete(client.id);
         if (sockets.size === 0) {
           this.userSockets.delete(client.userId);
+          this.logger.log(`👋 User ${client.userId} fully disconnected`);
+        } else {
+          this.logger.log(`🔌 User ${client.userId} disconnected (Socket: ${client.id}), ${sockets.size} connections remaining`);
         }
       }
-      this.logger.log(`User ${client.userId} disconnected (Socket: ${client.id})`);
     } else {
-      this.logger.log(`Unknown user disconnected (Socket: ${client.id})`);
-    }
-  }
-
-  // ==================== HELPER METHODS ====================
-  /**
-   * ✅ Broadcast message to all members of a channel
-   */
-  private async broadcastToChannel(
-    channelId: number,
-    payload: any,
-    excludeUserId?: number
-  ): Promise<void> {
-    let members = this.channelMembers.get(channelId);
-
-    if (!members || members.size === 0) {
-      try {
-        const result = await this.chatService['sqlService'].execute(
-          'sp_GetChannelMembers_Fast',
-          { channelId }
-        );
-        members = new Set(result.map((r: any) => r.user_id));
-        this.channelMembers.set(channelId, members);
-      } catch (error) {
-        this.logger.error(`Failed to get channel members: ${error.message}`);
-        return;
-      }
-    }
-
-    members.forEach(userId => {
-      if (excludeUserId && userId === excludeUserId) return;
-
-      const sockets = this.userSockets.get(userId);
-      if (sockets) {
-        sockets.forEach(socketId => {
-          this.server.to(socketId).emit('message', payload);
-        });
-      }
-    });
-  }
-
-  /**
-   * ✅ Broadcast message to specific user (all their sockets)
-   */
-  private broadcastToUser(userId: number, payload: any): void {
-    const sockets = this.userSockets.get(userId);
-    if (sockets) {
-      sockets.forEach(socketId => {
-        this.server.to(socketId).emit('message', payload);
-      });
-    }
-  }
-
-  /**
-   * ✅ Join user to all their channels
-   */
-  private async joinUserChannels(client: AuthSocket) {
-    try {
-      const channels = await this.chatService.getUserChannels(client.userId);
-
-      channels.forEach((ch: any) => {
-        const channelRoom = `channel-${ch.channel_id}`;
-        client.join(channelRoom);
-
-        if (!this.channelMembers.has(ch.channel_id)) {
-          this.channelMembers.set(ch.channel_id, new Set());
-        }
-        this.channelMembers.get(ch.channel_id)!.add(client.userId);
-      });
-
-      this.logger.log(`User ${client.userId} joined ${channels.length} channels`);
-    } catch (error) {
-      this.logger.error(`Failed to join channels: ${error.message}`);
-    }
-  }
-
-  // ==================== DELIVERY TRACKING ====================
-  @SubscribeMessage('mark_as_delivered')
-  async handleMarkAsDelivered(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: MessageDeliveryDto
-  ) {
-    try {
-      await this.chatService.markAsDelivered(data.messageId, client.userId);
-
-      // ✅ Get status with proper typing
-      const status: MessageReadStatus = await this.chatService.getMessageReadStatus(
-        data.messageId
-      );
-
-      // ✅ Get message with proper typing
-      const message: EnrichedMessageResponse = await this.chatService.getMessage(
-        data.messageId
-      );
-
-      // ✅ Notify sender with typed payload
-      this.broadcastToUser(message.sender_user_id, {
-        event: 'message_delivered',
-        messageId: data.messageId,
-        deliveredBy: client.userId,
-        deliveredCount: status.deliveredCount,
-        timestamp: new Date().toISOString(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Mark as delivered error:', error.message);
-      return { success: false, error: error.message };
+      this.logger.log(`🔌 Unknown user disconnected (Socket: ${client.id})`);
     }
   }
 
@@ -357,18 +170,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const start = Date.now();
 
     try {
+      this.logger.log(`📤 Message from User ${client.userId} to Channel ${data.channelId}`);
+
       const message = await this.chatService.sendMessage(
         data,
         client.userId,
         client.tenantId
       );
 
-      // ✅ Broadcast with complete message object including sender info
       const broadcastPayload = {
         event: 'new_message',
         message: {
           ...message,
-          // Ensure sender info is always included
           sender_first_name: message.sender_first_name || client.user.firstName,
           sender_last_name: message.sender_last_name || client.user.lastName,
           sender_avatar_url: message.sender_avatar_url || client.user.avatarUrl,
@@ -392,13 +205,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       }
 
-      return {
+      const response = {
         success: true,
         messageId: message.id,
         latency: Date.now() - start
       };
+
+      this.logger.log(`✅ Message sent: ${message.id} (${response.latency}ms)`);
+      return response;
     } catch (error) {
-      this.logger.error('Send message error:', error.message);
+      this.logger.error(`❌ Send message error: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
@@ -411,13 +227,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (!data.channelId) return;
 
+    this.logger.debug(`⌨️ User ${client.userId} typing in channel ${data.channelId}`);
+
     this.broadcastToChannel(data.channelId, {
       event: 'user_typing',
       channelId: data.channelId,
       userId: client.userId,
       userName: `${client.user.firstName} ${client.user.lastName}`,
       isTyping: true,
-    }, client.userId); // Exclude sender
+    }, client.userId);
   }
 
   @SubscribeMessage('typing_stop')
@@ -442,6 +260,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: number; emoji: string; channelId: number }
   ) {
     try {
+      this.logger.log(`👍 User ${client.userId} adding reaction ${data.emoji} to message ${data.messageId}`);
+
       const result = await this.chatService.addReaction(
         data.messageId,
         client.userId,
@@ -450,10 +270,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
       if (result.success) {
-        // ✅ Broadcast reaction with user info
         await this.broadcastToChannel(data.channelId, {
           event: 'reaction_added',
           messageId: data.messageId,
+          channelId: data.channelId,
           emoji: data.emoji,
           userId: client.userId,
           userName: `${client.user.firstName} ${client.user.lastName}`,
@@ -464,7 +284,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       return { success: true };
     } catch (error) {
-      this.logger.error('Add reaction error:', error.message);
+      this.logger.error(`❌ Add reaction error: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
@@ -475,12 +295,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: number; emoji: string; channelId: number }
   ) {
     try {
+      this.logger.log(`👎 User ${client.userId} removing reaction ${data.emoji} from message ${data.messageId}`);
+
       await this.chatService.removeReaction(data.messageId, client.userId, data.emoji);
 
-      // ✅ Broadcast reaction removal
       await this.broadcastToChannel(data.channelId, {
         event: 'reaction_removed',
         messageId: data.messageId,
+        channelId: data.channelId,
         emoji: data.emoji,
         userId: client.userId,
         timestamp: new Date().toISOString(),
@@ -488,12 +310,97 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       return { success: true };
     } catch (error) {
-      this.logger.error('Remove reaction error:', error.message);
+      this.logger.error(`❌ Remove reaction error: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
 
-  // ==================== THREAD REPLIES (FIXED) ====================
+  // ==================== MESSAGE EDITING ====================
+  @SubscribeMessage('edit_message')
+  async handleEditMessage(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: {
+      messageId: number;
+      content: string;
+      channelId: number;
+      mentions?: number[];
+    }
+  ) {
+    try {
+      this.logger.log(`✏️ User ${client.userId} editing message ${data.messageId}`);
+
+      await this.chatService.editMessage(data.messageId, data.content, client.userId);
+
+      await this.broadcastToChannel(data.channelId, {
+        event: 'message_edited',
+        messageId: data.messageId,
+        channelId: data.channelId,
+        content: data.content,
+        mentions: data.mentions,
+        editedBy: client.userId,
+        editedAt: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`❌ Edit message error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('delete_message')
+  async handleDeleteMessage(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { messageId: number; channelId: number }
+  ) {
+    try {
+      this.logger.log(`🗑️ User ${client.userId} deleting message ${data.messageId}`);
+
+      await this.chatService.deleteMessage(data.messageId, client.userId);
+
+      await this.broadcastToChannel(data.channelId, {
+        event: 'message_deleted',
+        messageId: data.messageId,
+        channelId: data.channelId,
+        deletedBy: client.userId,
+        deletedAt: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`❌ Delete message error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ==================== MESSAGE PINNING ====================
+  @SubscribeMessage('pin_message')
+  async handlePinMessage(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { messageId: number; channelId: number; isPinned: boolean }
+  ) {
+    try {
+      this.logger.log(`📌 User ${client.userId} ${data.isPinned ? 'pinning' : 'unpinning'} message ${data.messageId}`);
+
+      await this.chatService.pinMessage(data.messageId, data.isPinned, client.userId);
+
+      await this.broadcastToChannel(data.channelId, {
+        event: data.isPinned ? 'message_pinned' : 'message_unpinned',
+        messageId: data.messageId,
+        channelId: data.channelId,
+        pinnedBy: client.userId,
+        pinnedByName: `${client.user.firstName} ${client.user.lastName}`,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`❌ Pin message error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ==================== THREAD REPLIES ====================
   @SubscribeMessage('thread_reply')
   async handleThreadReply(
     @ConnectedSocket() client: AuthSocket,
@@ -505,7 +412,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   ) {
     try {
-      // ✅ FIX: replyInThread now returns EnrichedMessageResponse with all sender fields
+      this.logger.log(`🧵 User ${client.userId} replying to thread ${data.parentMessageId}`);
+
       const reply: EnrichedMessageResponse = await this.chatService.replyInThread(
         data.parentMessageId,
         data.content,
@@ -513,13 +421,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.tenantId
       );
 
-      // ✅ Broadcast thread reply with complete info
       await this.broadcastToChannel(data.channelId, {
         event: 'thread_reply',
         parentMessageId: data.parentMessageId,
+        channelId: data.channelId,
         message: {
           ...reply,
-          // These fields now come from the database query in replyInThread
           sender_first_name: reply.sender_first_name,
           sender_last_name: reply.sender_last_name,
           sender_avatar_url: reply.sender_avatar_url,
@@ -527,7 +434,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         timestamp: new Date().toISOString(),
       });
 
-      // Handle mentions in thread
       if (data.mentions && data.mentions.length > 0) {
         for (const mentionedUserId of data.mentions) {
           this.broadcastToUser(mentionedUserId, {
@@ -543,18 +449,112 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       return { success: true, messageId: reply.id };
     } catch (error) {
-      this.logger.error('Thread reply error:', error.message);
+      this.logger.error(`❌ Thread reply error: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
 
-  // ==================== MEMBER INVITATION ====================
+  // ==================== DELIVERY & READ RECEIPTS ====================
+  @SubscribeMessage('mark_as_delivered')
+  async handleMarkAsDelivered(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: MessageDeliveryDto
+  ) {
+    try {
+      await this.chatService.markAsDelivered(data.messageId, client.userId);
+
+      const status: MessageReadStatus = await this.chatService.getMessageReadStatus(
+        data.messageId
+      );
+
+      const message: EnrichedMessageResponse = await this.chatService.getMessage(
+        data.messageId
+      );
+
+      this.broadcastToUser(message.sender_user_id, {
+        event: 'message_delivered',
+        messageId: data.messageId,
+        deliveredBy: client.userId,
+        deliveredCount: status.deliveredCount,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`❌ Mark as delivered error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('mark_as_read')
+  async handleMarkAsRead(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { messageId: number; channelId: number }
+  ) {
+    console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ data:", data)
+    try {
+      await this.chatService.markAsRead(data.channelId, client.userId, data.messageId);
+
+      const status: MessageReadStatus = await this.chatService.getMessageReadStatus(
+        data.messageId
+      );
+      console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ status:", status)
+
+      const message: EnrichedMessageResponse = await this.chatService.getMessage(
+        data.messageId
+      );
+      console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ message:", message)
+
+      this.broadcastToUser(message.sender_user_id, {
+        event: 'message_read',
+        messageId: data.messageId,
+        readBy: client.userId,
+        readByName: `${client.user.firstName} ${client.user.lastName}`,
+        readCount: status.readCount,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`❌ Mark as read error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('bulk_mark_as_read')
+  async handleBulkMarkAsRead(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { channelId: number; upToMessageId: number }
+  ) {
+    try {
+      this.logger.log(`📖 User ${client.userId} bulk marking as read in channel ${data.channelId} up to message ${data.upToMessageId}`);
+
+      await this.chatService.bulkMarkAsRead(data.channelId, client.userId, data.upToMessageId);
+
+      this.broadcastToChannel(data.channelId, {
+        event: 'bulk_read_update',
+        channelId: data.channelId,
+        userId: client.userId,
+        upToMessageId: data.upToMessageId,
+        timestamp: new Date().toISOString(),
+      }, client.userId);
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`❌ Bulk mark as read error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ==================== MEMBER MANAGEMENT ====================
   @SubscribeMessage('invite_members')
   async handleInviteMembers(
     @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: { channelId: number; userIds: number[] }
   ) {
     try {
+      this.logger.log(`👥 User ${client.userId} inviting ${data.userIds.length} members to channel ${data.channelId}`);
+
       await this.chatService.addMembers(
         data.channelId,
         data.userIds,
@@ -585,10 +585,101 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         timestamp: new Date().toISOString(),
       }, client.userId);
 
+      // Clear channel members cache
+      this.channelMembers.delete(data.channelId);
+
       return { success: true };
     } catch (error) {
-      this.logger.error('Invite members error:', error.message);
+      this.logger.error(`❌ Invite members error: ${error.message}`);
       return { success: false, error: error.message };
     }
+  }
+
+  // ==================== HELPER METHODS ====================
+  /**
+   * ✅ Broadcast message to all members of a channel
+   */
+  private async broadcastToChannel(
+    channelId: number,
+    payload: any,
+    excludeUserId?: number
+  ): Promise<void> {
+    let members = this.channelMembers.get(channelId);
+
+    if (!members || members.size === 0) {
+      try {
+        const result = await this.chatService['sqlService'].execute(
+          'sp_GetChannelMembers_Fast',
+          { channelId }
+        );
+        members = new Set(result.map((r: any) => r.user_id));
+        this.channelMembers.set(channelId, members);
+      } catch (error) {
+        this.logger.error(`Failed to get channel members: ${error.message}`);
+        return;
+      }
+    }
+
+    let broadcastCount = 0;
+    members.forEach(userId => {
+      if (excludeUserId && userId === excludeUserId) return;
+
+      const sockets = this.userSockets.get(userId);
+      if (sockets) {
+        sockets.forEach(socketId => {
+          this.server.to(socketId).emit('message', payload);
+          broadcastCount++;
+        });
+      }
+    });
+
+    this.logger.debug(`📡 Broadcast ${payload.event} to ${broadcastCount} sockets in channel ${channelId}`);
+  }
+
+  /**
+   * ✅ Broadcast message to specific user (all their sockets)
+   */
+  private broadcastToUser(userId: number, payload: any): void {
+    console.log("🚀 ~ ChatGateway ~ broadcastToUser ~ userId:", userId)
+    const sockets = this.userSockets.get(userId);
+    if (sockets) {
+      sockets.forEach(socketId => {
+        this.server.to(socketId).emit('message', payload);
+      });
+      this.logger.debug(`📡 Broadcast ${payload.event} to user ${userId} (${sockets.size} sockets)`);
+    }
+  }
+
+  /**
+   * ✅ Join user to all their channels
+   */
+  private async joinUserChannels(client: AuthSocket) {
+    try {
+      const channels = await this.chatService.getUserChannels(client.userId);
+
+      channels.forEach((ch: any) => {
+        const channelRoom = `channel-${ch.channel_id}`;
+        client.join(channelRoom);
+
+        if (!this.channelMembers.has(ch.channel_id)) {
+          this.channelMembers.set(ch.channel_id, new Set());
+        }
+        this.channelMembers.get(ch.channel_id)!.add(client.userId);
+      });
+
+      this.logger.log(`✅ User ${client.userId} joined ${channels.length} channels`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to join channels: ${error.message}`);
+    }
+  }
+
+  // ==================== HEALTH CHECK ====================
+  @SubscribeMessage('ping')
+  handlePing(@ConnectedSocket() client: AuthSocket) {
+    return {
+      event: 'pong',
+      timestamp: new Date().toISOString(),
+      userId: client.userId
+    };
   }
 }
