@@ -68,10 +68,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       // Extract token from multiple sources
       let token = client.handshake.auth?.token;
 
-      console.log("🚀 ~ ChatGateway ~ handleConnection ~ token:", token)
-      console.log("🚀 ~ ChatGateway ~ headers.authorization:", client.handshake.headers.authorization)
       if (!token && client.handshake.headers.authorization) {
-      console.log("🚀 ~ innnnnnnnnnnn:", token)
 
         token = client.handshake.headers.authorization.replace('Bearer ', '');
       }
@@ -489,25 +486,31 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('mark_as_read')
   async handleMarkAsRead(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; channelId: number }
+    @MessageBody() data: any
   ) {
-    console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ data:", data)
     try {
-      await this.chatService.markAsRead(data.channelId, client.userId, data.messageId);
+      // Handle if data is an array (take first element)
+      const payload = Array.isArray(data) ? data[0] : data;
+      console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ payload:", payload)
 
-      const status: MessageReadStatus = await this.chatService.getMessageReadStatus(
-        data.messageId
-      );
-      console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ status:", status)
+      if (!payload?.messageId || !payload?.channelId) {
+        this.logger.warn(`❌ Invalid mark_as_read data: ${JSON.stringify(data)}`);
+        return { success: false, error: 'Invalid data format' };
+      }
 
-      const message: EnrichedMessageResponse = await this.chatService.getMessage(
-        data.messageId
-      );
-      console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ message:", message)
+      const messageId = payload.messageId;
+      const channelId = typeof payload.channelId === 'string'
+        ? parseInt(payload.channelId)
+        : payload.channelId;
+
+      await this.chatService.markAsRead(channelId, client.userId, messageId);
+
+      const status: MessageReadStatus = await this.chatService.getMessageReadStatus(messageId);
+      const message: EnrichedMessageResponse = await this.chatService.getMessage(messageId);
 
       this.broadcastToUser(message.sender_user_id, {
         event: 'message_read',
-        messageId: data.messageId,
+        messageId: messageId,
         readBy: client.userId,
         readByName: `${client.user.firstName} ${client.user.lastName}`,
         readCount: status.readCount,
@@ -520,7 +523,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       return { success: false, error: error.message };
     }
   }
-
   @SubscribeMessage('bulk_mark_as_read')
   async handleBulkMarkAsRead(
     @ConnectedSocket() client: AuthSocket,
