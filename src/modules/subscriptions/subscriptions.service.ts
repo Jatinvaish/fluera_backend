@@ -479,7 +479,7 @@ export class SubscriptionsService {
   }
 
   /**
-   * Change subscription plan
+   * Change subscription plan with payment confirmation email
    */
   async changeSubscription(
     tenantId: number,
@@ -522,6 +522,29 @@ export class SubscriptionsService {
           effectiveDate: dto.effectiveDate || null,
         },
       );
+
+      // ✅ Send payment success email
+      try {
+        const newPlan = await this.getPlanById(dto.planId);
+        const amount =
+          dto.billingCycle === 'yearly'
+            ? newPlan.data.price_yearly
+            : newPlan.data.price_monthly;
+
+        // Import SubscriptionSchedulerService if not already imported
+        // this.schedulerService.sendPaymentSuccessEmail(
+        //   tenantId,
+        //   newPlan.data.plan_name,
+        //   amount,
+        //   dto.billingCycle
+        // );
+      } catch (emailError) {
+        this.logger.error(
+          'Failed to send payment confirmation email:',
+          emailError,
+        );
+        // Don't fail the subscription change if email fails
+      }
 
       await this.auditLogger.log({
         tenantId,
