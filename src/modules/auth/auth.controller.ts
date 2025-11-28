@@ -39,9 +39,11 @@ import {
 } from '../../core/decorators';
 import { VerificationService } from '../../common/verification.service';
 import axios from 'axios';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { RateLimit } from '../../core/guards/rate-limit.guard';
 import { SendInvitationDto, AcceptInvitationDto } from '../rbac/dto/rbac.dto';
+import { PkceService } from 'src/core/redis/pkce.service';
+import * as crypto from 'crypto';
 
 @Controller('auth')
 @Unencrypted() // Default: all endpoints unencrypted unless specified
@@ -49,6 +51,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private verificationService: VerificationService,
+    private pkceService: PkceService,
     private invitationService: InvitationService,
   ) {}
 
@@ -383,68 +386,139 @@ export class AuthController {
       );
     }
   }
-
   // ============================================
-  // MICROSOFT OAUTH FLOW
+  // MICROSOFT OAUTH FLOW WITH PKCE
   // ============================================
 
   @Get('microsoft')
   @Public()
   async microsoftLogin(@Res() res: FastifyReply) {
-    const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
-    const redirectUri = `${process.env.APP_URL}/api/v1/auth/microsoft/callback`;
-    const authUrl =
-      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?` +
-      `client_id=${process.env.MICROSOFT_CLIENT_ID}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&response_type=code` +
-      `&scope=${encodeURIComponent('openid profile email offline_access')}` +
-      `&response_mode=query`;
+    try {
+      // Generate PKCE code verifier and challenge
+      const codeVerifier = this.pkceService.generateCodeVerifier();
+      const codeChallenge =
+        this.pkceService.generateCodeChallenge(codeVerifier);
 
-    return res.redirect(authUrl, 302);
+      // Generate state for CSRF protection
+      const state = crypto.randomBytes(16).toString('hex');
+
+      // Store code verifier with state as key (10 minute TTL)
+      await this.pkceService.storeCodeVerifier(state, codeVerifier, 600);
+
+      const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
+      const redirectUri = `${process.env.APP_URL}/api/v1/auth/microsoft/callback`;
+
+      const authUrl =
+        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?` +
+        `client_id=${process.env.MICROSOFT_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=code` +
+        `&scope=${encodeURIComponent('openid profile email offline_access User.Read')}` +
+        `&response_mode=query` +
+        `&state=${state}` +
+        `&code_challenge=${codeChallenge}` +
+        `&code_challenge_method=S256`;
+
+      return res.redirect(authUrl, 302);
+    } catch (error) {
+      console.error('Error initiating Microsoft OAuth:', error);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_failed`,
+        302,
+      );
+    }
   }
 
   @Get('microsoft/callback')
   @Public()
   async microsoftCallback(
     @Query('code') code: string,
+    @Query('state') state: string,
     @Query('error') error: string,
+    @Query('error_description') errorDescription: string,
     @Res() res: FastifyReply,
-    @Req() req: any,
+    @Req() req: FastifyRequest,
   ) {
-    if (error || !code) {
+    // Handle errors
+    if (error) {
+      console.error('Microsoft auth error:', error, errorDescription);
       return res.redirect(
-        `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_cancelled`,
+        `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_cancelled&message=${encodeURIComponent(errorDescription || error)}`,
+        302,
+      );
+    }
+
+    // Validate required parameters
+    if (!code || !state) {
+      console.error('Missing code or state parameter');
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_failed&message=Missing+parameters`,
         302,
       );
     }
 
     try {
+      // Retrieve code verifier using state
+      const codeVerifier = await this.pkceService.getCodeVerifier(state);
+
+      if (!codeVerifier) {
+        console.error('Code verifier not found or expired for state:', state);
+        return res.redirect(
+          `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_failed&message=Session+expired`,
+          302,
+        );
+      }
+
       const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
       const redirectUri = `${process.env.APP_URL}/api/v1/auth/microsoft/callback`;
 
-      // Exchange code for tokens
+      console.log('Exchanging code for tokens with PKCE...');
+
+      // Exchange code for tokens with PKCE
+      // Note: With PKCE, we don't send client_secret for public clients
+      const tokenParams: any = {
+        code,
+        client_id: process.env.MICROSOFT_CLIENT_ID!,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+        code_verifier: codeVerifier, // Include PKCE verifier
+      };
+
+      // Only include client_secret if it's a confidential client (Web app)
+      // For public clients (SPA, Mobile), PKCE replaces the client secret
+      const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+      const useClientSecret =
+        process.env.MICROSOFT_USE_CLIENT_SECRET === 'true';
+
+      if (useClientSecret && clientSecret) {
+        tokenParams.client_secret = clientSecret;
+      }
+
       const tokenResponse = await axios.post(
         `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-        new URLSearchParams({
-          code,
-          client_id: process.env.MICROSOFT_CLIENT_ID!,
-          client_secret: process.env.MICROSOFT_CLIENT_SECRET!,
-          redirect_uri: redirectUri,
-          grant_type: 'authorization_code',
-        }),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+        new URLSearchParams(tokenParams),
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        },
       );
 
       const { access_token, refresh_token } = tokenResponse.data;
+      console.log('✅ Token exchange successful');
 
-      // Get user info
+      // Get user info from Microsoft Graph
       const userInfoResponse = await axios.get(
         'https://graph.microsoft.com/v1.0/me',
-        { headers: { Authorization: `Bearer ${access_token}` } },
+        {
+          headers: { Authorization: `Bearer ${access_token}` },
+        },
       );
 
       const profile = userInfoResponse.data;
+      console.log(
+        '✅ User info retrieved:',
+        profile.mail || profile.userPrincipalName,
+      );
+
       const deviceInfo = this.extractDeviceInfo(req);
 
       // Handle social login
@@ -462,6 +536,9 @@ export class AuthController {
         deviceInfo,
       );
 
+      console.log('✅ Social login successful for user:', result.user.email);
+
+      // Redirect to frontend with tokens
       const redirectUrl =
         `${process.env.FRONTEND_URL}/auth/microsoft/callback?` +
         `accessToken=${result.accessToken}` +
@@ -474,13 +551,63 @@ export class AuthController {
         'Microsoft auth failed:',
         err.response?.data || err.message,
       );
+
+      const errorMessage =
+        err.response?.data?.error_description ||
+        err.response?.data?.error ||
+        err.message ||
+        'Authentication failed';
+
       return res.redirect(
-        `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_failed`,
+        `${process.env.FRONTEND_URL}/sign-in?error=microsoft_auth_failed&message=${encodeURIComponent(errorMessage)}`,
         302,
       );
     }
   }
 
+  // // ============================================
+  // // HELPER METHODS
+  // // ============================================
+
+  // private extractDeviceInfo(req: FastifyRequest): any {
+  //   const userAgent = req.headers['user-agent'] || '';
+  //   const ip = (req.ip ||
+  //     req.headers['x-forwarded-for'] ||
+  //     req.headers['x-real-ip']) as string;
+
+  //   return {
+  //     userAgent,
+  //     ip,
+  //     deviceType: this.detectDeviceType(userAgent),
+  //     browser: this.detectBrowser(userAgent),
+  //     os: this.detectOS(userAgent),
+  //   };
+  // }
+
+  // private detectDeviceType(userAgent: string): string {
+  //   if (/mobile/i.test(userAgent)) return 'mobile';
+  //   if (/tablet/i.test(userAgent)) return 'tablet';
+  //   return 'desktop';
+  // }
+
+  // private detectBrowser(userAgent: string): string {
+  //   if (/edg/i.test(userAgent)) return 'Edge';
+  //   if (/chrome/i.test(userAgent)) return 'Chrome';
+  //   if (/firefox/i.test(userAgent)) return 'Firefox';
+  //   if (/safari/i.test(userAgent)) return 'Safari';
+  //   return 'Unknown';
+  // }
+
+  // private detectOS(userAgent: string): string {
+  //   if (/windows/i.test(userAgent)) return 'Windows';
+  //   if (/mac/i.test(userAgent)) return 'macOS';
+  //   if (/linux/i.test(userAgent)) return 'Linux';
+  //   if (/android/i.test(userAgent)) return 'Android';
+  //   if (/ios|iphone|ipad/i.test(userAgent)) return 'iOS';
+  //   return 'Unknown';
+  // }
+  
+  // ============================================
   @Get('sessions')
   async getUserSessions(@CurrentUser('id') userId: number) {
     return this.authService.getUserSessions(userId);

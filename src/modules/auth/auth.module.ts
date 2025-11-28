@@ -13,6 +13,7 @@ import { VerificationService } from 'src/common/verification.service';
 import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.service';
 import { RbacService } from '../rbac/rbac.service';
 import { RbacPermissionFilterService } from '../rbac/rbac-permission-filter.service';
+import { PkceService } from 'src/core/redis/pkce.service';
 
 @Module({
   imports: [
@@ -31,7 +32,7 @@ import { RbacPermissionFilterService } from '../rbac/rbac-permission-filter.serv
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, VerificationService, RbacPermissionFilterService, AuditLoggerService, InvitationService,RbacService, JwtStrategy],
-  exports: [AuthService, JwtStrategy],
+  providers: [AuthService, VerificationService, RbacPermissionFilterService, AuditLoggerService, InvitationService,RbacService, JwtStrategy, PkceService],
+  exports: [AuthService, JwtStrategy,PkceService],
 })
 export class AuthModule {}
