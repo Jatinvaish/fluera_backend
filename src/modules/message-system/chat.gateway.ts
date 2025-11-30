@@ -217,22 +217,33 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   }
 
   // ==================== TYPING INDICATORS ====================
+
   @SubscribeMessage('typing_start')
-  handleTypingStart(
+  async handleTypingStart(
     @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: { channelId: number }
   ) {
-    if (!data.channelId) return;
+    const payload = Array.isArray(data) ? data[0] : data;
 
-    this.logger.debug(`⌨️ User ${client.userId} typing in channel ${data.channelId}`);
+    if (!payload?.channelId) {
+      this.logger.warn('Invalid typing_start data');
+      return;
+    }
 
-    this.broadcastToChannel(data.channelId, {
+    // ✅ Get user display name from service
+    const userName = await this.chatService.getUserDisplayName(client.userId);
+
+    this.logger.log(`⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`);
+
+    this.broadcastToChannel(payload.channelId, {
       event: 'user_typing',
-      channelId: data.channelId,
-      userId: client.userId,
-      userName: `${client.user.firstName} ${client.user.lastName}`,
+      channelId: payload.channelId,
+      userId: client.userId.toString(),
+      userName: userName,
       isTyping: true,
     }, client.userId);
+
+    return { success: true };
   }
 
   @SubscribeMessage('typing_stop')
@@ -240,14 +251,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: { channelId: number }
   ) {
-    if (!data.channelId) return;
+    const payload = Array.isArray(data) ? data[0] : data;
 
-    this.broadcastToChannel(data.channelId, {
+    if (!payload?.channelId) return;
+
+    this.logger.log(`⌨️ User ${client.userId} stopped typing in channel ${payload.channelId}`);
+
+    this.broadcastToChannel(payload.channelId, {
       event: 'user_typing',
-      channelId: data.channelId,
-      userId: client.userId,
+      channelId: payload.channelId,
+      userId: client.userId.toString(),
       isTyping: false,
     }, client.userId);
+
+    return { success: true };
   }
 
   // ==================== REACTIONS ====================
@@ -265,6 +282,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         client.tenantId,
         data.emoji
       );
+      const payload = Array.isArray(data) ? data[0] : data;
+      const userName = await this.chatService.getUserDisplayName(client.userId);
+      this.logger.log(`⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`);
 
       if (result.success) {
         await this.broadcastToChannel(data.channelId, {
@@ -273,7 +293,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
           channelId: data.channelId,
           emoji: data.emoji,
           userId: client.userId,
-          userName: `${client.user.firstName} ${client.user.lastName}`,
+          userName: `${userName}`,
           avatarUrl: client.user.avatarUrl,
           timestamp: new Date().toISOString(),
         });
@@ -380,13 +400,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       this.logger.log(`📌 User ${client.userId} ${data.isPinned ? 'pinning' : 'unpinning'} message ${data.messageId}`);
 
       await this.chatService.pinMessage(data.messageId, data.isPinned, client.userId);
+      const payload = Array.isArray(data) ? data[0] : data;
+      const userName = await this.chatService.getUserDisplayName(client.userId);
+      this.logger.log(`⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`);
 
       await this.broadcastToChannel(data.channelId, {
         event: data.isPinned ? 'message_pinned' : 'message_unpinned',
         messageId: data.messageId,
         channelId: data.channelId,
         pinnedBy: client.userId,
-        pinnedByName: `${client.user.firstName} ${client.user.lastName}`,
+        pinnedByName: `${userName}`,
         timestamp: new Date().toISOString(),
       });
 
@@ -507,12 +530,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
       const status: MessageReadStatus = await this.chatService.getMessageReadStatus(messageId);
       const message: EnrichedMessageResponse = await this.chatService.getMessage(messageId);
+      const userName = await this.chatService.getUserDisplayName(client.userId);
 
       this.broadcastToUser(message.sender_user_id, {
         event: 'message_read',
         messageId: messageId,
         readBy: client.userId,
-        readByName: `${client.user.firstName} ${client.user.lastName}`,
+        readByName: `${userName}`,
         readCount: status.readCount,
         timestamp: new Date().toISOString(),
       });
@@ -565,6 +589,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       );
 
       const channel = await this.chatService.getChannelById(data.channelId, client.userId);
+      const payload = Array.isArray(data) ? data[0] : data;
+      const userName = await this.chatService.getUserDisplayName(client.userId);
+      this.logger.log(`⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`);
 
       // Notify new members
       for (const userId of data.userIds) {
@@ -573,7 +600,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
           channelId: data.channelId,
           channelName: channel.name,
           invitedBy: client.userId,
-          inviterName: `${client.user.firstName} ${client.user.lastName}`,
+          inviterName: `${userName}`,
           timestamp: new Date().toISOString(),
         });
       }
@@ -609,17 +636,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     let members = this.channelMembers.get(channelId);
 
     if (!members || members.size === 0) {
-      try {
-        const result = await this.chatService['sqlService'].execute(
-          'sp_GetChannelMembers_Fast',
-          { channelId }
-        );
-        members = new Set(result.map((r: any) => r.user_id));
-        this.channelMembers.set(channelId, members);
-      } catch (error) {
-        this.logger.error(`Failed to get channel members: ${error.message}`);
-        return;
-      }
+      // Fetches from DB
+      const result = await this.chatService['sqlService'].execute(
+        'sp_GetChannelMembers_Fast',
+        { channelId }
+      );
+      members = new Set(result.map((r: any) => r.user_id));
+      this.channelMembers.set(channelId, members);
     }
 
     let broadcastCount = 0;
@@ -628,12 +651,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
       const sockets = this.userSockets.get(userId);
       if (sockets) {
+        console.log("🚀 ~ sockets:", sockets)
         sockets.forEach(socketId => {
           this.server.to(socketId).emit('message', payload);
           broadcastCount++;
         });
       }
     });
+
 
     this.logger.debug(`📡 Broadcast ${payload.event} to ${broadcastCount} sockets in channel ${channelId}`);
   }
