@@ -1221,4 +1221,31 @@ export class ChatService {
       throw error;
     }
   }
+  async getUserDisplayName(userId: number): Promise<string> {
+    const cacheKey = `user:${userId}:displayname`;
+
+    try {
+      const cached = await this.redisService.get(cacheKey);
+      if (cached) return cached as string;
+    } catch { }
+
+    const user = await this.sqlService.query(
+      'SELECT first_name, last_name FROM users WHERE id = @userId',
+      { userId }
+    );
+
+    if (!user.length) {
+      return `User ${userId}`;
+    }
+
+    const firstName = user[0]?.first_name || '';
+    const lastName = user[0]?.last_name || '';
+    const displayName = `${firstName} ${lastName}`.trim() || `User ${userId}`;
+
+    // Cache for 5 minutes
+    setImmediate(() => this.redisService.set(cacheKey, displayName, 300));
+
+    return displayName;
+  }
+
 }
