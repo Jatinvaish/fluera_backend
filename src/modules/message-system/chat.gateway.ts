@@ -164,6 +164,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: SendMessageDto
   ) {
+    console.log("🚀 ~ ChatGateway ~ handleSendMessage ~ data:", data)
     const start = Date.now();
 
     try {

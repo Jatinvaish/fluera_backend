@@ -1002,6 +1002,7 @@ export class ChatService {
     userId: number,
     tenantId: number
   ): Promise<MessageResponse> {
+    console.log("🚀 ~ ChatService ~ sendMessage ~ dto:", dto)
     const validation = await this.validateFromCache(dto.channelId, userId);
     if (!validation.isMember) throw new ForbiddenException('Not a channel member');
 
