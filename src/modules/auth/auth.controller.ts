@@ -498,7 +498,10 @@ export class AuthController {
         `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
         new URLSearchParams(tokenParams),
         {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Origin: process.env.APP_URL, // Add this
+          },
         },
       );
 
@@ -606,7 +609,7 @@ export class AuthController {
   //   if (/ios|iphone|ipad/i.test(userAgent)) return 'iOS';
   //   return 'Unknown';
   // }
-  
+
   // ============================================
   @Get('sessions')
   async getUserSessions(@CurrentUser('id') userId: number) {

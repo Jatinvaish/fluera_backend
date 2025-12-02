@@ -1045,9 +1045,11 @@ export class AuthService {
           userType: 'agency_admin',
           tenantId,
           onboardingRequired: false,
+          onboardingCompleted: true, // ✅ Add this
         },
         tenantId,
-        ...tokens,
+        accessToken: tokens.accessToken, // ✅ Ensure this is included
+        refreshToken: tokens.refreshToken, // ✅ Ensure this is included
       };
     });
   }
@@ -1169,9 +1171,11 @@ export class AuthService {
           userType: 'brand_admin',
           tenantId,
           onboardingRequired: false,
+          onboardingCompleted: true, // ✅ Add this
         },
         tenantId,
-        ...tokens,
+        accessToken: tokens.accessToken, // ✅ Ensure this is included
+        refreshToken: tokens.refreshToken, // ✅ Ensure this is included
       };
     });
   }
@@ -1295,9 +1299,11 @@ export class AuthService {
           userType: 'creator',
           tenantId,
           onboardingRequired: false,
+          onboardingCompleted: true, // ✅ Add this
         },
         tenantId,
-        ...tokens,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       };
     });
   }
