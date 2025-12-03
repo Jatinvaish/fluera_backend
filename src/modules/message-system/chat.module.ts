@@ -8,10 +8,12 @@ import { PresenceService } from './presence.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatActivityService } from './chat-activity.service'; // ✅ NEW
 import { ChatNotificationService } from './chat-notification.service'; // ✅ NEW
+import { FileUploadModule } from 'src/common/file-upload.module';
 
 @Module({
   imports: [
     ConfigModule,
+    FileUploadModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
