@@ -1,21 +1,240 @@
 // src/modules/message-system/chat.controller.ts - COMPLETE SLACK-LIKE FUNCTIONALITY
-import { Controller, Post, Get, Put, Delete, Body, Query, Param, UseGuards, HttpCode, HttpStatus, ParseIntPipe, BadRequestException, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Put,
+  Delete,
+  Body,
+  Query,
+  Param,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  ParseIntPipe,
+  BadRequestException,
+  UsePipes,
+  ValidationPipe,
+  UploadedFiles,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
 import { JwtAuthGuard } from 'src/core/guards';
 import { ChatService } from './chat.service';
 import {
-  SendMessageDto, CreateChannelDto, MarkAsReadDto, UpdateChannelDto,
-  AddMemberDto, UpdateMemberRoleDto, EditMessageDto, SearchDto,
-  PinMessageDto, ForwardMessageDto, MuteChannelDto
+  SendMessageDto,
+  CreateChannelDto,
+  MarkAsReadDto,
+  UpdateChannelDto,
+  AddMemberDto,
+  UpdateMemberRoleDto,
+  EditMessageDto,
+  SearchDto,
+  PinMessageDto,
+  ForwardMessageDto,
+  MuteChannelDto,
 } from './dto/chat.dto';
+import { ApiConsumes, ApiOperation } from '@nestjs/swagger';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 @Unencrypted()
 export class ChatController {
-  constructor(private chatService: ChatService) { }
+  constructor(private chatService: ChatService) {}
 
   // ==================== MESSAGES ====================
+
+  /**
+   * ✅ Upload single file for chat message
+   */
+  @Post('messages/upload')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Upload file for chat message' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadMessageFile(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+    @Body('messageId') messageId?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+
+    const result = await this.chatService['r2Service'].uploadChatAttachment(
+      file,
+      {
+        tenantId,
+        userId,
+        messageId: messageId ? parseInt(messageId) : undefined,
+      },
+    );
+
+    return {
+      success: true,
+      message: 'File uploaded successfully',
+      data: result,
+    };
+  }
+
+  /**
+   * ✅ Upload multiple files for chat message
+   */
+  @Post('messages/upload-multiple')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Upload multiple files for chat message' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FilesInterceptor('files', 10)) // Max 10 files
+  async uploadMultipleMessageFiles(
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+    @Body('messageId') messageId?: string,
+  ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No files provided');
+    }
+
+    const results = await this.chatService['r2Service'].uploadChatAttachments(
+      files,
+      {
+        tenantId,
+        userId,
+        messageId: messageId ? parseInt(messageId) : undefined,
+      },
+    );
+
+    return {
+      success: true,
+      message: `${results.length} file(s) uploaded successfully`,
+      data: results,
+    };
+  }
+
+  /**
+   * ✅ Get file download URL
+   */
+  @Get('messages/files/:attachmentId/download')
+  @ApiOperation({ summary: 'Get download URL for attachment' })
+  async getFileDownloadUrl(
+    @Param('attachmentId', ParseIntPipe) attachmentId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    // Get attachment details from database
+    const attachment = await this.chatService['sqlService'].query(
+      `SELECT ma.*, m.channel_id
+       FROM message_attachments ma
+       INNER JOIN messages m ON ma.message_id = m.id
+       WHERE ma.id = @attachmentId AND ma.is_deleted = 0`,
+      { attachmentId },
+    );
+
+    if (!attachment.length) {
+      throw new BadRequestException('Attachment not found');
+    }
+
+    // Verify user has access to the channel
+    await this.chatService['validateMembership'](
+      attachment[0].channel_id,
+      userId,
+    );
+
+    // Extract key from file_url
+    const fileUrl = attachment[0].file_url;
+    const key = fileUrl.split('.com/')[1]; // Extract path after domain
+
+    if (!key) {
+      return {
+        success: true,
+        data: {
+          url: fileUrl,
+          directAccess: true,
+        },
+      };
+    }
+
+    // Generate signed URL (valid for 1 hour)
+    const signedUrl = await this.chatService['r2Service'].getSignedUrl(
+      key,
+      3600,
+    );
+
+    return {
+      success: true,
+      data: {
+        url: signedUrl,
+        expiresIn: 3600,
+        fileName: attachment[0].filename,
+        fileSize: attachment[0].file_size,
+        mimeType: attachment[0].mime_type,
+      },
+    };
+  }
+
+  /**
+   * ✅ Delete attachment
+   */
+  @Delete('messages/files/:attachmentId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete message attachment' })
+  async deleteAttachment(
+    @Param('attachmentId', ParseIntPipe) attachmentId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    // Get attachment details
+    const attachment = await this.chatService['sqlService'].query(
+      `SELECT ma.*, m.channel_id, m.sender_user_id
+       FROM message_attachments ma
+       INNER JOIN messages m ON ma.message_id = m.id
+       WHERE ma.id = @attachmentId AND ma.is_deleted = 0`,
+      { attachmentId },
+    );
+
+    if (!attachment.length) {
+      throw new BadRequestException('Attachment not found');
+    }
+
+    // Only message sender or channel admin can delete
+    if (attachment[0].sender_user_id !== userId) {
+      const participant = await this.chatService['sqlService'].query(
+        `SELECT role FROM chat_participants 
+         WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
+        { channelId: attachment[0].channel_id, userId },
+      );
+
+      if (
+        !participant.length ||
+        !['admin', 'owner'].includes(participant[0].role)
+      ) {
+        throw new BadRequestException(
+          'You do not have permission to delete this attachment',
+        );
+      }
+    }
+
+    // Soft delete in database
+    await this.chatService['sqlService'].query(
+      `UPDATE message_attachments 
+       SET is_deleted = 1, deleted_at = GETUTCDATE(), deleted_by = @userId
+       WHERE id = @attachmentId`,
+      { attachmentId, userId },
+    );
+
+    // Optionally delete from R2 (uncomment if you want hard delete)
+    // const fileUrl = attachment[0].file_url;
+    // const key = fileUrl.split('.com/')[1];
+    // if (key) {
+    //   await this.chatService['r2Service'].deleteFile(key);
+    // }
+
+    return {
+      success: true,
+      message: 'Attachment deleted successfully',
+    };
+  }
 
   @Post('messages/send')
   @HttpCode(HttpStatus.OK)
@@ -34,8 +253,13 @@ export class ChatController {
     @CurrentUser('id') userId: number,
     @Query('beforeId') beforeId?: string,
   ) {
-    console.log("🚀 ~ ChatController ~ getMessages ~ userId:", userId)
-    return this.chatService.getMessages(channelId, userId, +limit, beforeId ? +beforeId : undefined);
+    console.log('🚀 ~ ChatController ~ getMessages ~ userId:', userId);
+    return this.chatService.getMessages(
+      channelId,
+      userId,
+      +limit,
+      beforeId ? +beforeId : undefined,
+    );
   }
 
   @Put('messages/:id')
@@ -57,7 +281,10 @@ export class ChatController {
 
   @Post('messages/mark-read')
   @HttpCode(HttpStatus.ACCEPTED)
-  async markAsRead(@Body() dto: MarkAsReadDto, @CurrentUser('id') userId: number) {
+  async markAsRead(
+    @Body() dto: MarkAsReadDto,
+    @CurrentUser('id') userId: number,
+  ) {
     return this.chatService.markAsRead(dto.channelId, dto.messageId, userId);
   }
 
@@ -85,7 +312,12 @@ export class ChatController {
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    return this.chatService.forwardMessage(dto.messageId, dto.targetChannelIds, userId, tenantId);
+    return this.chatService.forwardMessage(
+      dto.messageId,
+      dto.targetChannelIds,
+      userId,
+      tenantId,
+    );
   }
 
   @Get('unread')
@@ -103,7 +335,12 @@ export class ChatController {
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    return this.chatService.addReaction(dto.messageId, userId, tenantId, dto.emoji);
+    return this.chatService.addReaction(
+      dto.messageId,
+      userId,
+      tenantId,
+      dto.emoji,
+    );
   }
 
   @Post('messages/reaction/remove')
@@ -134,7 +371,12 @@ export class ChatController {
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    return this.chatService.replyInThread(parentMessageId, dto.content, userId, tenantId);
+    return this.chatService.replyInThread(
+      parentMessageId,
+      dto.content,
+      userId,
+      tenantId,
+    );
   }
 
   // ==================== CHANNELS ====================
@@ -242,11 +484,13 @@ export class ChatController {
   // FIX: Add proper validation and transform
   @Post('channels/:id/members')
   @HttpCode(HttpStatus.OK)
-  @UsePipes(new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true
-  }))
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  )
   async addMembers(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AddMemberDto,
@@ -258,12 +502,18 @@ export class ChatController {
       dto,
       userIds: dto.userIds,
       userIdsType: typeof dto.userIds,
-      isArray: Array.isArray(dto.userIds)
+      isArray: Array.isArray(dto.userIds),
     });
 
     // Additional validation
-    if (!dto.userIds || !Array.isArray(dto.userIds) || dto.userIds.length === 0) {
-      throw new BadRequestException('userIds must be a non-empty array of numbers');
+    if (
+      !dto.userIds ||
+      !Array.isArray(dto.userIds) ||
+      dto.userIds.length === 0
+    ) {
+      throw new BadRequestException(
+        'userIds must be a non-empty array of numbers',
+      );
     }
 
     return this.chatService.addMembers(id, dto.userIds, userId, tenantId);
@@ -285,7 +535,12 @@ export class ChatController {
     @Body() dto: UpdateMemberRoleDto,
     @CurrentUser('id') userId: number,
   ) {
-    return this.chatService.updateMemberRole(channelId, targetUserId, dto.role, userId);
+    return this.chatService.updateMemberRole(
+      channelId,
+      targetUserId,
+      dto.role,
+      userId,
+    );
   }
   // ==================== SEARCH ====================
 
@@ -322,7 +577,11 @@ export class ChatController {
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
   ) {
-    return this.chatService.getAvailableMembersForChannel(channelId, tenantId, userId);
+    return this.chatService.getAvailableMembersForChannel(
+      channelId,
+      tenantId,
+      userId,
+    );
   }
 
   @Post('team/start-chat')
@@ -339,13 +598,19 @@ export class ChatController {
 
   @Post('presence/online')
   @HttpCode(HttpStatus.OK)
-  async setOnline(@CurrentUser('id') userId: number, @TenantId() tenantId: number) {
+  async setOnline(
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
     return this.chatService.setUserOnline(userId, tenantId);
   }
 
   @Post('presence/offline')
   @HttpCode(HttpStatus.OK)
-  async setOffline(@CurrentUser('id') userId: number, @TenantId() tenantId: number) {
+  async setOffline(
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
     return this.chatService.setUserOffline(userId, tenantId);
   }
 
@@ -375,15 +640,13 @@ export class ChatController {
     await this.chatService.updateMessageDeliveryStatus(
       messageId,
       userId,
-      dto.status
+      dto.status,
     );
     return { success: true };
   }
 
   @Get('messages/:id/read-status')
-  async getReadStatus(
-    @Param('id', ParseIntPipe) messageId: number,
-  ) {
+  async getReadStatus(@Param('id', ParseIntPipe) messageId: number) {
     return this.chatService.getMessageReadStatus(messageId);
   }
   @Get('mentions')
@@ -399,7 +662,6 @@ export class ChatController {
     };
   }
 
-  
   @Get('messages/:messageId/attachments')
   async getMessageAttachments(
     @Param('messageId', ParseIntPipe) messageId: number,
@@ -407,7 +669,7 @@ export class ChatController {
   ) {
     const attachments = await this.chatService['sqlService'].execute(
       'sp_GetMessageAttachments_Fast',
-      { messageId }
+      { messageId },
     );
 
     return {
@@ -426,7 +688,7 @@ export class ChatController {
   ) {
     const reactions = await this.chatService['sqlService'].execute(
       'sp_GetMessageReactions_Fast',
-      { messageId }
+      { messageId },
     );
 
     return {
@@ -438,7 +700,6 @@ export class ChatController {
 
   // ==================== NEW: ENHANCED MESSAGE ENDPOINTS ====================
 
-
   @Post('messages/bulk-mark-read')
   @HttpCode(HttpStatus.OK)
   async bulkMarkAsRead(
@@ -448,7 +709,7 @@ export class ChatController {
     await this.chatService.bulkMarkAsRead(
       dto.channelId,
       userId,
-      dto.upToMessageId
+      dto.upToMessageId,
     );
 
     return {
@@ -469,7 +730,7 @@ export class ChatController {
     // ✅ Get user details for read/delivered users
     const userIds = [
       ...status.readByUserIds,
-      ...status.deliveredToUserIds
+      ...status.deliveredToUserIds,
     ].filter((id, index, self) => self.indexOf(id) === index);
 
     let users = [];
@@ -478,7 +739,7 @@ export class ChatController {
         `SELECT id, first_name, last_name, avatar_url
        FROM users
        WHERE id IN (${userIds.join(',')})`,
-        {}
+        {},
       );
     }
 
@@ -489,8 +750,12 @@ export class ChatController {
       data: {
         readCount: status.readCount,
         deliveredCount: status.deliveredCount,
-        readBy: status.readByUserIds.map(id => userMap.get(id)).filter(Boolean),
-        deliveredTo: status.deliveredToUserIds.map(id => userMap.get(id)).filter(Boolean),
+        readBy: status.readByUserIds
+          .map((id) => userMap.get(id))
+          .filter(Boolean),
+        deliveredTo: status.deliveredToUserIds
+          .map((id) => userMap.get(id))
+          .filter(Boolean),
       },
     };
   }
@@ -507,7 +772,7 @@ export class ChatController {
     const messages = await this.chatService.getThreadMessages(
       messageId,
       userId,
-      +limit
+      +limit,
     );
 
     // Get parent message
@@ -537,12 +802,9 @@ export class ChatController {
     return { success: true };
   }
 
-
   //
   @Get('mentions/unread-count')
-  async getUnreadMentionsCount(
-    @CurrentUser('id') userId: number,
-  ) {
+  async getUnreadMentionsCount(@CurrentUser('id') userId: number) {
     const userIdStr = userId.toString();
 
     // ✅ FIXED: Query messages.mentioned_user_ids instead of deleted message_mentions table
@@ -554,7 +816,7 @@ export class ChatController {
        AND m.is_deleted = 0
        AND cp.is_active = 1
        AND (cp.last_read_message_id IS NULL OR m.id > cp.last_read_message_id)`,
-      { userId, userIdStr }
+      { userId, userIdStr },
     );
 
     return {
@@ -575,25 +837,27 @@ export class ChatController {
 
     const reactions = await this.chatService['sqlService'].execute(
       'sp_GetMessageReactions_Fast',
-      { messageId }
+      { messageId },
     );
 
     const attachments = await this.chatService['sqlService'].execute(
       'sp_GetMessageAttachments_Fast',
-      { messageId }
+      { messageId },
     );
 
     // ✅ FIXED: Parse mentioned_user_ids from message instead of querying deleted table
     let mentions = [];
     if (message.mentioned_user_ids) {
-      const mentionedIds = message.mentioned_user_ids.split(',').map((id: string) => parseInt(id.trim()));
+      const mentionedIds = message.mentioned_user_ids
+        .split(',')
+        .map((id: string) => parseInt(id.trim()));
 
       if (mentionedIds.length > 0) {
         mentions = await this.chatService['sqlService'].query(
           `SELECT id as user_id, first_name, last_name, avatar_url
          FROM users
          WHERE id IN (${mentionedIds.join(',')})`,
-          {}
+          {},
         );
       }
     }

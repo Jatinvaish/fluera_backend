@@ -5,6 +5,7 @@ import { RedisService } from 'src/core/redis/redis.service';
 import { CreateChannelDto, EnrichedMessageResponse, MessageReadStatus, MessageResponse, SendMessageDto, UpdateChannelDto } from './dto/chat.dto';
 import { ChatActivityService, ChatActivityType } from './chat-activity.service';
 import { ChatNotificationService } from './chat-notification.service';
+import { R2Service } from 'src/common/services/r2.service';
 
 
 
@@ -15,6 +16,7 @@ export class ChatService {
   constructor(
     private sqlService: SqlServerService,
     private redisService: RedisService,
+    private r2Service: R2Service, // ADD THIS LINE
     private activityService: ChatActivityService, // ✅ NEW
     private notificationService: ChatNotificationService, // ✅ NEW
   ) { }

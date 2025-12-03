@@ -1,5 +1,6 @@
 // ============================================
 // src/common/services/r2.service.ts - Cloudflare R2 File Service
+// UPDATED: Added chat attachment support
 // ============================================
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -61,7 +62,7 @@ export class R2Service {
 
     this.bucketName = this.configService.get<string>('r2.bucketName')!;
     this.publicUrl = this.configService.get<string>('r2.publicUrl')!;
-    this.maxFileSize = this.configService.get<number>('r2.maxFileSize') || 10 * 1024 * 1024; // 10MB default
+    this.maxFileSize = this.configService.get<number>('r2.maxFileSize') || 100 * 1024 * 1024; // 100MB default
     this.allowedMimeTypes = this.configService.get<string[]>('r2.allowedMimeTypes') || ['*/*'];
 
     this.s3Client = new S3Client({
@@ -215,6 +216,90 @@ export class R2Service {
       this.logger.error(`❌ Buffer upload failed: ${error.message}`);
       throw new BadRequestException(`Buffer upload failed: ${error.message}`);
     }
+  }
+
+  // ==================== CHAT ATTACHMENT METHODS (NEW) ====================
+
+  /**
+   * ✅ Upload file for chat message (returns attachment ID)
+   */
+  async uploadChatAttachment(
+    file: Express.Multer.File,
+    options: {
+      tenantId: number;
+      userId: number;
+      messageId?: number;
+    },
+  ): Promise<{ 
+    attachmentId: number; 
+    fileUrl: string; 
+    fileName: string; 
+    fileSize: number; 
+    mimeType: string;
+    thumbnailUrl?: string;
+  }> {
+    // Upload to R2
+    const uploadResult = await this.uploadFile(file, {
+      folder: 'chat-attachments',
+      tenantId: options.tenantId,
+      userId: options.userId,
+      generateThumbnail: this.isImage(file.mimetype),
+    });
+
+    // Save to database
+    const attachmentId = await this.saveFileRecord(uploadResult, {
+      tenantId: options.tenantId,
+      userId: options.userId,
+      messageId: options.messageId,
+    });
+
+    return {
+      attachmentId,
+      fileUrl: uploadResult.fileUrl,
+      fileName: uploadResult.fileName,
+      fileSize: uploadResult.fileSize,
+      mimeType: uploadResult.mimeType,
+      thumbnailUrl: uploadResult.thumbnailUrl,
+    };
+  }
+
+  /**
+   * ✅ Upload multiple files for chat message
+   */
+  async uploadChatAttachments(
+    files: Express.Multer.File[],
+    options: {
+      tenantId: number;
+      userId: number;
+      messageId?: number;
+    },
+  ): Promise<Array<{ 
+    attachmentId: number; 
+    fileUrl: string; 
+    fileName: string; 
+    fileSize: number; 
+    mimeType: string;
+    thumbnailUrl?: string;
+  }>> {
+    const results:any = [];
+
+    for (const file of files) {
+      try {
+        const result = await this.uploadChatAttachment(file, options);
+        if(result) {
+          results.push(result);
+        }
+      } catch (error) {
+        this.logger.error(`Failed to upload ${file.originalname}: ${error.message}`);
+        // Continue with other files
+      }
+    }
+
+    if (results.length === 0) {
+      throw new BadRequestException('All file uploads failed');
+    }
+
+    return results;
   }
 
   // ==================== DOWNLOAD METHODS ====================

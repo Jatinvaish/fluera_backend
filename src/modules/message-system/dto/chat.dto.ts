@@ -1,8 +1,16 @@
 // ==================== COMPLETE dto/chat.dto.ts ====================
 
 import {
-  IsString, IsNotEmpty, IsOptional, IsArray, IsNumber,
-  IsEnum, MaxLength, IsBoolean, IsDateString, ArrayMinSize
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsArray,
+  IsNumber,
+  IsEnum,
+  MaxLength,
+  IsBoolean,
+  IsDateString,
+  ArrayMinSize,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
@@ -26,6 +34,12 @@ export class SendMessageDto {
   @IsArray()
   @IsOptional()
   @Type(() => Number)
+  @Transform(({ value }) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(Number);
+    if (typeof value === 'string') return value.split(',').map(Number);
+    return [Number(value)];
+  })
   attachments?: number[];
 
   @IsArray()
@@ -40,6 +54,17 @@ export class SendMessageDto {
   @IsNumber()
   @IsOptional()
   threadId?: number;
+}
+
+export class UploadMessageFileDto {
+  @IsNumber()
+  @IsOptional()
+  messageId?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  description?: string;
 }
 
 export class EditMessageDto {
@@ -129,7 +154,7 @@ export class CreateChannelDto {
   @ArrayMinSize(1)
   @Transform(({ value }) => {
     if (Array.isArray(value)) {
-      return value.map(v => typeof v === 'string' ? parseInt(v, 10) : v);
+      return value.map((v) => (typeof v === 'string' ? parseInt(v, 10) : v));
     }
     return value;
   })
@@ -182,10 +207,12 @@ export class AddMemberDto {
   @Type(() => Number)
   @Transform(({ value }) => {
     if (Array.isArray(value)) {
-      return value.map(v => Number(v)).filter(n => !isNaN(n));
+      return value.map((v) => Number(v)).filter((n) => !isNaN(n));
     }
     if (typeof value === 'object' && value !== null) {
-      return Object.values(value).map(v => Number(v)).filter(n => !isNaN(n));
+      return Object.values(value)
+        .map((v) => Number(v))
+        .filter((n) => !isNaN(n));
     }
     return [];
   })
