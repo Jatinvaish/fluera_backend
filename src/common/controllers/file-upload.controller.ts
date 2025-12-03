@@ -1,87 +1,88 @@
-// ============================================
-// src/common/controllers/file-upload.controller.ts - FASTIFY COMPATIBLE
-// ============================================
-import {
-  Controller,
-  Post,
-  Get,
-  Delete,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-  UseInterceptors,
-  UploadedFile,
-  UploadedFiles,
-  HttpCode,
-  HttpStatus,
-  BadRequestException,
-  ParseIntPipe,
-} from '@nestjs/common';
-import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { JwtAuthGuard } from 'src/core/guards';
-import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
-import { R2Service } from '../services/r2.service';
+  // ============================================
+  // src/common/controllers/file-upload.controller.ts - FASTIFY COMPATIBLE
+  // ============================================
+  import {
+    Controller,
+    Post,
+    Get,
+    Delete,
+    Body,
+    Param,
+    Query,
+    UseGuards,
+    UseInterceptors,
+    UploadedFile,
+    UploadedFiles,
+    HttpCode,
+    HttpStatus,
+    BadRequestException,
+    ParseIntPipe,
+  } from '@nestjs/common';
+  import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+  import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+  import { JwtAuthGuard } from 'src/core/guards';
+  import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
+  import { R2Service } from '../services/r2.service';
 
-@ApiTags('File Management')
-@ApiBearerAuth()
-@Controller('files')
-@UseGuards(JwtAuthGuard)
-@Unencrypted()
-export class FileUploadController {
-  constructor(private r2Service: R2Service) {}
+  @ApiTags('File Management')
+  @ApiBearerAuth()
+  @Controller('files')
+  @UseGuards(JwtAuthGuard)
+  @Unencrypted()
+  export class FileUploadController {
+    constructor(private r2Service: R2Service) {}
 
-  // ==================== UPLOAD ENDPOINTS ====================
+    // ==================== UPLOAD ENDPOINTS ====================
 
-  @Post('upload')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Upload single file' })
-  @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadFile(
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser('id') userId: number,
-    @TenantId() tenantId: number,
-    @Body('folder') folder?: string,
-    @Body('messageId') messageId?: number,
-    @Body('generateThumbnail') generateThumbnail?: string,
-  ) {
-    if (!file) {
-      throw new BadRequestException('No file provided');
-    }
+    @Post('upload')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Upload single file' })
+    @ApiConsumes('multipart/form-data')
+    @UseInterceptors(FileInterceptor('file'))
+    async uploadFile(
+      @UploadedFile() file: Express.Multer.File,
+      @CurrentUser('id') userId: number,
+      @TenantId() tenantId: number,
+      @Body('folder') folder?: string,
+      @Body('messageId') messageId?: number,
+      @Body('generateThumbnail') generateThumbnail?: string,
+    ) {
+      console.log("Uploading file:", file);
+      if (!file) {
+        throw new BadRequestException('No file provided');
+      }
 
-    const result = await this.r2Service.uploadFile(file, {
-      folder: folder || 'uploads',
-      tenantId,
-      userId,
-      generateThumbnail: generateThumbnail === 'true',
-    });
-
-    // Save to database if messageId provided
-    if (messageId) {
-      const attachmentId = await this.r2Service.saveFileRecord(result, {
+      const result = await this.r2Service.uploadFile(file, {
+        folder: folder || 'uploads',
         tenantId,
         userId,
-        messageId: +messageId,
+        generateThumbnail: generateThumbnail === 'true',
       });
+
+      // Save to database if messageId provided
+      if (messageId) {
+        const attachmentId = await this.r2Service.saveFileRecord(result, {
+          tenantId,
+          userId,
+          messageId: +messageId,
+        });
+
+        return {
+          success: true,
+          message: 'File uploaded successfully',
+          data: {
+            ...result,
+            attachmentId,
+          },
+        };
+      }
 
       return {
         success: true,
         message: 'File uploaded successfully',
-        data: {
-          ...result,
-          attachmentId,
-        },
+        data: result,
       };
     }
-
-    return {
-      success: true,
-      message: 'File uploaded successfully',
-      data: result,
-    };
-  }
 
   @Post('upload-multiple')
   @HttpCode(HttpStatus.OK)

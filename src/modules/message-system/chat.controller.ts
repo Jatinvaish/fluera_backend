@@ -18,6 +18,7 @@ import {
   UploadedFiles,
   UseInterceptors,
   UploadedFile,
+  Req,
 } from '@nestjs/common';
 import { CurrentUser, TenantId, Unencrypted } from 'src/core/decorators';
 import { JwtAuthGuard } from 'src/core/guards';
@@ -37,6 +38,9 @@ import {
 } from './dto/chat.dto';
 import { ApiConsumes, ApiOperation } from '@nestjs/swagger';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import type { FastifyRequest } from 'fastify';
+import { FileFastifyInterceptor } from 'fastify-file-interceptor';
+
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
@@ -53,13 +57,16 @@ export class ChatController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Upload file for chat message' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileFastifyInterceptor('file'))
   async uploadMessageFile(
     @UploadedFile() file: Express.Multer.File,
+    @Req() req: FastifyRequest,
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
     @Body('messageId') messageId?: string,
   ) {
+    console.log('🚀 ~ file:', file);
+
     if (!file) {
       throw new BadRequestException('No file provided');
     }
