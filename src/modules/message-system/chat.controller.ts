@@ -41,7 +41,6 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { FastifyRequest } from 'fastify';
 import { FileFastifyInterceptor } from 'fastify-file-interceptor';
 
-
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 @Unencrypted()
@@ -49,9 +48,11 @@ export class ChatController {
   constructor(private chatService: ChatService) {}
 
   // ==================== MESSAGES ====================
-
   /**
    * ✅ Upload single file for chat message
+   * Supports:
+   *   - Upload only (no channelId) → returns attachmentId for later use
+   *   - Upload & send as message (with channelId) → creates message immediately
    */
   @Post('messages/upload')
   @HttpCode(HttpStatus.OK)
@@ -64,13 +65,43 @@ export class ChatController {
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
     @Body('messageId') messageId?: string,
+    @Body('channelId') channelId?: string,
+    @Body('caption') caption?: string,
+    @Body('sendAsMessage') sendAsMessage?: string,
+    @Body('replyToMessageId') replyToMessageId?: string,
+    @Body('threadId') threadId?: string,
   ) {
-    console.log('🚀 ~ file:', file);
-
     if (!file) {
       throw new BadRequestException('No file provided');
     }
 
+    // Flow 1: Send file as message immediately
+    if (sendAsMessage === 'true' && channelId) {
+      const result = await this.chatService.sendFileMessage(
+        {
+          channelId: parseInt(channelId),
+          caption: caption || '',
+          replyToMessageId: replyToMessageId
+            ? parseInt(replyToMessageId)
+            : undefined,
+          threadId: threadId ? parseInt(threadId) : undefined,
+        },
+        file,
+        userId,
+        tenantId,
+      );
+
+      return {
+        success: true,
+        message: 'File message sent successfully',
+        data: {
+          message: result,
+          attachmentId: result.attachments?.[0]?.id,
+        },
+      };
+    }
+
+    // Flow 2: Upload only (for later attachment to message)
     const result = await this.chatService['r2Service'].uploadChatAttachment(
       file,
       {
@@ -86,25 +117,53 @@ export class ChatController {
       data: result,
     };
   }
-
   /**
    * ✅ Upload multiple files for chat message
+   * Supports:
+   *   - Upload only → returns attachmentIds for later use
+   *   - Upload & send as messages (with channelId) → creates messages immediately
    */
   @Post('messages/upload-multiple')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Upload multiple files for chat message' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('files', 10)) // Max 10 files
+  @UseInterceptors(FilesInterceptor('files', 10))
   async uploadMultipleMessageFiles(
     @UploadedFiles() files: Express.Multer.File[],
     @CurrentUser('id') userId: number,
     @TenantId() tenantId: number,
     @Body('messageId') messageId?: string,
+    @Body('channelId') channelId?: string,
+    @Body('caption') caption?: string,
+    @Body('sendAsMessage') sendAsMessage?: string,
   ) {
     if (!files || files.length === 0) {
       throw new BadRequestException('No files provided');
     }
 
+    // Flow 1: Send files as messages immediately
+    if (sendAsMessage === 'true' && channelId) {
+      const results = await this.chatService.sendMultipleFileMessages(
+        parseInt(channelId),
+        files,
+        caption || '',
+        userId,
+        tenantId,
+      );
+
+      return {
+        success: true,
+        message: `${results.length} file message(s) sent successfully`,
+        data: {
+          messages: results,
+          attachmentIds: results
+            .map((m) => m.attachments?.[0]?.id)
+            .filter(Boolean),
+        },
+      };
+    }
+
+    // Flow 2: Upload only
     const results = await this.chatService['r2Service'].uploadChatAttachments(
       files,
       {
@@ -122,36 +181,126 @@ export class ChatController {
   }
 
   /**
-   * ✅ Get file download URL
+   * ✅ Send file as standalone message (dedicated endpoint)
+   */
+  @Post('messages/send-file')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send file as a standalone message' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileFastifyInterceptor('file'))
+  async sendFileMessage(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('channelId') channelId: string,
+    @Body('caption') caption?: string,
+    @Body('replyToMessageId') replyToMessageId?: string,
+    @Body('threadId') threadId?: string,
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+
+    if (!channelId) {
+      throw new BadRequestException('channelId is required');
+    }
+
+    const result = await this.chatService.sendFileMessage(
+      {
+        channelId: parseInt(channelId),
+        caption: caption || '',
+        replyToMessageId: replyToMessageId
+          ? parseInt(replyToMessageId)
+          : undefined,
+        threadId: threadId ? parseInt(threadId) : undefined,
+      },
+      file,
+      userId,
+      tenantId,
+    );
+
+    return {
+      success: true,
+      message: 'File message sent successfully',
+      data: result,
+    };
+  }
+
+  /**
+   * ✅ Send existing attachment as message (for WebSocket flow)
+   */
+  @Post('messages/send-attachment')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send existing uploaded attachment as a message' })
+  async sendAttachmentAsMessage(
+    @Body()
+    dto: {
+      channelId: number;
+      attachmentId: number;
+      caption?: string;
+      replyToMessageId?: number;
+      threadId?: number;
+    },
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
+    if (!dto.channelId || !dto.attachmentId) {
+      throw new BadRequestException('channelId and attachmentId are required');
+    }
+
+    const result = await this.chatService.sendMessageWithExistingAttachment(
+      dto,
+      userId,
+      tenantId,
+    );
+
+    return {
+      success: true,
+      message: 'Attachment sent as message',
+      data: result,
+    };
+  }
+
+  /**
+   * ✅ Get file download URL (UPDATED: handles orphan attachments)
    */
   @Get('messages/files/:attachmentId/download')
   @ApiOperation({ summary: 'Get download URL for attachment' })
   async getFileDownloadUrl(
     @Param('attachmentId', ParseIntPipe) attachmentId: number,
     @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
   ) {
-    // Get attachment details from database
+    // Get attachment details - handle both linked and orphan attachments
     const attachment = await this.chatService['sqlService'].query(
       `SELECT ma.*, m.channel_id
-       FROM message_attachments ma
-       INNER JOIN messages m ON ma.message_id = m.id
-       WHERE ma.id = @attachmentId AND ma.is_deleted = 0`,
-      { attachmentId },
+     FROM message_attachments ma
+     LEFT JOIN messages m ON ma.message_id = m.id
+     WHERE ma.id = @attachmentId 
+       AND ma.is_deleted = 0
+       AND ma.tenant_id = @tenantId`,
+      { attachmentId, tenantId },
     );
 
     if (!attachment.length) {
       throw new BadRequestException('Attachment not found');
     }
 
-    // Verify user has access to the channel
-    await this.chatService['validateMembership'](
-      attachment[0].channel_id,
-      userId,
-    );
+    // For linked attachments, verify channel access
+    if (attachment[0].channel_id) {
+      await this.chatService['validateMembership'](
+        attachment[0].channel_id,
+        userId,
+      );
+    } else {
+      // For orphan attachments, only creator can access
+      if (attachment[0].created_by !== userId) {
+        throw new BadRequestException('Access denied');
+      }
+    }
 
-    // Extract key from file_url
     const fileUrl = attachment[0].file_url;
-    const key = fileUrl.split('.com/')[1]; // Extract path after domain
+    const key = fileUrl.split('.com/')[1];
 
     if (!key) {
       return {
@@ -163,7 +312,6 @@ export class ChatController {
       };
     }
 
-    // Generate signed URL (valid for 1 hour)
     const signedUrl = await this.chatService['r2Service'].getSignedUrl(
       key,
       3600,
@@ -182,7 +330,7 @@ export class ChatController {
   }
 
   /**
-   * ✅ Delete attachment
+   * ✅ Delete attachment (UPDATED: handles orphan attachments)
    */
   @Delete('messages/files/:attachmentId')
   @HttpCode(HttpStatus.OK)
@@ -190,56 +338,90 @@ export class ChatController {
   async deleteAttachment(
     @Param('attachmentId', ParseIntPipe) attachmentId: number,
     @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
   ) {
-    // Get attachment details
+    // Get attachment details - handle both linked and orphan
     const attachment = await this.chatService['sqlService'].query(
       `SELECT ma.*, m.channel_id, m.sender_user_id
-       FROM message_attachments ma
-       INNER JOIN messages m ON ma.message_id = m.id
-       WHERE ma.id = @attachmentId AND ma.is_deleted = 0`,
-      { attachmentId },
+     FROM message_attachments ma
+     LEFT JOIN messages m ON ma.message_id = m.id
+     WHERE ma.id = @attachmentId 
+       AND ma.is_deleted = 0
+       AND ma.tenant_id = @tenantId`,
+      { attachmentId, tenantId },
     );
 
     if (!attachment.length) {
       throw new BadRequestException('Attachment not found');
     }
 
-    // Only message sender or channel admin can delete
-    if (attachment[0].sender_user_id !== userId) {
-      const participant = await this.chatService['sqlService'].query(
-        `SELECT role FROM chat_participants 
-         WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
-        { channelId: attachment[0].channel_id, userId },
-      );
-
-      if (
-        !participant.length ||
-        !['admin', 'owner'].includes(participant[0].role)
-      ) {
+    // For orphan attachments, only creator can delete
+    if (!attachment[0].message_id) {
+      if (attachment[0].created_by !== userId) {
         throw new BadRequestException(
           'You do not have permission to delete this attachment',
         );
       }
+    } else {
+      // For linked attachments, check message sender or admin
+      if (attachment[0].sender_user_id !== userId) {
+        const participant = await this.chatService['sqlService'].query(
+          `SELECT role FROM chat_participants 
+         WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
+          { channelId: attachment[0].channel_id, userId },
+        );
+
+        if (
+          !participant.length ||
+          !['admin', 'owner'].includes(participant[0].role)
+        ) {
+          throw new BadRequestException(
+            'You do not have permission to delete this attachment',
+          );
+        }
+      }
     }
 
-    // Soft delete in database
     await this.chatService['sqlService'].query(
       `UPDATE message_attachments 
-       SET is_deleted = 1, deleted_at = GETUTCDATE(), deleted_by = @userId
-       WHERE id = @attachmentId`,
+     SET is_deleted = 1, updated_at = GETUTCDATE(), updated_by = @userId
+     WHERE id = @attachmentId`,
       { attachmentId, userId },
     );
-
-    // Optionally delete from R2 (uncomment if you want hard delete)
-    // const fileUrl = attachment[0].file_url;
-    // const key = fileUrl.split('.com/')[1];
-    // if (key) {
-    //   await this.chatService['r2Service'].deleteFile(key);
-    // }
 
     return {
       success: true,
       message: 'Attachment deleted successfully',
+    };
+  }
+
+  /**
+   * ✅ Get pending (orphan) attachments
+   */
+  @Get('attachments/pending')
+  @ApiOperation({
+    summary: 'Get pending attachments not yet linked to messages',
+  })
+  async getPendingAttachments(
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+  ) {
+    const attachments = await this.chatService['sqlService'].query(
+      `SELECT id, filename, file_size, mime_type, file_url, thumbnail_url, created_at
+     FROM message_attachments
+     WHERE created_by = @userId 
+       AND tenant_id = @tenantId
+       AND message_id IS NULL 
+       AND is_deleted = 0
+       AND created_at > DATEADD(HOUR, -24, GETUTCDATE())
+     ORDER BY created_at DESC`,
+      { userId, tenantId },
+    );
+
+    return {
+      success: true,
+      data: attachments,
+      total: attachments.length,
     };
   }
 

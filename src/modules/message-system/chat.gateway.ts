@@ -10,14 +10,19 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
-  OnGatewayInit
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ChatService } from './chat.service';
-import { EnrichedMessageResponse, MessageDeliveryDto, MessageReadStatus, SendMessageDto } from './dto/chat.dto';
+import {
+  EnrichedMessageResponse,
+  MessageDeliveryDto,
+  MessageReadStatus,
+  SendMessageDto,
+} from './dto/chat.dto';
 
 interface AuthSocket extends Socket {
   userId: number;
@@ -29,7 +34,7 @@ interface AuthSocket extends Socket {
   cors: {
     origin: process.env.FRONTEND_URL || '*',
     credentials: true,
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST'],
   },
   namespace: '/chat',
   transports: ['websocket', 'polling'],
@@ -40,7 +45,9 @@ interface AuthSocket extends Socket {
   allowEIO3: true,
   cookie: false,
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
+export class ChatGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
+{
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(ChatGateway.name);
 
@@ -51,7 +58,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     private chatService: ChatService,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) { }
+  ) {}
 
   // ==================== GATEWAY INITIALIZATION ====================
   afterInit(server: Server) {
@@ -69,7 +76,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       let token = client.handshake.auth?.token;
 
       if (!token && client.handshake.headers.authorization) {
-
         token = client.handshake.headers.authorization.replace('Bearer ', '');
       }
 
@@ -78,7 +84,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       }
 
       if (!token) {
-        this.logger.warn(`❌ Connection rejected - No token provided (${client.id})`);
+        this.logger.warn(
+          `❌ Connection rejected - No token provided (${client.id})`,
+        );
         client.emit('error', { message: 'Authentication required' });
         client.disconnect();
         return;
@@ -101,7 +109,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
           audience: this.configService.get<string>('jwt.audience'),
         });
       } catch (verifyError) {
-        this.logger.error(`❌ Token verification failed: ${verifyError.message}`);
+        this.logger.error(
+          `❌ Token verification failed: ${verifyError.message}`,
+        );
         client.emit('error', { message: 'Invalid or expired token' });
         client.disconnect();
         return;
@@ -130,10 +140,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         userId: client.userId,
         tenantId: client.tenantId,
         timestamp: new Date().toISOString(),
-        socketId: client.id
+        socketId: client.id,
       });
 
-      this.logger.log(`✅ User ${client.userId} connected (Socket: ${client.id})`);
+      this.logger.log(
+        `✅ User ${client.userId} connected (Socket: ${client.id})`,
+      );
     } catch (error) {
       this.logger.error(`❌ Connection error: ${error.message}`, error.stack);
       client.emit('error', { message: 'Connection failed: ' + error.message });
@@ -150,7 +162,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
           this.userSockets.delete(client.userId);
           this.logger.log(`👋 User ${client.userId} fully disconnected`);
         } else {
-          this.logger.log(`🔌 User ${client.userId} disconnected (Socket: ${client.id}), ${sockets.size} connections remaining`);
+          this.logger.log(
+            `🔌 User ${client.userId} disconnected (Socket: ${client.id}), ${sockets.size} connections remaining`,
+          );
         }
       }
     } else {
@@ -162,18 +176,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: SendMessageDto
+    @MessageBody() data: SendMessageDto,
   ) {
-    console.log("🚀 ~ ChatGateway ~ handleSendMessage ~ data:", data)
+    console.log('🚀 ~ ChatGateway ~ handleSendMessage ~ data:', data);
     const start = Date.now();
 
     try {
-      this.logger.log(`📤 Message from User ${client.userId} to Channel ${data.channelId}`);
+      this.logger.log(
+        `📤 Message from User ${client.userId} to Channel ${data.channelId}`,
+      );
 
       const message = await this.chatService.sendMessage(
         data,
         client.userId,
-        client.tenantId
+        client.tenantId,
       );
 
       const broadcastPayload = {
@@ -206,7 +222,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       const response = {
         success: true,
         messageId: message.id,
-        latency: Date.now() - start
+        latency: Date.now() - start,
       };
 
       this.logger.log(`✅ Message sent: ${message.id} (${response.latency}ms)`);
@@ -222,7 +238,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('typing_start')
   async handleTypingStart(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { channelId: number }
+    @MessageBody() data: { channelId: number },
   ) {
     const payload = Array.isArray(data) ? data[0] : data;
 
@@ -234,15 +250,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     // ✅ Get user display name from service
     const userName = await this.chatService.getUserDisplayName(client.userId);
 
-    this.logger.log(`⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`);
+    this.logger.log(
+      `⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`,
+    );
 
-    this.broadcastToChannel(payload.channelId, {
-      event: 'user_typing',
-      channelId: payload.channelId,
-      userId: client.userId.toString(),
-      userName: userName,
-      isTyping: true,
-    }, client.userId);
+    this.broadcastToChannel(
+      payload.channelId,
+      {
+        event: 'user_typing',
+        channelId: payload.channelId,
+        userId: client.userId.toString(),
+        userName: userName,
+        isTyping: true,
+      },
+      client.userId,
+    );
 
     return { success: true };
   }
@@ -250,20 +272,26 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('typing_stop')
   handleTypingStop(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { channelId: number }
+    @MessageBody() data: { channelId: number },
   ) {
     const payload = Array.isArray(data) ? data[0] : data;
 
     if (!payload?.channelId) return;
 
-    this.logger.log(`⌨️ User ${client.userId} stopped typing in channel ${payload.channelId}`);
+    this.logger.log(
+      `⌨️ User ${client.userId} stopped typing in channel ${payload.channelId}`,
+    );
 
-    this.broadcastToChannel(payload.channelId, {
-      event: 'user_typing',
-      channelId: payload.channelId,
-      userId: client.userId.toString(),
-      isTyping: false,
-    }, client.userId);
+    this.broadcastToChannel(
+      payload.channelId,
+      {
+        event: 'user_typing',
+        channelId: payload.channelId,
+        userId: client.userId.toString(),
+        isTyping: false,
+      },
+      client.userId,
+    );
 
     return { success: true };
   }
@@ -272,20 +300,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('add_reaction')
   async handleAddReaction(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; emoji: string; channelId: number }
+    @MessageBody()
+    data: { messageId: number; emoji: string; channelId: number },
   ) {
     try {
-      this.logger.log(`👍 User ${client.userId} adding reaction ${data.emoji} to message ${data.messageId}`);
+      this.logger.log(
+        `👍 User ${client.userId} adding reaction ${data.emoji} to message ${data.messageId}`,
+      );
 
       const result = await this.chatService.addReaction(
         data.messageId,
         client.userId,
         client.tenantId,
-        data.emoji
+        data.emoji,
       );
       const payload = Array.isArray(data) ? data[0] : data;
       const userName = await this.chatService.getUserDisplayName(client.userId);
-      this.logger.log(`⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`);
+      this.logger.log(
+        `⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`,
+      );
 
       if (result.success) {
         await this.broadcastToChannel(data.channelId, {
@@ -310,12 +343,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('remove_reaction')
   async handleRemoveReaction(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; emoji: string; channelId: number }
+    @MessageBody()
+    data: { messageId: number; emoji: string; channelId: number },
   ) {
     try {
-      this.logger.log(`👎 User ${client.userId} removing reaction ${data.emoji} from message ${data.messageId}`);
+      this.logger.log(
+        `👎 User ${client.userId} removing reaction ${data.emoji} from message ${data.messageId}`,
+      );
 
-      await this.chatService.removeReaction(data.messageId, client.userId, data.emoji);
+      await this.chatService.removeReaction(
+        data.messageId,
+        client.userId,
+        data.emoji,
+      );
 
       await this.broadcastToChannel(data.channelId, {
         event: 'reaction_removed',
@@ -337,17 +377,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('edit_message')
   async handleEditMessage(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       messageId: number;
       content: string;
       channelId: number;
       mentions?: number[];
-    }
+    },
   ) {
     try {
-      this.logger.log(`✏️ User ${client.userId} editing message ${data.messageId}`);
+      this.logger.log(
+        `✏️ User ${client.userId} editing message ${data.messageId}`,
+      );
 
-      await this.chatService.editMessage(data.messageId, data.content, client.userId);
+      await this.chatService.editMessage(
+        data.messageId,
+        data.content,
+        client.userId,
+      );
 
       await this.broadcastToChannel(data.channelId, {
         event: 'message_edited',
@@ -369,10 +416,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('delete_message')
   async handleDeleteMessage(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; channelId: number }
+    @MessageBody() data: { messageId: number; channelId: number },
   ) {
     try {
-      this.logger.log(`🗑️ User ${client.userId} deleting message ${data.messageId}`);
+      this.logger.log(
+        `🗑️ User ${client.userId} deleting message ${data.messageId}`,
+      );
 
       await this.chatService.deleteMessage(data.messageId, client.userId);
 
@@ -395,15 +444,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('pin_message')
   async handlePinMessage(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { messageId: number; channelId: number; isPinned: boolean }
+    @MessageBody()
+    data: { messageId: number; channelId: number; isPinned: boolean },
   ) {
     try {
-      this.logger.log(`📌 User ${client.userId} ${data.isPinned ? 'pinning' : 'unpinning'} message ${data.messageId}`);
+      this.logger.log(
+        `📌 User ${client.userId} ${data.isPinned ? 'pinning' : 'unpinning'} message ${data.messageId}`,
+      );
 
-      await this.chatService.pinMessage(data.messageId, data.isPinned, client.userId);
+      await this.chatService.pinMessage(
+        data.messageId,
+        data.isPinned,
+        client.userId,
+      );
       const payload = Array.isArray(data) ? data[0] : data;
       const userName = await this.chatService.getUserDisplayName(client.userId);
-      this.logger.log(`⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`);
+      this.logger.log(
+        `⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`,
+      );
 
       await this.broadcastToChannel(data.channelId, {
         event: data.isPinned ? 'message_pinned' : 'message_unpinned',
@@ -425,22 +483,26 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('thread_reply')
   async handleThreadReply(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       parentMessageId: number;
       content: string;
       channelId: number;
       mentions?: number[];
-    }
+    },
   ) {
     try {
-      this.logger.log(`🧵 User ${client.userId} replying to thread ${data.parentMessageId}`);
-
-      const reply: EnrichedMessageResponse = await this.chatService.replyInThread(
-        data.parentMessageId,
-        data.content,
-        client.userId,
-        client.tenantId
+      this.logger.log(
+        `🧵 User ${client.userId} replying to thread ${data.parentMessageId}`,
       );
+
+      const reply: EnrichedMessageResponse =
+        await this.chatService.replyInThread(
+          data.parentMessageId,
+          data.content,
+          client.userId,
+          client.tenantId,
+        );
 
       await this.broadcastToChannel(data.channelId, {
         event: 'thread_reply',
@@ -479,18 +541,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('mark_as_delivered')
   async handleMarkAsDelivered(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: MessageDeliveryDto
+    @MessageBody() data: MessageDeliveryDto,
   ) {
     try {
       await this.chatService.markAsDelivered(data.messageId, client.userId);
 
-      const status: MessageReadStatus = await this.chatService.getMessageReadStatus(
-        data.messageId
-      );
+      const status: MessageReadStatus =
+        await this.chatService.getMessageReadStatus(data.messageId);
 
-      const message: EnrichedMessageResponse = await this.chatService.getMessage(
-        data.messageId
-      );
+      const message: EnrichedMessageResponse =
+        await this.chatService.getMessage(data.messageId);
 
       this.broadcastToUser(message.sender_user_id, {
         event: 'message_delivered',
@@ -510,27 +570,32 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('mark_as_read')
   async handleMarkAsRead(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: any
+    @MessageBody() data: any,
   ) {
     try {
       // Handle if data is an array (take first element)
       const payload = Array.isArray(data) ? data[0] : data;
-      console.log("🚀 ~ ChatGateway ~ handleMarkAsRead ~ payload:", payload)
+      console.log('🚀 ~ ChatGateway ~ handleMarkAsRead ~ payload:', payload);
 
       if (!payload?.messageId || !payload?.channelId) {
-        this.logger.warn(`❌ Invalid mark_as_read data: ${JSON.stringify(data)}`);
+        this.logger.warn(
+          `❌ Invalid mark_as_read data: ${JSON.stringify(data)}`,
+        );
         return { success: false, error: 'Invalid data format' };
       }
 
       const messageId = payload.messageId;
-      const channelId = typeof payload.channelId === 'string'
-        ? parseInt(payload.channelId)
-        : payload.channelId;
+      const channelId =
+        typeof payload.channelId === 'string'
+          ? parseInt(payload.channelId)
+          : payload.channelId;
 
       await this.chatService.markAsRead(channelId, client.userId, messageId);
 
-      const status: MessageReadStatus = await this.chatService.getMessageReadStatus(messageId);
-      const message: EnrichedMessageResponse = await this.chatService.getMessage(messageId);
+      const status: MessageReadStatus =
+        await this.chatService.getMessageReadStatus(messageId);
+      const message: EnrichedMessageResponse =
+        await this.chatService.getMessage(messageId);
       const userName = await this.chatService.getUserDisplayName(client.userId);
 
       this.broadcastToUser(message.sender_user_id, {
@@ -548,23 +613,34 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       return { success: false, error: error.message };
     }
   }
+
   @SubscribeMessage('bulk_mark_as_read')
   async handleBulkMarkAsRead(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { channelId: number; upToMessageId: number }
+    @MessageBody() data: { channelId: number; upToMessageId: number },
   ) {
     try {
-      this.logger.log(`📖 User ${client.userId} bulk marking as read in channel ${data.channelId} up to message ${data.upToMessageId}`);
+      this.logger.log(
+        `📖 User ${client.userId} bulk marking as read in channel ${data.channelId} up to message ${data.upToMessageId}`,
+      );
 
-      await this.chatService.bulkMarkAsRead(data.channelId, client.userId, data.upToMessageId);
+      await this.chatService.bulkMarkAsRead(
+        data.channelId,
+        client.userId,
+        data.upToMessageId,
+      );
 
-      this.broadcastToChannel(data.channelId, {
-        event: 'bulk_read_update',
-        channelId: data.channelId,
-        userId: client.userId,
-        upToMessageId: data.upToMessageId,
-        timestamp: new Date().toISOString(),
-      }, client.userId);
+      this.broadcastToChannel(
+        data.channelId,
+        {
+          event: 'bulk_read_update',
+          channelId: data.channelId,
+          userId: client.userId,
+          upToMessageId: data.upToMessageId,
+          timestamp: new Date().toISOString(),
+        },
+        client.userId,
+      );
 
       return { success: true };
     } catch (error) {
@@ -577,22 +653,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('invite_members')
   async handleInviteMembers(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { channelId: number; userIds: number[] }
+    @MessageBody() data: { channelId: number; userIds: number[] },
   ) {
     try {
-      this.logger.log(`👥 User ${client.userId} inviting ${data.userIds.length} members to channel ${data.channelId}`);
+      this.logger.log(
+        `👥 User ${client.userId} inviting ${data.userIds.length} members to channel ${data.channelId}`,
+      );
 
       await this.chatService.addMembers(
         data.channelId,
         data.userIds,
         client.userId,
-        client.tenantId
+        client.tenantId,
       );
 
-      const channel = await this.chatService.getChannelById(data.channelId, client.userId);
+      const channel = await this.chatService.getChannelById(
+        data.channelId,
+        client.userId,
+      );
       const payload = Array.isArray(data) ? data[0] : data;
       const userName = await this.chatService.getUserDisplayName(client.userId);
-      this.logger.log(`⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`);
+      this.logger.log(
+        `⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`,
+      );
 
       // Notify new members
       for (const userId of data.userIds) {
@@ -607,13 +690,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       }
 
       // Notify existing channel members
-      await this.broadcastToChannel(data.channelId, {
-        event: 'members_added',
-        channelId: data.channelId,
-        userIds: data.userIds,
-        addedBy: client.userId,
-        timestamp: new Date().toISOString(),
-      }, client.userId);
+      await this.broadcastToChannel(
+        data.channelId,
+        {
+          event: 'members_added',
+          channelId: data.channelId,
+          userIds: data.userIds,
+          addedBy: client.userId,
+          timestamp: new Date().toISOString(),
+        },
+        client.userId,
+      );
 
       // Clear channel members cache
       this.channelMembers.delete(data.channelId);
@@ -632,7 +719,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private async broadcastToChannel(
     channelId: number,
     payload: any,
-    excludeUserId?: number
+    excludeUserId?: number,
   ): Promise<void> {
     let members = this.channelMembers.get(channelId);
 
@@ -640,41 +727,44 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       // Fetches from DB
       const result = await this.chatService['sqlService'].execute(
         'sp_GetChannelMembers_Fast',
-        { channelId }
+        { channelId },
       );
       members = new Set(result.map((r: any) => r.user_id));
       this.channelMembers.set(channelId, members);
     }
 
     let broadcastCount = 0;
-    members.forEach(userId => {
+    members.forEach((userId) => {
       if (excludeUserId && userId === excludeUserId) return;
 
       const sockets = this.userSockets.get(userId);
       if (sockets) {
-        console.log("🚀 ~ sockets:", sockets)
-        sockets.forEach(socketId => {
+        console.log('🚀 ~ sockets:', sockets);
+        sockets.forEach((socketId) => {
           this.server.to(socketId).emit('message', payload);
           broadcastCount++;
         });
       }
     });
 
-
-    this.logger.debug(`📡 Broadcast ${payload.event} to ${broadcastCount} sockets in channel ${channelId}`);
+    this.logger.debug(
+      `📡 Broadcast ${payload.event} to ${broadcastCount} sockets in channel ${channelId}`,
+    );
   }
 
   /**
    * ✅ Broadcast message to specific user (all their sockets)
    */
   private broadcastToUser(userId: number, payload: any): void {
-    console.log("🚀 ~ ChatGateway ~ broadcastToUser ~ userId:", userId)
+    console.log('🚀 ~ ChatGateway ~ broadcastToUser ~ userId:', userId);
     const sockets = this.userSockets.get(userId);
     if (sockets) {
-      sockets.forEach(socketId => {
+      sockets.forEach((socketId) => {
         this.server.to(socketId).emit('message', payload);
       });
-      this.logger.debug(`📡 Broadcast ${payload.event} to user ${userId} (${sockets.size} sockets)`);
+      this.logger.debug(
+        `📡 Broadcast ${payload.event} to user ${userId} (${sockets.size} sockets)`,
+      );
     }
   }
 
@@ -695,7 +785,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         this.channelMembers.get(ch.channel_id)!.add(client.userId);
       });
 
-      this.logger.log(`✅ User ${client.userId} joined ${channels.length} channels`);
+      this.logger.log(
+        `✅ User ${client.userId} joined ${channels.length} channels`,
+      );
     } catch (error) {
       this.logger.error(`❌ Failed to join channels: ${error.message}`);
     }
@@ -707,7 +799,44 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     return {
       event: 'pong',
       timestamp: new Date().toISOString(),
-      userId: client.userId
+      userId: client.userId,
     };
+  }
+
+  @SubscribeMessage('send_file_message')
+  async handleSendFileMessage(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody()
+    data: {
+      channelId: number;
+      attachmentId: number;
+      caption?: string;
+      replyToMessageId?: number;
+      threadId?: number;
+    },
+  ) {
+    try {
+      this.logger.log(
+        `📎 File message from User ${client.userId} to Channel ${data.channelId}`,
+      );
+
+      const message = await this.chatService.sendMessageWithExistingAttachment(
+        data,
+        client.userId,
+        client.tenantId,
+      );
+
+      const broadcastPayload = {
+        event: 'new_message',
+        message,
+      };
+
+      await this.broadcastToChannel(data.channelId, broadcastPayload);
+
+      return { success: true, messageId: message.id };
+    } catch (error) {
+      this.logger.error(`❌ Send file message error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
   }
 }

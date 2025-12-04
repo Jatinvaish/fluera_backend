@@ -1,13 +1,24 @@
 // src/modules/message-system/chat.service.ts - FIXED VERSION
-import { Injectable, Logger, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ForbiddenException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SqlServerService } from 'src/core/database';
 import { RedisService } from 'src/core/redis/redis.service';
-import { CreateChannelDto, EnrichedMessageResponse, MessageReadStatus, MessageResponse, SendMessageDto, UpdateChannelDto } from './dto/chat.dto';
+import {
+  CreateChannelDto,
+  EnrichedMessageResponse,
+  MessageReadStatus,
+  MessageResponse,
+  SendMessageDto,
+  UpdateChannelDto,
+} from './dto/chat.dto';
 import { ChatActivityService, ChatActivityType } from './chat-activity.service';
 import { ChatNotificationService } from './chat-notification.service';
 import { R2Service } from 'src/common/services/r2.service';
-
-
 
 @Injectable()
 export class ChatService {
@@ -19,23 +30,26 @@ export class ChatService {
     private r2Service: R2Service, // ADD THIS LINE
     private activityService: ChatActivityService, // ✅ NEW
     private notificationService: ChatNotificationService, // ✅ NEW
-  ) { }
+  ) {}
 
   // ==================== MESSAGES ====================
 
-
-
-  async getMessages(channelId: number, userId: number, limit = 50, beforeId?: number) {
+  async getMessages(
+    channelId: number,
+    userId: number,
+    limit = 50,
+    beforeId?: number,
+  ) {
     const cacheKey = `msgs:${channelId}:${limit}:${beforeId || 'latest'}`;
-    console.log("🚀 ~ ChatService ~ getMessages ~ beforeId:", beforeId)
+    console.log('🚀 ~ ChatService ~ getMessages ~ beforeId:', beforeId);
     if (!beforeId) {
       try {
         const cached = await Promise.race([
           this.redisService.get(cacheKey),
-          new Promise((_, r) => setTimeout(() => r('timeout'), 10))
+          new Promise((_, r) => setTimeout(() => r('timeout'), 10)),
         ]);
         if (cached) return JSON.parse(cached as string);
-      } catch { }
+      } catch {}
     }
 
     // ✅ Get messages with ALL fields including reactions, mentions, attachments
@@ -51,42 +65,50 @@ export class ChatService {
       messages.map(async (msg: any) => {
         // Get reactions if count > 0
         if (msg.reaction_count > 0) {
-          msg.reactions = await this.sqlService.execute('sp_GetMessageReactions_Fast', {
-            messageId: msg.id
-          });
+          msg.reactions = await this.sqlService.execute(
+            'sp_GetMessageReactions_Fast',
+            {
+              messageId: msg.id,
+            },
+          );
         }
 
         // Get attachments if count > 0
         if (msg.attachment_count > 0) {
-          msg.attachments = await this.sqlService.execute('sp_GetMessageAttachments_Fast', {
-            messageId: msg.id
-          });
+          msg.attachments = await this.sqlService.execute(
+            'sp_GetMessageAttachments_Fast',
+            {
+              messageId: msg.id,
+            },
+          );
         }
 
         // Parse mention IDs
         if (msg.mention_ids) {
-          msg.mentions = msg.mention_ids.split(',').map((id: string) => parseInt(id));
+          msg.mentions = msg.mention_ids
+            .split(',')
+            .map((id: string) => parseInt(id));
         }
 
         return msg;
-      })
+      }),
     );
 
     if (!beforeId && messages.length > 0) {
-      setImmediate(() => this.redisService.set(cacheKey, JSON.stringify(enrichedMessages), 30));
+      setImmediate(() =>
+        this.redisService.set(cacheKey, JSON.stringify(enrichedMessages), 30),
+      );
     }
 
     return enrichedMessages;
   }
-
-
 
   async pinMessage(messageId: number, isPinned: boolean, userId: number) {
     const msg = await this.sqlService.query(
       `SELECT m.id, m.channel_id, cp.role FROM messages m
        JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = @userId
        WHERE m.id = @messageId  `,
-      { messageId, userId }
+      { messageId, userId },
     );
     if (!msg.length) throw new NotFoundException('Message not found');
 
@@ -94,7 +116,7 @@ export class ChatService {
     await this.sqlService.execute('sp_PinMessage_Fast', {
       messageId,
       userId,
-      isPinned: isPinned ? 1 : 0
+      isPinned: isPinned ? 1 : 0,
     });
 
     // ✅ Log activity
@@ -102,12 +124,14 @@ export class ChatService {
       try {
         const user = await this.sqlService.query(
           'SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId',
-          { userId }
+          { userId },
         );
         await this.activityService.logActivity({
           tenantId: user[0]?.tenant_id || 0,
           userId,
-          activityType: isPinned ? ChatActivityType.MESSAGE_PINNED : ChatActivityType.MESSAGE_UNPINNED,
+          activityType: isPinned
+            ? ChatActivityType.MESSAGE_PINNED
+            : ChatActivityType.MESSAGE_UNPINNED,
           subjectType: 'message',
           subjectId: messageId,
           action: isPinned ? 'pinned' : 'unpinned',
@@ -122,7 +146,6 @@ export class ChatService {
     return { success: true };
   }
 
-
   async getPinnedMessages(channelId: number, userId: number) {
     await this.validateMembership(channelId, userId);
     return this.sqlService.query(
@@ -130,14 +153,19 @@ export class ChatService {
        FROM messages m JOIN users u ON m.sender_user_id = u.id
        WHERE m.channel_id = @channelId AND m.is_pinned = 1  
        ORDER BY m.pinned_at DESC`,
-      { channelId }
+      { channelId },
     );
   }
 
-  async forwardMessage(messageId: number, targetChannelIds: number[], userId: number, tenantId: number) {
+  async forwardMessage(
+    messageId: number,
+    targetChannelIds: number[],
+    userId: number,
+    tenantId: number,
+  ) {
     const original = await this.sqlService.query(
       `SELECT content, message_type FROM messages WHERE id = @messageId  `,
-      { messageId }
+      { messageId },
     );
     if (!original.length) throw new NotFoundException('Message not found');
 
@@ -145,9 +173,15 @@ export class ChatService {
     for (const channelId of targetChannelIds) {
       const validation = await this.validateFromCache(channelId, userId);
       if (validation.isMember) {
-        const msg = await this.sendMessage({
-          channelId, content: original[0].content, messageType: original[0].message_type
-        }, userId, tenantId);
+        const msg = await this.sendMessage(
+          {
+            channelId,
+            content: original[0].content,
+            messageType: original[0].message_type,
+          },
+          userId,
+          tenantId,
+        );
         results.push({ channelId, messageId: msg.id, success: true });
       } else {
         results.push({ channelId, success: false, error: 'Not a member' });
@@ -162,12 +196,12 @@ export class ChatService {
     parentMessageId: number,
     content: string,
     userId: number,
-    tenantId: number
+    tenantId: number,
   ): Promise<EnrichedMessageResponse> {
     // Get parent message and channel
     const parent = await this.sqlService.query<{ channel_id: number }>(
       `SELECT channel_id FROM messages WHERE id = @parentMessageId`,
-      { parentMessageId }
+      { parentMessageId },
     );
 
     if (!parent.length) {
@@ -181,10 +215,10 @@ export class ChatService {
         content,
         messageType: 'text',
         replyToMessageId: parentMessageId,
-        threadId: parentMessageId
+        threadId: parentMessageId,
       },
       userId,
-      tenantId
+      tenantId,
     );
 
     // ✅ Enrich with sender information from the database
@@ -214,7 +248,7 @@ export class ChatService {
     INNER JOIN users u ON m.sender_user_id = u.id
     WHERE m.id = @messageId
     `,
-      { messageId: msg.id }
+      { messageId: msg.id },
     );
 
     if (!enrichedMsg.length) {
@@ -224,22 +258,20 @@ export class ChatService {
     return enrichedMsg[0];
   }
 
-
   // ==================== REACTIONS ====================
 
   async removeReaction(messageId: number, userId: number, emoji: string) {
     const result = await this.sqlService.execute('sp_RemoveReaction_Fast', {
       messageId,
       userId,
-      emoji
+      emoji,
     });
 
     return {
       success: true,
-      deleted: result[0]?.deleted_count > 0
+      deleted: result[0]?.deleted_count > 0,
     };
   }
-
 
   // ==================== CHANNELS ====================
 
@@ -248,25 +280,33 @@ export class ChatService {
     try {
       const cached = await Promise.race([
         this.redisService.get(cacheKey),
-        new Promise((_, r) => setTimeout(() => r('timeout'), 10))
+        new Promise((_, r) => setTimeout(() => r('timeout'), 10)),
       ]);
       if (cached) return JSON.parse(cached as string);
-    } catch { }
+    } catch {}
 
-    const channels = await this.sqlService.execute('sp_GetUserChannels_Fast', { userId, limit });
-    setImmediate(() => this.redisService.set(cacheKey, JSON.stringify(channels), 300));
+    const channels = await this.sqlService.execute('sp_GetUserChannels_Fast', {
+      userId,
+      limit,
+    });
+    setImmediate(() =>
+      this.redisService.set(cacheKey, JSON.stringify(channels), 300),
+    );
     return channels;
   }
 
   async createChannel(dto: CreateChannelDto, userId: number, tenantId: number) {
-    if (!dto.participantIds?.length) throw new BadRequestException('At least one participant required');
+    if (!dto.participantIds?.length)
+      throw new BadRequestException('At least one participant required');
 
-    const allParticipants = Array.from(new Set([userId, ...dto.participantIds]));
+    const allParticipants = Array.from(
+      new Set([userId, ...dto.participantIds]),
+    );
 
     // ✅ FIX: Match stored procedure parameters exactly (9 params, NOT 10)
     const result = await this.sqlService.execute('sp_CreateChannel_Fast', {
-      tenantId,           // @tenantId BIGINT
-      userId,             // @userId BIGINT
+      tenantId, // @tenantId BIGINT
+      userId, // @userId BIGINT
       name: dto.name || 'New Channel', // @name NVARCHAR(255)
       channelType: dto.channelType || 'group', // @channelType NVARCHAR(20)
       participantIds: allParticipants.join(','), // @participantIds NVARCHAR(MAX)
@@ -277,8 +317,17 @@ export class ChatService {
       // ❌ REMOVED: Extra parameter that doesn't exist in SP
     });
 
-    setImmediate(() => allParticipants.forEach(id => this.redisService.del(`user:${id}:channels`)));
-    return { id: result[0]?.channel_id, name: dto.name, channelType: dto.channelType, participants: allParticipants };
+    setImmediate(() =>
+      allParticipants.forEach((id) =>
+        this.redisService.del(`user:${id}:channels`),
+      ),
+    );
+    return {
+      id: result[0]?.channel_id,
+      name: dto.name,
+      channelType: dto.channelType,
+      participants: allParticipants,
+    };
   }
 
   async getChannelById(channelId: number, userId: number) {
@@ -288,24 +337,42 @@ export class ChatService {
        FROM chat_channels c
        JOIN chat_participants cp ON c.id = cp.channel_id
        WHERE c.id = @channelId AND cp.user_id = @userId AND cp.is_active = 1`,
-      { channelId, userId }
+      { channelId, userId },
     );
     if (!result.length) throw new NotFoundException('Channel not found');
     return result[0];
   }
 
-  async updateChannel(channelId: number, dto: UpdateChannelDto, userId: number) {
+  async updateChannel(
+    channelId: number,
+    dto: UpdateChannelDto,
+    userId: number,
+  ) {
     await this.validateAdminRole(channelId, userId);
-    const updates: string[] = [], params: any = { channelId, userId };
+    const updates: string[] = [],
+      params: any = { channelId, userId };
 
-    if (dto.name) { updates.push('name = @name'); params.name = dto.name; }
-    if (dto.description !== undefined) { updates.push('description = @description'); params.description = dto.description; }
-    if (dto.isPrivate !== undefined) { updates.push('is_private = @isPrivate'); params.isPrivate = dto.isPrivate ? 1 : 0; }
+    if (dto.name) {
+      updates.push('name = @name');
+      params.name = dto.name;
+    }
+    if (dto.description !== undefined) {
+      updates.push('description = @description');
+      params.description = dto.description;
+    }
+    if (dto.isPrivate !== undefined) {
+      updates.push('is_private = @isPrivate');
+      params.isPrivate = dto.isPrivate ? 1 : 0;
+    }
 
-    if (updates.length === 0) throw new BadRequestException('No fields to update');
+    if (updates.length === 0)
+      throw new BadRequestException('No fields to update');
     updates.push('updated_at = GETUTCDATE()', 'updated_by = @userId');
 
-    await this.sqlService.query(`UPDATE chat_channels SET ${updates.join(', ')} WHERE id = @channelId`, params);
+    await this.sqlService.query(
+      `UPDATE chat_channels SET ${updates.join(', ')} WHERE id = @channelId`,
+      params,
+    );
     return this.getChannelById(channelId, userId);
   }
 
@@ -313,7 +380,7 @@ export class ChatService {
     await this.validateAdminRole(channelId, userId);
     await this.sqlService.query(
       `UPDATE chat_channels SET is_archived = 1, updated_at = GETUTCDATE(), updated_by = @userId WHERE id = @channelId`,
-      { channelId, userId }
+      { channelId, userId },
     );
     return { success: true, message: 'Channel archived' };
   }
@@ -322,7 +389,7 @@ export class ChatService {
     await this.validateAdminRole(channelId, userId);
     await this.sqlService.query(
       `UPDATE chat_channels SET is_archived = 0, updated_at = GETUTCDATE(), updated_by = @userId WHERE id = @channelId`,
-      { channelId, userId }
+      { channelId, userId },
     );
     return { success: true };
   }
@@ -330,45 +397,62 @@ export class ChatService {
   async leaveChannel(channelId: number, userId: number) {
     const participant = await this.sqlService.query(
       `SELECT role FROM chat_participants WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
-      { channelId, userId }
+      { channelId, userId },
     );
     if (!participant.length) throw new BadRequestException('Not a member');
     if (participant[0].role === 'owner') {
       const others = await this.sqlService.query(
         `SELECT user_id FROM chat_participants WHERE channel_id = @channelId AND user_id != @userId AND is_active = 1`,
-        { channelId, userId }
+        { channelId, userId },
       );
-      if (others.length > 0) throw new BadRequestException('Transfer ownership before leaving');
+      if (others.length > 0)
+        throw new BadRequestException('Transfer ownership before leaving');
     }
 
     await this.sqlService.query(
       `UPDATE chat_participants SET is_active = 0, left_at = GETUTCDATE() WHERE channel_id = @channelId AND user_id = @userId`,
-      { channelId, userId }
+      { channelId, userId },
     );
-    await this.sqlService.query(`UPDATE chat_channels SET member_count = member_count - 1 WHERE id = @channelId`, { channelId });
+    await this.sqlService.query(
+      `UPDATE chat_channels SET member_count = member_count - 1 WHERE id = @channelId`,
+      { channelId },
+    );
     setImmediate(() => this.redisService.del(`user:${userId}:channels`));
     return { success: true };
   }
 
   async deleteChannel(channelId: number, userId: number) {
     await this.validateOwnerRole(channelId, userId);
-    await this.sqlService.query(`UPDATE chat_channels SET is_archived = 1, updated_at = GETUTCDATE(), updated_by = @userId WHERE id = @channelId`, { channelId, userId });
+    await this.sqlService.query(
+      `UPDATE chat_channels SET is_archived = 1, updated_at = GETUTCDATE(), updated_by = @userId WHERE id = @channelId`,
+      { channelId, userId },
+    );
     return { success: true };
   }
 
   async pinChannel(channelId: number, isPinned: boolean, userId: number) {
     await this.sqlService.query(
       `UPDATE chat_participants SET is_pinned = @isPinned WHERE channel_id = @channelId AND user_id = @userId`,
-      { channelId, isPinned: isPinned ? 1 : 0, userId }
+      { channelId, isPinned: isPinned ? 1 : 0, userId },
     );
     setImmediate(() => this.redisService.del(`user:${userId}:channels`));
     return { success: true };
   }
 
-  async muteChannel(channelId: number, isMuted: boolean, muteUntil: string | undefined, userId: number) {
+  async muteChannel(
+    channelId: number,
+    isMuted: boolean,
+    muteUntil: string | undefined,
+    userId: number,
+  ) {
     await this.sqlService.query(
       `UPDATE chat_participants SET is_muted = @isMuted, mute_until = @muteUntil WHERE channel_id = @channelId AND user_id = @userId`,
-      { channelId, isMuted: isMuted ? 1 : 0, muteUntil: muteUntil || null, userId }
+      {
+        channelId,
+        isMuted: isMuted ? 1 : 0,
+        muteUntil: muteUntil || null,
+        userId,
+      },
     );
     return { success: true };
   }
@@ -384,27 +468,35 @@ export class ChatService {
        JOIN users u ON cp.user_id = u.id
        WHERE cp.channel_id = @channelId AND cp.is_active = 1
        ORDER BY CASE cp.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 ELSE 3 END, u.first_name`,
-      { channelId }
+      { channelId },
     );
   }
 
-  async addMembers(channelId: number, userIds: number[], userId: number, tenantId: number) {
+  async addMembers(
+    channelId: number,
+    userIds: number[],
+    userId: number,
+    tenantId: number,
+  ) {
     await this.validateAdminRole(channelId, userId);
     const added: any = [];
 
     for (const uid of userIds) {
       const exists = await this.sqlService.query(
         `SELECT id, is_active FROM chat_participants WHERE channel_id = @channelId AND user_id = @uid`,
-        { channelId, uid }
+        { channelId, uid },
       );
       if (exists.length && exists[0].is_active) continue;
       if (exists.length) {
-        await this.sqlService.query(`UPDATE chat_participants SET is_active = 1, joined_at = GETUTCDATE() WHERE channel_id = @channelId AND user_id = @uid`, { channelId, uid });
+        await this.sqlService.query(
+          `UPDATE chat_participants SET is_active = 1, joined_at = GETUTCDATE() WHERE channel_id = @channelId AND user_id = @uid`,
+          { channelId, uid },
+        );
       } else {
         await this.sqlService.query(
           `INSERT INTO chat_participants (channel_id, user_id, tenant_id, role, is_active, joined_at, created_at, created_by)
            VALUES (@channelId, @uid, @tenantId, 'member', 1, GETUTCDATE(), GETUTCDATE(), @userId)`,
-          { channelId, uid, tenantId, userId }
+          { channelId, uid, tenantId, userId },
         );
       }
       added.push(uid);
@@ -412,7 +504,10 @@ export class ChatService {
     }
 
     if (added.length) {
-      await this.sqlService.query(`UPDATE chat_channels SET member_count = member_count + @count WHERE id = @channelId`, { channelId, count: added.length });
+      await this.sqlService.query(
+        `UPDATE chat_channels SET member_count = member_count + @count WHERE id = @channelId`,
+        { channelId, count: added.length },
+      );
     }
     return { success: true, addedMembers: added };
   }
@@ -421,27 +516,49 @@ export class ChatService {
     await this.validateAdminRole(channelId, userId);
     const target = await this.sqlService.query(
       `SELECT role FROM chat_participants WHERE channel_id = @channelId AND user_id = @targetUserId AND is_active = 1`,
-      { channelId, targetUserId }
+      { channelId, targetUserId },
     );
     if (!target.length) throw new BadRequestException('User not in channel');
-    if (target[0].role === 'owner') throw new ForbiddenException('Cannot remove owner');
+    if (target[0].role === 'owner')
+      throw new ForbiddenException('Cannot remove owner');
 
-    await this.sqlService.query(`UPDATE chat_participants SET is_active = 0, left_at = GETUTCDATE() WHERE channel_id = @channelId AND user_id = @targetUserId`, { channelId, targetUserId });
-    await this.sqlService.query(`UPDATE chat_channels SET member_count = member_count - 1 WHERE id = @channelId`, { channelId });
+    await this.sqlService.query(
+      `UPDATE chat_participants SET is_active = 0, left_at = GETUTCDATE() WHERE channel_id = @channelId AND user_id = @targetUserId`,
+      { channelId, targetUserId },
+    );
+    await this.sqlService.query(
+      `UPDATE chat_channels SET member_count = member_count - 1 WHERE id = @channelId`,
+      { channelId },
+    );
     setImmediate(() => this.redisService.del(`user:${targetUserId}:channels`));
     return { success: true };
   }
 
-  async updateMemberRole(channelId: number, targetUserId: number, role: string, userId: number) {
+  async updateMemberRole(
+    channelId: number,
+    targetUserId: number,
+    role: string,
+    userId: number,
+  ) {
     await this.validateOwnerRole(channelId, userId);
     if (role === 'owner') {
-      await this.sqlService.query(`UPDATE chat_participants SET role = 'admin' WHERE channel_id = @channelId AND user_id = @userId`, { channelId, userId });
+      await this.sqlService.query(
+        `UPDATE chat_participants SET role = 'admin' WHERE channel_id = @channelId AND user_id = @userId`,
+        { channelId, userId },
+      );
     }
-    await this.sqlService.query(`UPDATE chat_participants SET role = @role WHERE channel_id = @channelId AND user_id = @targetUserId`, { channelId, targetUserId, role });
+    await this.sqlService.query(
+      `UPDATE chat_participants SET role = @role WHERE channel_id = @channelId AND user_id = @targetUserId`,
+      { channelId, targetUserId, role },
+    );
     return { success: true };
   }
 
-  async getAvailableMembersForChannel(channelId: number, tenantId: number, userId: number) {
+  async getAvailableMembersForChannel(
+    channelId: number,
+    tenantId: number,
+    userId: number,
+  ) {
     return this.sqlService.query(
       `SELECT u.id, u.first_name, u.last_name, u.email, u.avatar_url, u.status
        FROM users u
@@ -449,13 +566,18 @@ export class ChatService {
        WHERE tm.tenant_id = @tenantId AND tm.is_active = 1
        AND u.id NOT IN (SELECT user_id FROM chat_participants WHERE channel_id = @channelId AND is_active = 1)
        ORDER BY u.first_name`,
-      { channelId, tenantId }
+      { channelId, tenantId },
     );
   }
 
   // ==================== SEARCH ====================
 
-  async search(query: string, userId: number, tenantId: number, opts: { channelId?: number; type: string; limit: number }) {
+  async search(
+    query: string,
+    userId: number,
+    tenantId: number,
+    opts: { channelId?: number; type: string; limit: number },
+  ) {
     const results: any = {};
     const searchTerm = `%${query}%`;
 
@@ -470,7 +592,7 @@ export class ChatService {
          WHERE cp.user_id = @userId AND cp.is_active = 1  
          AND m.content LIKE @searchTerm ${opts.channelId ? 'AND m.channel_id = @channelId' : ''}
          ORDER BY m.sent_at DESC`,
-        { userId, searchTerm, limit: opts.limit, channelId: opts.channelId }
+        { userId, searchTerm, limit: opts.limit, channelId: opts.channelId },
       );
     }
 
@@ -481,7 +603,7 @@ export class ChatService {
          JOIN chat_participants cp ON c.id = cp.channel_id
          WHERE cp.user_id = @userId AND cp.is_active = 1 AND c.is_archived = 0
          AND (c.name LIKE @searchTerm OR c.description LIKE @searchTerm)`,
-        { userId, searchTerm, limit: opts.limit }
+        { userId, searchTerm, limit: opts.limit },
       );
     }
 
@@ -491,7 +613,7 @@ export class ChatService {
          FROM users u JOIN tenant_members tm ON u.id = tm.user_id
          WHERE tm.tenant_id = @tenantId AND tm.is_active = 1
          AND (u.first_name LIKE @searchTerm OR u.last_name LIKE @searchTerm OR u.email LIKE @searchTerm)`,
-        { tenantId, searchTerm, limit: opts.limit }
+        { tenantId, searchTerm, limit: opts.limit },
       );
     }
     return results;
@@ -505,7 +627,7 @@ export class ChatService {
       try {
         const cached = await this.redisService.get(cacheKey);
         if (cached) return JSON.parse(cached as string);
-      } catch { }
+      } catch {}
     }
 
     let query = `SELECT u.id, u.email, u.first_name, u.last_name, u.display_name, u.avatar_url, u.status, u.last_active_at
@@ -520,7 +642,10 @@ export class ChatService {
     query += ` ORDER BY u.first_name`;
 
     const members = await this.sqlService.query(query, params);
-    if (!search) setImmediate(() => this.redisService.set(cacheKey, JSON.stringify(members), 300));
+    if (!search)
+      setImmediate(() =>
+        this.redisService.set(cacheKey, JSON.stringify(members), 300),
+      );
     return members;
   }
 
@@ -532,17 +657,30 @@ export class ChatService {
          JOIN chat_participants cp1 ON c.id = cp1.channel_id AND cp1.user_id = @p1 AND cp1.is_active = 1
          JOIN chat_participants cp2 ON c.id = cp2.channel_id AND cp2.user_id = @p2 AND cp2.is_active = 1
          WHERE c.channel_type = 'direct' `,
-        { p1: allParticipants[0], p2: allParticipants[1] }
+        { p1: allParticipants[0], p2: allParticipants[1] },
       );
-      if (existing.length) return { id: existing[0].id, name: existing[0].name, isExisting: true };
+      if (existing.length)
+        return { id: existing[0].id, name: existing[0].name, isExisting: true };
     }
-    return this.createChannel({ name: dto.name, channelType: allParticipants.length === 2 ? 'direct' : 'group', participantIds: dto.memberIds }, userId, tenantId);
+    return this.createChannel(
+      {
+        name: dto.name,
+        channelType: allParticipants.length === 2 ? 'direct' : 'group',
+        participantIds: dto.memberIds,
+      },
+      userId,
+      tenantId,
+    );
   }
 
   // ==================== PRESENCE ====================
 
   async setUserOnline(userId: number, tenantId: number) {
-    await this.redisService.set(`presence:${tenantId}:${userId}`, 'online', 300);
+    await this.redisService.set(
+      `presence:${tenantId}:${userId}`,
+      'online',
+      300,
+    );
     return { success: true };
   }
 
@@ -553,7 +691,9 @@ export class ChatService {
 
   async getOnlineUsers(tenantId: number) {
     const keys = await this.scanKeys(`presence:${tenantId}:*`);
-    return keys.map(k => parseInt(k.split(':')[2])).filter(id => !isNaN(id));
+    return keys
+      .map((k) => parseInt(k.split(':')[2]))
+      .filter((id) => !isNaN(id));
   }
 
   // ==================== FILES ====================
@@ -567,7 +707,7 @@ export class ChatService {
        JOIN users u ON m.sender_user_id = u.id
        WHERE m.channel_id = @channelId  
        ORDER BY ma.created_at DESC`,
-      { channelId, limit }
+      { channelId, limit },
     );
   }
 
@@ -576,9 +716,13 @@ export class ChatService {
   async markAsRead(channelId: number, messageId: number, userId: number) {
     setImmediate(async () => {
       try {
-        await this.sqlService.execute('sp_MarkAsRead_Fast', { messageId, userId, channelId });
+        await this.sqlService.execute('sp_MarkAsRead_Fast', {
+          messageId,
+          userId,
+          channelId,
+        });
         await this.redisService.del(`user:${userId}:unread`);
-      } catch { }
+      } catch {}
     });
     return { success: true };
   }
@@ -588,9 +732,11 @@ export class ChatService {
     try {
       const cached = await this.redisService.get(cacheKey);
       if (cached) return parseInt(cached as string);
-    } catch { }
+    } catch {}
 
-    const result = await this.sqlService.execute('sp_GetUnreadCount_Fast', { userId });
+    const result = await this.sqlService.execute('sp_GetUnreadCount_Fast', {
+      userId,
+    });
     const count = result[0]?.unread_count || 0;
     setImmediate(() => this.redisService.set(cacheKey, count.toString(), 30));
     return count;
@@ -603,24 +749,29 @@ export class ChatService {
     try {
       const cached = await Promise.race([
         this.redisService.get(cacheKey),
-        new Promise((_, r) => setTimeout(() => r('timeout'), 10))
+        new Promise((_, r) => setTimeout(() => r('timeout'), 10)),
       ]);
       if (cached) return JSON.parse(cached as string);
-    } catch { }
+    } catch {}
 
-    const result = await this.sqlService.execute('sp_ValidateMessageSend_Fast', { channelId, userId });
+    const result = await this.sqlService.execute(
+      'sp_ValidateMessageSend_Fast',
+      { channelId, userId },
+    );
     const validation = {
       isMember: result[0]?.isMember === 1,
-      participant_ids: result[0]?.participant_ids || ''
+      participant_ids: result[0]?.participant_ids || '',
     };
-    setImmediate(() => this.redisService.set(cacheKey, JSON.stringify(validation), 60));
+    setImmediate(() =>
+      this.redisService.set(cacheKey, JSON.stringify(validation), 60),
+    );
     return validation;
   }
 
   private async validateMembership(channelId: number, userId: number) {
     const result = await this.sqlService.query(
       `SELECT 1 FROM chat_participants WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
-      { channelId, userId }
+      { channelId, userId },
     );
     if (!result.length) throw new ForbiddenException('Not a channel member');
   }
@@ -628,30 +779,31 @@ export class ChatService {
   private async validateAdminRole(channelId: number, userId: number) {
     const result = await this.sqlService.query(
       `SELECT role FROM chat_participants WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
-      { channelId, userId }
+      { channelId, userId },
     );
     if (!result.length) throw new ForbiddenException('Not a channel member');
-    if (!['admin', 'owner'].includes(result[0].role)) throw new ForbiddenException('Admin access required');
+    if (!['admin', 'owner'].includes(result[0].role))
+      throw new ForbiddenException('Admin access required');
   }
 
   private async validateOwnerRole(channelId: number, userId: number) {
     const result = await this.sqlService.query(
       `SELECT role FROM chat_participants WHERE channel_id = @channelId AND user_id = @userId AND is_active = 1`,
-      { channelId, userId }
+      { channelId, userId },
     );
     if (!result.length) throw new ForbiddenException('Not a channel member');
-    if (result[0].role !== 'owner') throw new ForbiddenException('Owner access required');
+    if (result[0].role !== 'owner')
+      throw new ForbiddenException('Owner access required');
   }
-
 
   private async invalidateCaches(channelId: number, participantIds: number[]) {
     const patterns = [
       `validate:${channelId}:*`,
       `msgs:${channelId}:*`,
-      ...participantIds.slice(0, 10).map(id => `user:${id}:unread`),
-      ...participantIds.slice(0, 10).map(id => `user:${id}:channels`),
+      ...participantIds.slice(0, 10).map((id) => `user:${id}:unread`),
+      ...participantIds.slice(0, 10).map((id) => `user:${id}:channels`),
     ];
-    await Promise.allSettled(patterns.map(p => this.redisService.del(p)));
+    await Promise.allSettled(patterns.map((p) => this.redisService.del(p)));
   }
 
   private async scanKeys(pattern: string): Promise<string[]> {
@@ -661,28 +813,36 @@ export class ChatService {
       const keys: string[] = [];
       let cursor = '0';
       do {
-        const [newCursor, foundKeys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        const [newCursor, foundKeys] = await client.scan(
+          cursor,
+          'MATCH',
+          pattern,
+          'COUNT',
+          100,
+        );
         cursor = newCursor;
         keys.push(...foundKeys);
       } while (cursor !== '0');
       return keys;
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
-
 
   async editMessage(messageId: number, content: string, userId: number) {
     const msg = await this.sqlService.query(
       `SELECT id, sender_user_id, channel_id FROM messages WHERE id = @messageId  `,
-      { messageId }
+      { messageId },
     );
     if (!msg.length) throw new NotFoundException('Message not found');
-    if (msg[0].sender_user_id !== userId) throw new ForbiddenException('Can only edit your own messages');
+    if (msg[0].sender_user_id !== userId)
+      throw new ForbiddenException('Can only edit your own messages');
 
     // ✅ Use stored procedure for proper field updates
     await this.sqlService.execute('sp_EditMessage_Fast', {
       messageId,
       userId,
-      content
+      content,
     });
 
     // ✅ Log activity
@@ -690,7 +850,7 @@ export class ChatService {
       try {
         const user = await this.sqlService.query(
           'SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId',
-          { userId }
+          { userId },
         );
         await this.activityService.logActivity({
           tenantId: user[0]?.tenant_id || 0,
@@ -711,29 +871,34 @@ export class ChatService {
     return { success: true, messageId };
   }
 
-
   async deleteMessage(messageId: number, userId: number) {
     const msg = await this.sqlService.query(
       `SELECT m.id, m.sender_user_id, m.channel_id, cp.role 
        FROM messages m
        JOIN chat_participants cp ON m.channel_id = cp.channel_id AND cp.user_id = @userId
        WHERE m.id = @messageId`,
-      { messageId, userId }
+      { messageId, userId },
     );
     if (!msg.length) throw new NotFoundException('Message not found');
-    if (msg[0].sender_user_id !== userId && !['admin', 'owner'].includes(msg[0].role)) {
+    if (
+      msg[0].sender_user_id !== userId &&
+      !['admin', 'owner'].includes(msg[0].role)
+    ) {
       throw new ForbiddenException('Cannot delete this message');
     }
 
     await this.sqlService.query(
       `UPDATE messages SET is_deleted = 1, deleted_at = GETUTCDATE(), deleted_by = @userId WHERE id = @messageId`,
-      { messageId, userId }
+      { messageId, userId },
     );
 
     // ✅ Log activity
     setImmediate(async () => {
       try {
-        const user = await this.sqlService.query('SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId', { userId });
+        const user = await this.sqlService.query(
+          'SELECT first_name, last_name, tenant_id FROM users u INNER JOIN tenant_members tm ON u.id = tm.user_id WHERE u.id = @userId',
+          { userId },
+        );
         await this.activityService.logActivity({
           tenantId: user[0]?.tenant_id || 0,
           userId,
@@ -753,13 +918,18 @@ export class ChatService {
     return { success: true };
   }
 
-  async addReaction(messageId: number, userId: number, tenantId: number, emoji: string) {
+  async addReaction(
+    messageId: number,
+    userId: number,
+    tenantId: number,
+    emoji: string,
+  ) {
     // ✅ Use stored procedure that handles duplicate check
     const result = await this.sqlService.execute('sp_AddReaction_Fast', {
       messageId,
       userId,
       tenantId,
-      emoji
+      emoji,
     });
 
     const action = result[0]?.result;
@@ -772,8 +942,14 @@ export class ChatService {
     setImmediate(async () => {
       try {
         const [user, message] = await Promise.all([
-          this.sqlService.query('SELECT first_name, last_name FROM users WHERE id = @userId', { userId }),
-          this.sqlService.query('SELECT sender_user_id, channel_id FROM messages WHERE id = @messageId', { messageId })
+          this.sqlService.query(
+            'SELECT first_name, last_name FROM users WHERE id = @userId',
+            { userId },
+          ),
+          this.sqlService.query(
+            'SELECT sender_user_id, channel_id FROM messages WHERE id = @messageId',
+            { messageId },
+          ),
         ]);
 
         const reactorName = `${user[0]?.first_name} ${user[0]?.last_name}`;
@@ -818,7 +994,10 @@ export class ChatService {
     fileHash: string;
     thumbnailUrl?: string;
   }) {
-    const result = await this.sqlService.execute('sp_UploadAttachment_Fast', params);
+    const result = await this.sqlService.execute(
+      'sp_UploadAttachment_Fast',
+      params,
+    );
     return { attachmentId: result[0]?.attachment_id };
   }
   ///
@@ -831,7 +1010,7 @@ export class ChatService {
     try {
       await this.sqlService.execute('sp_MarkAsDelivered_Fast', {
         messageId,
-        userId
+        userId,
       });
     } catch (error) {
       this.logger.error(`Failed to mark as delivered: ${error.message}`);
@@ -844,13 +1023,13 @@ export class ChatService {
   async bulkMarkAsRead(
     channelId: number,
     userId: number,
-    upToMessageId: number
+    upToMessageId: number,
   ): Promise<void> {
     try {
       await this.sqlService.execute('sp_BulkMarkAsRead_Fast', {
         channelId,
         userId,
-        upToMessageId
+        upToMessageId,
       });
 
       // Invalidate cache
@@ -862,14 +1041,13 @@ export class ChatService {
     }
   }
 
-
   /**
    * ✅ Get user mentions (UPDATED to use new table structure)
    */
   async getUserMentions(userId: number, limit = 50) {
     return this.sqlService.execute('sp_GetUserMentions_Fast', {
       userId,
-      limit
+      limit,
     });
   }
 
@@ -881,49 +1059,63 @@ export class ChatService {
       `SELECT m.channel_id FROM messages m
      JOIN chat_participants cp ON m.channel_id = cp.channel_id
      WHERE m.id = @parentMessageId AND cp.user_id = @userId AND cp.is_active = 1`,
-      { parentMessageId, userId }
+      { parentMessageId, userId },
     );
     if (!parent.length) throw new ForbiddenException('Access denied');
 
-    const messages = await this.sqlService.execute('sp_GetThreadMessages_Fast', {
-      parentMessageId,
-      userId, // ✅ Pass userId for is_read_by_me calculation
-      limit
-    });
+    const messages = await this.sqlService.execute(
+      'sp_GetThreadMessages_Fast',
+      {
+        parentMessageId,
+        userId, // ✅ Pass userId for is_read_by_me calculation
+        limit,
+      },
+    );
 
     // ✅ Enrich with reactions and attachments
     const enrichedMessages = await Promise.all(
       messages.map(async (msg: any) => {
         if (msg.reaction_count > 0) {
-          msg.reactions = await this.sqlService.execute('sp_GetMessageReactions_Fast', {
-            messageId: msg.id
-          });
+          msg.reactions = await this.sqlService.execute(
+            'sp_GetMessageReactions_Fast',
+            {
+              messageId: msg.id,
+            },
+          );
         }
 
         if (msg.has_attachments) {
-          msg.attachments = await this.sqlService.execute('sp_GetMessageAttachments_Fast', {
-            messageId: msg.id
-          });
+          msg.attachments = await this.sqlService.execute(
+            'sp_GetMessageAttachments_Fast',
+            {
+              messageId: msg.id,
+            },
+          );
         }
 
         return msg;
-      })
+      }),
     );
 
     return enrichedMessages;
   }
 
-
   //
   async getMessageReadStatus(messageId: number): Promise<MessageReadStatus> {
-    console.log("🚀 ~ ChatService ~ getMessageReadStatus ~ messageId:", messageId)
+    console.log(
+      '🚀 ~ ChatService ~ getMessageReadStatus ~ messageId:',
+      messageId,
+    );
     try {
-      const result = await this.sqlService.execute('sp_GetMessageReadStatus_Fast', {
-        messageId
-      });
+      const result = await this.sqlService.execute(
+        'sp_GetMessageReadStatus_Fast',
+        {
+          messageId,
+        },
+      );
 
       const data = result[0];
-      console.log("🚀 ~ ChatService ~ getMessageReadStatus ~ data:", data)
+      console.log('🚀 ~ ChatService ~ getMessageReadStatus ~ data:', data);
 
       if (!data) {
         return {
@@ -939,10 +1131,14 @@ export class ChatService {
       return {
         messageId,
         readByUserIds: data.read_by_user_ids
-          ? data.read_by_user_ids.split(',').map((id: string) => parseInt(id.trim()))
+          ? data.read_by_user_ids
+              .split(',')
+              .map((id: string) => parseInt(id.trim()))
           : [],
         deliveredToUserIds: data.delivered_to_user_ids
-          ? data.delivered_to_user_ids.split(',').map((id: string) => parseInt(id.trim()))
+          ? data.delivered_to_user_ids
+              .split(',')
+              .map((id: string) => parseInt(id.trim()))
           : [],
         readCount: data.read_count || 0,
         deliveredCount: data.delivered_count || 0,
@@ -984,7 +1180,7 @@ export class ChatService {
      FROM messages m
      JOIN users u ON m.sender_user_id = u.id
      WHERE m.id = @messageId AND m.is_deleted = 0`,
-      { messageId }
+      { messageId },
     );
 
     if (!result.length) {
@@ -998,33 +1194,33 @@ export class ChatService {
    * ✅ UPDATED: Send message wit h proper return type
    */
 
-
   async sendMessage(
     dto: SendMessageDto,
     userId: number,
-    tenantId: number
+    tenantId: number,
   ): Promise<MessageResponse> {
-    console.log("🚀 ~ ChatService ~ sendMessage ~ dto:", dto)
+    console.log('🚀 ~ ChatService ~ sendMessage ~ dto:', dto);
     const validation = await this.validateFromCache(dto.channelId, userId);
-    if (!validation.isMember) throw new ForbiddenException('Not a channel member');
+    if (!validation.isMember)
+      throw new ForbiddenException('Not a channel member');
 
-    const mentions = dto.mentions && dto.mentions.length > 0
-      ? dto.mentions.join(',')
-      : null;
+    const mentions =
+      dto.mentions && dto.mentions.length > 0 ? dto.mentions.join(',') : null;
 
-    const attachmentIds = dto.attachments && dto.attachments.length > 0
-      ? dto.attachments.join(',')
-      : null;
+    const attachmentIds =
+      dto.attachments && dto.attachments.length > 0
+        ? dto.attachments.join(',')
+        : null;
 
     const participants = validation.participant_ids
       .split(',')
-      .map(id => parseInt(id.trim()))
-      .filter(id => !isNaN(id) && id !== userId);
+      .map((id) => parseInt(id.trim()))
+      .filter((id) => !isNaN(id) && id !== userId);
 
     // ✅ Get user info FIRST
     const user = await this.sqlService.query(
       'SELECT first_name, last_name, avatar_url FROM users WHERE id = @userId',
-      { userId }
+      { userId },
     );
 
     const result = await this.sqlService.execute('sp_SendMessage_Fast', {
@@ -1059,22 +1255,23 @@ export class ChatService {
        WHERE id = @messageId`,
         {
           messageId: message.id,
-          deliveredTo: message.delivered_to_user_ids
-        }
+          deliveredTo: message.delivered_to_user_ids,
+        },
       );
     }
 
-    setImmediate(() => this.logMessageActivity(
-      message,
-      userId,
-      tenantId,
-      dto,
-      validation.participant_ids
-    ));
+    setImmediate(() =>
+      this.logMessageActivity(
+        message,
+        userId,
+        tenantId,
+        dto,
+        validation.participant_ids,
+      ),
+    );
 
     return message;
   }
-
 
   //
   // ==================== UPDATED METHODS IN chat.service.ts ====================
@@ -1088,12 +1285,18 @@ export class ChatService {
     userId: number,
     tenantId: number,
     dto: SendMessageDto,
-    participantIdsStr: string
+    participantIdsStr: string,
   ): Promise<void> {
     try {
       const [user, channel] = await Promise.all([
-        this.sqlService.query('SELECT first_name, last_name FROM users WHERE id = @userId', { userId }),
-        this.sqlService.query('SELECT name FROM chat_channels WHERE id = @channelId', { channelId: dto.channelId })
+        this.sqlService.query(
+          'SELECT first_name, last_name FROM users WHERE id = @userId',
+          { userId },
+        ),
+        this.sqlService.query(
+          'SELECT name FROM chat_channels WHERE id = @channelId',
+          { channelId: dto.channelId },
+        ),
       ]);
 
       const senderName = `${user[0]?.first_name} ${user[0]?.last_name}`;
@@ -1103,7 +1306,9 @@ export class ChatService {
       await this.activityService.logActivity({
         tenantId,
         userId,
-        activityType: dto.replyToMessageId ? ChatActivityType.THREAD_REPLIED : ChatActivityType.MESSAGE_SENT,
+        activityType: dto.replyToMessageId
+          ? ChatActivityType.THREAD_REPLIED
+          : ChatActivityType.MESSAGE_SENT,
         subjectType: 'message',
         subjectId: message.id,
         action: 'sent',
@@ -1117,9 +1322,10 @@ export class ChatService {
         },
       });
 
-      const participantIds = participantIdsStr.split(',')
-        .map(id => parseInt(id.trim()))
-        .filter(id => !isNaN(id) && id !== userId);
+      const participantIds = participantIdsStr
+        .split(',')
+        .map((id) => parseInt(id.trim()))
+        .filter((id) => !isNaN(id) && id !== userId);
 
       if (dto.replyToMessageId || dto.threadId) {
         await this.notificationService.notifyThreadReply({
@@ -1178,7 +1384,6 @@ export class ChatService {
       // - read_by_user_ids field (updated via sp_MarkAsRead_Fast)
 
       await this.invalidateCaches(dto.channelId, participantIds);
-
     } catch (error) {
       this.logger.error(`Failed to log message activity: ${error.message}`);
     }
@@ -1191,34 +1396,35 @@ export class ChatService {
   async updateMessageDeliveryStatus(
     messageId: number,
     userId: number,
-    status: 'delivered' | 'read'
+    status: 'delivered' | 'read',
   ): Promise<void> {
     try {
       if (status === 'delivered') {
         // Use existing stored procedure for delivery
         await this.sqlService.execute('sp_MarkAsDelivered_Fast', {
           messageId,
-          userId
+          userId,
         });
       } else if (status === 'read') {
         // Use existing stored procedure for read
         // Note: This also needs channelId, get it first
         const msg = await this.sqlService.query(
           'SELECT channel_id FROM messages WHERE id = @messageId',
-          { messageId }
+          { messageId },
         );
 
         if (msg.length > 0) {
           await this.sqlService.execute('sp_MarkAsRead_Fast', {
             messageId,
             userId,
-            channelId: msg[0].channel_id
+            channelId: msg[0].channel_id,
           });
         }
       }
 
-      this.logger.debug(`Updated ${status} status for message ${messageId} by user ${userId}`);
-
+      this.logger.debug(
+        `Updated ${status} status for message ${messageId} by user ${userId}`,
+      );
     } catch (error) {
       this.logger.error(`Failed to update delivery status: ${error.message}`);
       throw error;
@@ -1230,11 +1436,11 @@ export class ChatService {
     try {
       const cached = await this.redisService.get(cacheKey);
       if (cached) return cached as string;
-    } catch { }
+    } catch {}
 
     const user = await this.sqlService.query(
       'SELECT first_name, last_name FROM users WHERE id = @userId',
-      { userId }
+      { userId },
     );
 
     if (!user.length) {
@@ -1251,4 +1457,235 @@ export class ChatService {
     return displayName;
   }
 
+  /**
+   * ✅ Send file as standalone message
+   */
+  async sendFileMessage(
+    dto: {
+      channelId: number;
+      caption?: string;
+      replyToMessageId?: number;
+      threadId?: number;
+    },
+    file: Express.Multer.File,
+    userId: number,
+    tenantId: number,
+  ): Promise<EnrichedMessageResponse> {
+    const validation = await this.validateFromCache(dto.channelId, userId);
+    if (!validation.isMember) {
+      throw new ForbiddenException('Not a channel member');
+    }
+
+    const messageType = this.getMessageTypeFromMime(file.mimetype);
+
+    // Upload file to R2
+    const uploadResult = await this.r2Service.uploadFile(file, {
+      folder: 'chat-attachments',
+      tenantId,
+      userId,
+      generateThumbnail: file.mimetype.startsWith('image/'),
+    });
+
+    const content = dto.caption || file.originalname;
+
+    // Create message
+    const result = await this.sqlService.execute('sp_SendMessage_Fast', {
+      channelId: dto.channelId,
+      userId,
+      tenantId,
+      messageType,
+      content,
+      hasAttachments: 1,
+      hasMentions: 0,
+      mentionedUserIds: null,
+      replyToMessageId: dto.replyToMessageId || null,
+      threadId: dto.threadId || null,
+      attachmentIds: null,
+      isForwarded: 0,
+      forwardedFromMessageId: null,
+    });
+
+    const message = result[0] as MessageResponse;
+
+    // Save attachment linked to message
+    const attachmentResult = await this.sqlService.execute(
+      'sp_UploadAttachment_Fast',
+      {
+        messageId: message.id,
+        tenantId,
+        userId,
+        filename: uploadResult.fileName,
+        fileSize: uploadResult.fileSize,
+        mimeType: uploadResult.mimeType,
+        fileUrl: uploadResult.fileUrl,
+        fileHash: uploadResult.fileHash,
+        thumbnailUrl: uploadResult.thumbnailUrl || null,
+      },
+    );
+
+    // Get enriched message
+    const enrichedMessage = await this.getMessage(message.id);
+    enrichedMessage.attachments = [
+      {
+        id: attachmentResult[0]?.attachment_id,
+        file_name: uploadResult.fileName,
+        file_size: uploadResult.fileSize,
+        content_type: uploadResult.mimeType,
+        file_url: uploadResult.fileUrl,
+        thumbnail_url: uploadResult.thumbnailUrl,
+        created_at: new Date().toISOString(),
+      },
+    ];
+
+    // Invalidate caches
+    const participantIds = validation.participant_ids
+      .split(',')
+      .map((id: string) => parseInt(id.trim()))
+      .filter((id: number) => !isNaN(id));
+
+    setImmediate(() => this.invalidateCaches(dto.channelId, participantIds));
+
+    return enrichedMessage;
+  }
+
+  /**
+   * ✅ Send multiple files as separate messages
+   */
+  async sendMultipleFileMessages(
+    channelId: number,
+    files: Express.Multer.File[],
+    caption: string,
+    userId: number,
+    tenantId: number,
+  ): Promise<EnrichedMessageResponse[]> {
+    const results: EnrichedMessageResponse[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fileCaption = i === 0 ? caption : '';
+
+      try {
+        const result = await this.sendFileMessage(
+          { channelId, caption: fileCaption },
+          file,
+          userId,
+          tenantId,
+        );
+        results.push(result);
+      } catch (error) {
+        this.logger.error(
+          `Failed to send file ${file.originalname}: ${error.message}`,
+        );
+      }
+    }
+
+    if (results.length === 0) {
+      throw new BadRequestException('All file uploads failed');
+    }
+
+    return results;
+  }
+
+  /**
+   * ✅ Send message with existing (orphan) attachment
+   */
+  async sendMessageWithExistingAttachment(
+    dto: {
+      channelId: number;
+      attachmentId: number;
+      caption?: string;
+      replyToMessageId?: number;
+      threadId?: number;
+    },
+    userId: number,
+    tenantId: number,
+  ): Promise<EnrichedMessageResponse> {
+    const validation = await this.validateFromCache(dto.channelId, userId);
+    if (!validation.isMember) {
+      throw new ForbiddenException('Not a channel member');
+    }
+
+    // Get attachment info
+    const attachment = await this.sqlService.query(
+      `SELECT id, filename, file_size, mime_type, file_url, thumbnail_url
+     FROM message_attachments
+     WHERE id = @attachmentId 
+       AND tenant_id = @tenantId 
+       AND created_by = @userId
+       AND message_id IS NULL
+       AND is_deleted = 0`,
+      { attachmentId: dto.attachmentId, tenantId, userId },
+    );
+
+    if (!attachment.length) {
+      throw new NotFoundException(
+        'Attachment not found, already used, or access denied',
+      );
+    }
+
+    const attachmentData = attachment[0];
+    const messageType = this.getMessageTypeFromMime(attachmentData.mime_type);
+    const content = dto.caption || attachmentData.filename;
+
+    // Create message
+    const result = await this.sqlService.execute('sp_SendMessage_Fast', {
+      channelId: dto.channelId,
+      userId,
+      tenantId,
+      messageType,
+      content,
+      hasAttachments: 1,
+      hasMentions: 0,
+      mentionedUserIds: null,
+      replyToMessageId: dto.replyToMessageId || null,
+      threadId: dto.threadId || null,
+      attachmentIds: dto.attachmentId.toString(),
+      isForwarded: 0,
+      forwardedFromMessageId: null,
+    });
+
+    const message = result[0] as MessageResponse;
+
+    // Link attachment to message
+    await this.sqlService.query(
+      `UPDATE message_attachments 
+     SET message_id = @messageId, updated_at = GETUTCDATE()
+     WHERE id = @attachmentId`,
+      { messageId: message.id, attachmentId: dto.attachmentId },
+    );
+
+    // Get enriched message
+    const enrichedMessage = await this.getMessage(message.id);
+    enrichedMessage.attachments = [
+      {
+        id: attachmentData.id,
+        file_name: attachmentData.filename,
+        file_size: attachmentData.file_size,
+        content_type: attachmentData.mime_type,
+        file_url: attachmentData.file_url,
+        thumbnail_url: attachmentData.thumbnail_url,
+        created_at: new Date().toISOString(),
+      },
+    ];
+
+    // Invalidate caches
+    const participantIds = validation.participant_ids
+      .split(',')
+      .map((id: string) => parseInt(id.trim()))
+      .filter((id: number) => !isNaN(id));
+
+    setImmediate(() => this.invalidateCaches(dto.channelId, participantIds));
+
+    return enrichedMessage;
+  }
+
+  /**
+   * ✅ Helper to determine message type from mime
+   */
+  private getMessageTypeFromMime(mimeType: string): string {
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'video';
+    if (mimeType.startsWith('audio/')) return 'audio';
+    return 'file';
+  }
 }
