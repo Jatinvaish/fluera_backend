@@ -11,6 +11,7 @@ import { RedisService } from 'src/core/redis/redis.service';
 import {
   CreateChannelDto,
   EnrichedMessageResponse,
+  MessageAttachment,
   MessageReadStatus,
   MessageResponse,
   SendMessageDto,
@@ -1536,6 +1537,109 @@ export class ChatService {
         created_at: new Date().toISOString(),
       },
     ];
+
+    // Invalidate caches
+    const participantIds = validation.participant_ids
+      .split(',')
+      .map((id: string) => parseInt(id.trim()))
+      .filter((id: number) => !isNaN(id));
+
+    setImmediate(() => this.invalidateCaches(dto.channelId, participantIds));
+
+    return enrichedMessage;
+  }
+
+  /**
+   * ✅ Send multiple files as ONE message with multiple attachments
+   */
+  async sendMultipleFilesAsOneMessage(
+    dto: {
+      channelId: number;
+      caption?: string;
+      replyToMessageId?: number;
+      threadId?: number;
+    },
+    files: Express.Multer.File[],
+    userId: number,
+    tenantId: number,
+  ): Promise<EnrichedMessageResponse> {
+    const validation = await this.validateFromCache(dto.channelId, userId);
+    if (!validation.isMember) {
+      throw new ForbiddenException('Not a channel member');
+    }
+
+    // Determine message type based on files
+    const hasImages = files.some((f) => f.mimetype.startsWith('image/'));
+    const hasVideos = files.some((f) => f.mimetype.startsWith('video/'));
+    const messageType = hasImages ? 'image' : hasVideos ? 'video' : 'file';
+
+    // Upload all files to R2
+    const uploadResults = await Promise.all(
+      files.map((file) =>
+        this.r2Service.uploadFile(file, {
+          folder: 'chat-attachments',
+          tenantId,
+          userId,
+          generateThumbnail: file.mimetype.startsWith('image/'),
+        }),
+      ),
+    );
+
+    const content = dto.caption || files.map((f) => f.originalname).join(', ');
+
+    // Create ONE message
+    const result = await this.sqlService.execute('sp_SendMessage_Fast', {
+      channelId: dto.channelId,
+      userId,
+      tenantId,
+      messageType,
+      content,
+      hasAttachments: 1,
+      hasMentions: 0,
+      mentionedUserIds: null,
+      replyToMessageId: dto.replyToMessageId || null,
+      threadId: dto.threadId || null,
+      attachmentIds: null,
+      isForwarded: 0,
+      forwardedFromMessageId: null,
+    });
+
+    const message = result[0] as MessageResponse;
+
+    // Save ALL attachments linked to this ONE message
+    const attachments: MessageAttachment[] = [];
+
+    for (const uploadResult of uploadResults) {
+      const attachmentResult = await this.sqlService.execute(
+        'sp_UploadAttachment_Fast',
+        {
+          messageId: message.id,
+          tenantId,
+          userId,
+          filename: uploadResult.fileName,
+          fileSize: uploadResult.fileSize,
+          mimeType: uploadResult.mimeType,
+          fileUrl: uploadResult.fileUrl,
+          fileHash: uploadResult.fileHash,
+          thumbnailUrl: uploadResult.thumbnailUrl || null,
+        },
+      );
+
+      attachments.push({
+        id: attachmentResult[0]?.attachment_id,
+        file_name: uploadResult.fileName,
+        file_size: uploadResult.fileSize,
+        content_type: uploadResult.mimeType,
+        file_url: uploadResult.fileUrl,
+        thumbnail_url: uploadResult.thumbnailUrl,
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    // Get enriched message
+    const enrichedMessage = await this.getMessage(message.id);
+    enrichedMessage.attachments = attachments;
+    enrichedMessage.attachment_count = attachments.length;
 
     // Invalidate caches
     const participantIds = validation.participant_ids

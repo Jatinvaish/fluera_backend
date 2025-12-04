@@ -39,7 +39,7 @@ import {
 import { ApiConsumes, ApiOperation } from '@nestjs/swagger';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { FastifyRequest } from 'fastify';
-import { FileFastifyInterceptor } from 'fastify-file-interceptor';
+import { FileFastifyInterceptor, FilesFastifyInterceptor } from 'fastify-file-interceptor';
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
@@ -222,6 +222,54 @@ export class ChatController {
     return {
       success: true,
       message: 'File message sent successfully',
+      data: result,
+    };
+  }
+
+  // src/modules/message-system/chat.controller.ts - Add this endpoint
+
+  /**
+   * ✅ Send multiple files as ONE message with multiple attachments
+   */
+  @Post('messages/send-files')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send multiple files as a single message' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FilesFastifyInterceptor('files', 10)) // <-- IMPORTANT
+  async sendFilesAsOneMessage(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body('channelId') channelId: string,
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
+    @Body('caption') caption?: string,
+    @Body('replyToMessageId') replyToMessageId?: string,
+    @Body('threadId') threadId?: string,
+  ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No files provided');
+    }
+
+    if (!channelId) {
+      throw new BadRequestException('channelId is required');
+    }
+
+    const result = await this.chatService.sendMultipleFilesAsOneMessage(
+      {
+        channelId: parseInt(channelId),
+        caption: caption || '',
+        replyToMessageId: replyToMessageId
+          ? parseInt(replyToMessageId)
+          : undefined,
+        threadId: threadId ? parseInt(threadId) : undefined,
+      },
+      files,
+      userId,
+      tenantId,
+    );
+
+    return {
+      success: true,
+      message: 'Files sent successfully',
       data: result,
     };
   }
