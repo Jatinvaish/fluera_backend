@@ -191,11 +191,11 @@ export class ChatController {
   async sendFileMessage(
     @UploadedFile() file: Express.Multer.File,
     @Body('channelId') channelId: string,
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
     @Body('caption') caption?: string,
     @Body('replyToMessageId') replyToMessageId?: string,
     @Body('threadId') threadId?: string,
-    @CurrentUser('id') userId: number,
-    @TenantId() tenantId: number,
   ) {
     if (!file) {
       throw new BadRequestException('No file provided');
