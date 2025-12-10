@@ -31,7 +31,7 @@ export class ChatService {
     private r2Service: R2Service, // ADD THIS LINE
     private activityService: ChatActivityService, // ✅ NEW
     private notificationService: ChatNotificationService, // ✅ NEW
-  ) {}
+  ) { }
 
   // ==================== MESSAGES ====================
 
@@ -50,7 +50,7 @@ export class ChatService {
           new Promise((_, r) => setTimeout(() => r('timeout'), 10)),
         ]);
         if (cached) return JSON.parse(cached as string);
-      } catch {}
+      } catch { }
     }
 
     // ✅ Get messages with ALL fields including reactions, mentions, attachments
@@ -284,7 +284,7 @@ export class ChatService {
         new Promise((_, r) => setTimeout(() => r('timeout'), 10)),
       ]);
       if (cached) return JSON.parse(cached as string);
-    } catch {}
+    } catch { }
 
     const channels = await this.sqlService.execute('sp_GetUserChannels_Fast', {
       userId,
@@ -628,7 +628,7 @@ export class ChatService {
       try {
         const cached = await this.redisService.get(cacheKey);
         if (cached) return JSON.parse(cached as string);
-      } catch {}
+      } catch { }
     }
 
     let query = `SELECT u.id, u.email, u.first_name, u.last_name, u.display_name, u.avatar_url, u.status, u.last_active_at
@@ -723,7 +723,7 @@ export class ChatService {
           channelId,
         });
         await this.redisService.del(`user:${userId}:unread`);
-      } catch {}
+      } catch { }
     });
     return { success: true };
   }
@@ -733,7 +733,7 @@ export class ChatService {
     try {
       const cached = await this.redisService.get(cacheKey);
       if (cached) return parseInt(cached as string);
-    } catch {}
+    } catch { }
 
     const result = await this.sqlService.execute('sp_GetUnreadCount_Fast', {
       userId,
@@ -753,7 +753,7 @@ export class ChatService {
         new Promise((_, r) => setTimeout(() => r('timeout'), 10)),
       ]);
       if (cached) return JSON.parse(cached as string);
-    } catch {}
+    } catch { }
 
     const result = await this.sqlService.execute(
       'sp_ValidateMessageSend_Fast',
@@ -1133,13 +1133,13 @@ export class ChatService {
         messageId,
         readByUserIds: data.read_by_user_ids
           ? data.read_by_user_ids
-              .split(',')
-              .map((id: string) => parseInt(id.trim()))
+            .split(',')
+            .map((id: string) => parseInt(id.trim()))
           : [],
         deliveredToUserIds: data.delivered_to_user_ids
           ? data.delivered_to_user_ids
-              .split(',')
-              .map((id: string) => parseInt(id.trim()))
+            .split(',')
+            .map((id: string) => parseInt(id.trim()))
           : [],
         readCount: data.read_count || 0,
         deliveredCount: data.delivered_count || 0,
@@ -1437,7 +1437,7 @@ export class ChatService {
     try {
       const cached = await this.redisService.get(cacheKey);
       if (cached) return cached as string;
-    } catch {}
+    } catch { }
 
     const user = await this.sqlService.query(
       'SELECT first_name, last_name FROM users WHERE id = @userId',
@@ -1587,7 +1587,27 @@ export class ChatService {
 
     const content = dto.caption || files.map((f) => f.originalname).join(', ');
 
-    // Create ONE message
+    // Save ALL attachments FIRST (as orphans)
+    const attachmentIds: number[] = [];
+    for (const uploadResult of uploadResults) {
+      const attachmentResult = await this.sqlService.execute(
+        'sp_UploadAttachment_Fast',
+        {
+          messageId: null, // ✅ NULL for now - will be linked to message
+          tenantId,
+          userId,
+          filename: uploadResult.fileName,
+          fileSize: uploadResult.fileSize,
+          mimeType: uploadResult.mimeType,
+          fileUrl: uploadResult.fileUrl,
+          fileHash: uploadResult.fileHash,
+          thumbnailUrl: uploadResult.thumbnailUrl || null,
+        },
+      );
+      attachmentIds.push(attachmentResult[0]?.attachment_id);
+    }
+
+    // Create ONE message with attachment IDs
     const result = await this.sqlService.execute('sp_SendMessage_Fast', {
       channelId: dto.channelId,
       userId,
@@ -1599,47 +1619,28 @@ export class ChatService {
       mentionedUserIds: null,
       replyToMessageId: dto.replyToMessageId || null,
       threadId: dto.threadId || null,
-      attachmentIds: null,
+      attachmentIds: attachmentIds.join(','), // ✅ Pass attachment IDs
       isForwarded: 0,
       forwardedFromMessageId: null,
     });
 
     const message = result[0] as MessageResponse;
 
-    // Save ALL attachments linked to this ONE message
-    const attachments: MessageAttachment[] = [];
+    // Link attachments to message
+    await this.sqlService.query(
+      `UPDATE message_attachments 
+     SET message_id = @messageId, updated_at = GETUTCDATE()
+     WHERE id IN (${attachmentIds.join(',')})`,
+      { messageId: message.id },
+    );
 
-    for (const uploadResult of uploadResults) {
-      const attachmentResult = await this.sqlService.execute(
-        'sp_UploadAttachment_Fast',
-        {
-          messageId: message.id,
-          tenantId,
-          userId,
-          filename: uploadResult.fileName,
-          fileSize: uploadResult.fileSize,
-          mimeType: uploadResult.mimeType,
-          fileUrl: uploadResult.fileUrl,
-          fileHash: uploadResult.fileHash,
-          thumbnailUrl: uploadResult.thumbnailUrl || null,
-        },
-      );
-
-      attachments.push({
-        id: attachmentResult[0]?.attachment_id,
-        file_name: uploadResult.fileName,
-        file_size: uploadResult.fileSize,
-        content_type: uploadResult.mimeType,
-        file_url: uploadResult.fileUrl,
-        thumbnail_url: uploadResult.thumbnailUrl,
-        created_at: new Date().toISOString(),
-      });
-    }
-
-    // Get enriched message
+    // Get enriched message with attachments
     const enrichedMessage = await this.getMessage(message.id);
-    enrichedMessage.attachments = attachments;
-    enrichedMessage.attachment_count = attachments.length;
+    enrichedMessage.attachments = await this.sqlService.execute(
+      'sp_GetMessageAttachments_Fast',
+      { messageId: message.id },
+    );
+    enrichedMessage.attachment_count = attachmentIds.length;
 
     // Invalidate caches
     const participantIds = validation.participant_ids
