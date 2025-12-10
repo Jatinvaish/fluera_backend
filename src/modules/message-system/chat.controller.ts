@@ -45,7 +45,7 @@ import { FileFastifyInterceptor, FilesFastifyInterceptor } from 'fastify-file-in
 @UseGuards(JwtAuthGuard)
 @Unencrypted()
 export class ChatController {
-  constructor(private chatService: ChatService) {}
+  constructor(private chatService: ChatService) { }
 
   // ==================== MESSAGES ====================
   /**
@@ -235,7 +235,7 @@ export class ChatController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send multiple files as a single message' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesFastifyInterceptor('files', 10)) // <-- IMPORTANT
+  @UseInterceptors(FilesFastifyInterceptor('files', 10))
   async sendFilesAsOneMessage(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('channelId') channelId: string,
@@ -267,13 +267,24 @@ export class ChatController {
       tenantId,
     );
 
+    // ✅ NEW: Broadcast via WebSocket for real-time updates
+    try {
+      const gateway = this.chatService['gateway']; // Access injected gateway
+      if (gateway && gateway.server) {
+        await gateway['broadcastToChannel'](parseInt(channelId), {
+          event: 'new_message',
+          message: result,
+        });
+      }
+    } catch (error) {
+    }
+
     return {
       success: true,
       message: 'Files sent successfully',
       data: result,
     };
   }
-
   /**
    * ✅ Send existing attachment as message (for WebSocket flow)
    */
