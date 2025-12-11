@@ -46,8 +46,7 @@ interface AuthSocket extends Socket {
   cookie: false,
 })
 export class ChatGateway
-  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
-{
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(ChatGateway.name);
 
@@ -58,7 +57,7 @@ export class ChatGateway
     private chatService: ChatService,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) {}
+  ) { }
 
   // ==================== GATEWAY INITIALIZATION ====================
   afterInit(server: Server) {
@@ -803,6 +802,7 @@ export class ChatGateway
     };
   }
 
+  // ==================== FILE MESSAGE HANDLER ====================
   @SubscribeMessage('send_file_message')
   async handleSendFileMessage(
     @ConnectedSocket() client: AuthSocket,
@@ -828,7 +828,12 @@ export class ChatGateway
 
       const broadcastPayload = {
         event: 'new_message',
-        message,
+        message: {
+          ...message,
+          sender_first_name: message.sender_first_name || client.user.firstName,
+          sender_last_name: message.sender_last_name || client.user.lastName,
+          sender_avatar_url: message.sender_avatar_url || client.user.avatarUrl,
+        },
       };
 
       await this.broadcastToChannel(data.channelId, broadcastPayload);
