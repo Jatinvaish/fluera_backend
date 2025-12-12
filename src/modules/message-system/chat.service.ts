@@ -5,6 +5,8 @@ import {
   ForbiddenException,
   BadRequestException,
   NotFoundException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { SqlServerService } from 'src/core/database';
 import { RedisService } from 'src/core/redis/redis.service';
@@ -20,6 +22,8 @@ import {
 import { ChatActivityService, ChatActivityType } from './chat-activity.service';
 import { ChatNotificationService } from './chat-notification.service';
 import { R2Service } from 'src/common/services/r2.service';
+import { ChatGateway } from './chat.gateway';
+import { ModuleRef } from '@nestjs/core';
 
 @Injectable()
 export class ChatService {
@@ -31,8 +35,11 @@ export class ChatService {
     private r2Service: R2Service, // ADD THIS LINE
     private activityService: ChatActivityService, // ✅ NEW
     private notificationService: ChatNotificationService, // ✅ NEW
+    private moduleRef: ModuleRef, // ✅ ADD THIS
   ) { }
-
+  private get gateway(): ChatGateway {
+    return this.moduleRef.get(ChatGateway, { strict: false });
+  }
   // ==================== MESSAGES ====================
 
   async getMessages(
@@ -1568,12 +1575,10 @@ export class ChatService {
       throw new ForbiddenException('Not a channel member');
     }
 
-    // Determine message type based on files
     const hasImages = files.some((f) => f.mimetype.startsWith('image/'));
     const hasVideos = files.some((f) => f.mimetype.startsWith('video/'));
     const messageType = hasImages ? 'image' : hasVideos ? 'video' : 'file';
 
-    // Upload all files to R2
     const uploadResults = await Promise.all(
       files.map((file) =>
         this.r2Service.uploadFile(file, {
@@ -1587,13 +1592,12 @@ export class ChatService {
 
     const content = dto.caption || files.map((f) => f.originalname).join(', ');
 
-    // Save ALL attachments FIRST (as orphans)
     const attachmentIds: number[] = [];
     for (const uploadResult of uploadResults) {
       const attachmentResult = await this.sqlService.execute(
         'sp_UploadAttachment_Fast',
         {
-          messageId: null, // ✅ NULL for now - will be linked to message
+          messageId: null,
           tenantId,
           userId,
           filename: uploadResult.fileName,
@@ -1607,7 +1611,6 @@ export class ChatService {
       attachmentIds.push(attachmentResult[0]?.attachment_id);
     }
 
-    // Create ONE message with attachment IDs
     const result = await this.sqlService.execute('sp_SendMessage_Fast', {
       channelId: dto.channelId,
       userId,
@@ -1619,14 +1622,13 @@ export class ChatService {
       mentionedUserIds: null,
       replyToMessageId: dto.replyToMessageId || null,
       threadId: dto.threadId || null,
-      attachmentIds: attachmentIds.join(','), // ✅ Pass attachment IDs
+      attachmentIds: attachmentIds.join(','),
       isForwarded: 0,
       forwardedFromMessageId: null,
     });
 
     const message = result[0] as MessageResponse;
 
-    // Link attachments to message
     await this.sqlService.query(
       `UPDATE message_attachments 
      SET message_id = @messageId, updated_at = GETUTCDATE()
@@ -1634,7 +1636,6 @@ export class ChatService {
       { messageId: message.id },
     );
 
-    // Get enriched message with attachments
     const enrichedMessage = await this.getMessage(message.id);
     enrichedMessage.attachments = await this.sqlService.execute(
       'sp_GetMessageAttachments_Fast',
@@ -1642,7 +1643,19 @@ export class ChatService {
     );
     enrichedMessage.attachment_count = attachmentIds.length;
 
-    // Invalidate caches
+    // ✅ BROADCAST VIA WEBSOCKET
+    try {
+      if (this.gateway && this.gateway.server) {
+        await this.gateway['broadcastToChannel'](dto.channelId, {
+          event: 'new_message',
+          message: enrichedMessage,
+        });
+        this.logger.log(`📡 Broadcasted file message ${message.id} to channel ${dto.channelId}`);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to broadcast file message: ${error.message}`);
+    }
+
     const participantIds = validation.participant_ids
       .split(',')
       .map((id: string) => parseInt(id.trim()))
@@ -1652,7 +1665,6 @@ export class ChatService {
 
     return enrichedMessage;
   }
-
   /**
    * ✅ Send multiple files as separate messages
    */

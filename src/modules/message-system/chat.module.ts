@@ -10,6 +10,8 @@ import { ChatActivityService } from './chat-activity.service'; // ✅ NEW
 import { ChatNotificationService } from './chat-notification.service'; // ✅ NEW
 import { FileUploadModule } from 'src/common/file-upload.module';
 
+
+
 @Module({
   imports: [
     ConfigModule,
@@ -32,15 +34,15 @@ import { FileUploadModule } from 'src/common/file-upload.module';
     ChatService,
     ChatGateway,
     PresenceService,
-    ChatActivityService, // ✅ NEW
-    ChatNotificationService, // ✅ NEW
+    ChatActivityService,
+    ChatNotificationService,
   ],
   exports: [
     ChatService, 
     ChatGateway, 
     PresenceService,
-    ChatActivityService, // ✅ NEW
-    ChatNotificationService, // ✅ NEW
+    ChatActivityService,
+    ChatNotificationService,
   ],
 })
 export class ChatModule { }
