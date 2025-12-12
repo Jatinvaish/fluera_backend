@@ -1,7 +1,4 @@
-// ============================================
 // src/modules/message-system/chat.gateway.ts
-// SOCKET.IO COMPATIBLE - NO BREAKING CHANGES
-// ============================================
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -13,7 +10,7 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Logger, forwardRef, Inject } from '@nestjs/common'; // ✅ ADD forwardRef, Inject
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ChatService } from './chat.service';
@@ -54,10 +51,12 @@ export class ChatGateway
   private channelMembers = new Map<number, Set<number>>();
 
   constructor(
+    @Inject(forwardRef(() => ChatService)) // ✅ ADD THIS
     private chatService: ChatService,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) { }
+
 
   // ==================== GATEWAY INITIALIZATION ====================
   afterInit(server: Server) {
@@ -715,7 +714,7 @@ export class ChatGateway
   /**
    * ✅ Broadcast message to all members of a channel
    */
-  private async broadcastToChannel(
+  public async broadcastToChannel(
     channelId: number,
     payload: any,
     excludeUserId?: number,

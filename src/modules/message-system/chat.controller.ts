@@ -31,21 +31,24 @@ import {
   AddMemberDto,
   UpdateMemberRoleDto,
   EditMessageDto,
-  SearchDto,
   PinMessageDto,
   ForwardMessageDto,
   MuteChannelDto,
 } from './dto/chat.dto';
 import { ApiConsumes, ApiOperation } from '@nestjs/swagger';
-import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import type { FastifyRequest } from 'fastify';
 import { FileFastifyInterceptor, FilesFastifyInterceptor } from 'fastify-file-interceptor';
+import { ChatGateway } from './chat.gateway';
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 @Unencrypted()
 export class ChatController {
-  constructor(private chatService: ChatService) { }
+  constructor(private chatService: ChatService,
+    private gateway: ChatGateway,
+
+  ) { }
 
   // ==================== MESSAGES ====================
   /**
@@ -226,17 +229,12 @@ export class ChatController {
     };
   }
 
-  // src/modules/message-system/chat.controller.ts - Add this endpoint
-
-  /**
-   * ✅ Send multiple files as ONE message with multiple attachments
-   */
   @Post('messages/send-files')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Send multiple files as a single message' })
+  @ApiOperation({ summary: 'Send files as message (like Slack)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesFastifyInterceptor('files', 10))
-  async sendFilesAsOneMessage(
+  async sendFilesAsMessage(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('channelId') channelId: string,
     @CurrentUser('id') userId: number,
@@ -253,13 +251,12 @@ export class ChatController {
       throw new BadRequestException('channelId is required');
     }
 
+    // ✅ Send all files as ONE message with multiple attachments
     const result = await this.chatService.sendMultipleFilesAsOneMessage(
       {
         channelId: parseInt(channelId),
         caption: caption || '',
-        replyToMessageId: replyToMessageId
-          ? parseInt(replyToMessageId)
-          : undefined,
+        replyToMessageId: replyToMessageId ? parseInt(replyToMessageId) : undefined,
         threadId: threadId ? parseInt(threadId) : undefined,
       },
       files,
@@ -267,16 +264,16 @@ export class ChatController {
       tenantId,
     );
 
-    // ✅ NEW: Broadcast via WebSocket for real-time updates
+    // ✅ Broadcast via WebSocket to ALL clients (including sender)
     try {
-      const gateway = this.chatService['gateway']; // Access injected gateway
-      if (gateway && gateway.server) {
-        await gateway['broadcastToChannel'](parseInt(channelId), {
+      if (this.gateway?.server) {
+        await this.gateway['broadcastToChannel'](parseInt(channelId), {
           event: 'new_message',
           message: result,
         });
       }
     } catch (error) {
+      console.error('❌ WebSocket broadcast failed:', error.message);
     }
 
     return {
@@ -285,6 +282,8 @@ export class ChatController {
       data: result,
     };
   }
+
+
   /**
    * ✅ Send existing attachment as message (for WebSocket flow)
    */
