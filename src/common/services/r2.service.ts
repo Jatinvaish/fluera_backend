@@ -347,6 +347,7 @@ export class R2Service {
    * ✅ Generate signed URL for temporary access (expires in 1 hour)
    */
   async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+    console.log('🔵 [R2-SERVICE] getSignedUrl called:', { key, expiresIn });
     try {
       const command = new GetObjectCommand({
         Bucket: this.bucketName,
@@ -354,8 +355,10 @@ export class R2Service {
       });
 
       const url = await getSignedUrl(this.s3Client, command, { expiresIn });
+      console.log('✅ [R2-SERVICE] Generated signed URL:', url);
       return url;
     } catch (error) {
+      console.error('❌ [R2-SERVICE] Generate signed URL failed:', error.message);
       this.logger.error(`❌ Generate signed URL failed: ${error.message}`);
       throw new BadRequestException('Failed to generate download URL');
     }

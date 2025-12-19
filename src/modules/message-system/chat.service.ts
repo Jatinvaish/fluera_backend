@@ -84,15 +84,20 @@ export class ChatService {
           );
           // Generate signed URLs for attachments
           if (msg.attachments?.length > 0) {
+            console.log(`🔵 [BACKEND] Generating signed URLs for message ${msg.id} attachments:`, msg.attachments.map((a: any) => ({ id: a.id, file_url: a.file_url })));
             msg.attachments = await Promise.all(
               msg.attachments.map(async (att: any) => {
-                if (att.id) {
-                  const signedUrl = await this.r2Service.getSignedUrl(att.file_url);
+                if (att.id && att.file_url) {
+                  const key = att.file_url.replace(/^https?:\/\/[^\/]+\//, '');
+                  console.log(`🔵 [BACKEND] Extracting key from file_url:`, { file_url: att.file_url, key });
+                  const signedUrl = await this.r2Service.getSignedUrl(key);
+                  console.log(`✅ [BACKEND] Generated signed URL for attachment ${att.id}:`, signedUrl);
                   return { ...att, url: signedUrl };
                 }
                 return att;
               }),
             );
+            console.log(`✅ [BACKEND] Final attachments with signed URLs:`, msg.attachments.map((a: any) => ({ id: a.id, file_url: a.file_url, url: a.url })));
           }
         }
 
@@ -1106,15 +1111,20 @@ export class ChatService {
           );
           // Generate signed URLs for attachments
           if (msg.attachments?.length > 0) {
+            console.log(`🔵 [BACKEND-THREAD] Generating signed URLs for thread message ${msg.id} attachments:`, msg.attachments.map((a: any) => ({ id: a.id, file_url: a.file_url })));
             msg.attachments = await Promise.all(
               msg.attachments.map(async (att: any) => {
-                if (att.id) {
-                  const signedUrl = await this.r2Service.getSignedUrl(att.file_url);
+                if (att.id && att.file_url) {
+                  const key = att.file_url.replace(/^https?:\/\/[^\/]+\//, '');
+                  console.log(`🔵 [BACKEND-THREAD] Extracting key:`, { file_url: att.file_url, key });
+                  const signedUrl = await this.r2Service.getSignedUrl(key);
+                  console.log(`✅ [BACKEND-THREAD] Generated signed URL for attachment ${att.id}:`, signedUrl);
                   return { ...att, url: signedUrl };
                 }
                 return att;
               }),
             );
+            console.log(`✅ [BACKEND-THREAD] Final thread attachments:`, msg.attachments.map((a: any) => ({ id: a.id, url: a.url })));
           }
         }
 
@@ -1122,6 +1132,7 @@ export class ChatService {
       }),
     );
 
+    console.log(`✅ [BACKEND-THREAD] Returning ${enrichedMessages.length} enriched thread messages`);
     return enrichedMessages;
   }
 
