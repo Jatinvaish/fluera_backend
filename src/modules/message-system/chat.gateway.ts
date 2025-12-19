@@ -176,13 +176,14 @@ export class ChatGateway
     @ConnectedSocket() client: AuthSocket,
     @MessageBody() data: SendMessageDto,
   ) {
-    console.log('🚀 ~ ChatGateway ~ handleSendMessage ~ data:', data);
     const start = Date.now();
 
     try {
-      this.logger.log(
-        `📤 Message from User ${client.userId} to Channel ${data.channelId}`,
-      );
+      console.log('🔵 [WS-GATEWAY] send_message received:', {
+        userId: client.userId,
+        channelId: data.channelId,
+        hasAttachments: data.attachments?.length || 0
+      });
 
       const message = await this.chatService.sendMessage(
         data,
@@ -190,19 +191,78 @@ export class ChatGateway
         client.tenantId,
       );
 
+      console.log('🔵 [WS-GATEWAY] Message created:', {
+        messageId: message.id,
+        hasAttachments: message.has_attachments
+      });
+
+      // Get full message with attachments and signed URLs
+      console.log('🔵 [WS-GATEWAY] About to call getMessage for:', message.id);
+      const fullMessage = await this.chatService.getMessage(message.id);
+      console.log('🔵 [WS-GATEWAY] getMessage returned');
+      console.log('🔵 [WS-GATEWAY] Full message fetched:', {
+        messageId: fullMessage.id,
+        hasAttachments: !!fullMessage.attachments,
+        attachmentCount: fullMessage.attachments?.length || 0,
+        attachments: fullMessage.attachments?.map(a => ({
+          id: a.id,
+          file_name: a.file_name,
+          file_url: a.file_url,
+          hasUrl: !!(a as any).url,
+          url: (a as any).url
+        }))
+      });
+      
+      // Generate signed URLs for attachments if present
+      if (fullMessage.attachments && fullMessage.attachments.length > 0) {
+        console.log('🔵 [WS-GATEWAY] Attachments exist, checking if signed URLs already present...');
+        console.log('🔵 [WS-GATEWAY] First attachment:', fullMessage.attachments[0]);
+        
+        // Check if signed URLs already exist from getMessage
+        const hasSignedUrls = fullMessage.attachments.every(a => !!(a as any).url);
+        console.log('🔵 [WS-GATEWAY] Has signed URLs from getMessage:', hasSignedUrls);
+        
+        if (!hasSignedUrls) {
+          console.log('🔵 [WS-GATEWAY] Generating signed URLs for attachments...');
+          const r2Service = this.chatService['r2Service'];
+          fullMessage.attachments = await Promise.all(
+            fullMessage.attachments.map(async (att: any) => {
+              if (att.file_url) {
+                const key = att.file_url.replace(/^https?:\/\/[^\/]+\//, '');
+                console.log('🔵 [WS-GATEWAY] Generating signed URL for key:', key);
+                const signedUrl = await r2Service.getSignedUrl(key);
+                console.log('✅ [WS-GATEWAY] Signed URL generated:', signedUrl);
+                return { ...att, url: signedUrl };
+              }
+              return att;
+            })
+          );
+        }
+        console.log('✅ [WS-GATEWAY] All signed URLs ready:', fullMessage.attachments.map(a => ({ id: a.id, url: (a as any).url })));
+      }
+
       const broadcastPayload = {
         event: 'new_message',
         message: {
-          ...message,
-          sender_first_name: message.sender_first_name || client.user.firstName,
-          sender_last_name: message.sender_last_name || client.user.lastName,
-          sender_avatar_url: message.sender_avatar_url || client.user.avatarUrl,
+          ...fullMessage,
+          sender_first_name: fullMessage.sender_first_name || client.user.firstName,
+          sender_last_name: fullMessage.sender_last_name || client.user.lastName,
+          sender_avatar_url: fullMessage.sender_avatar_url || client.user.avatarUrl,
         },
       };
 
+      console.log('🔵 [WS-GATEWAY] Broadcasting payload:', {
+        event: broadcastPayload.event,
+        messageId: broadcastPayload.message.id,
+        attachments: broadcastPayload.message.attachments?.map(a => ({
+          id: a.id,
+          file_url: a.file_url,
+          url: (a as any).url
+        }))
+      });
+
       await this.broadcastToChannel(data.channelId, broadcastPayload);
 
-      // Handle mentions
       if (data.mentions && data.mentions.length > 0) {
         for (const mentionedUserId of data.mentions) {
           this.broadcastToUser(mentionedUserId, {
@@ -223,9 +283,10 @@ export class ChatGateway
         latency: Date.now() - start,
       };
 
-      this.logger.log(`✅ Message sent: ${message.id} (${response.latency}ms)`);
+      console.log('✅ [WS-GATEWAY] Message sent successfully:', response);
       return response;
     } catch (error) {
+      console.error('❌ [WS-GATEWAY] Send message error:', error);
       this.logger.error(`❌ Send message error: ${error.message}`);
       return { success: false, error: error.message };
     }
@@ -815,15 +876,45 @@ export class ChatGateway
     },
   ) {
     try {
-      this.logger.log(
-        `📎 File message from User ${client.userId} to Channel ${data.channelId}`,
-      );
+      console.log('🔵 [WS-GATEWAY] send_file_message received:', {
+        userId: client.userId,
+        channelId: data.channelId,
+        attachmentId: data.attachmentId
+      });
 
       const message = await this.chatService.sendMessageWithExistingAttachment(
         data,
         client.userId,
         client.tenantId,
       );
+
+      console.log('🔵 [WS-GATEWAY] File message created:', {
+        messageId: message.id,
+        attachments: message.attachments?.map(a => ({
+          id: a.id,
+          file_url: a.file_url,
+          hasUrl: !!(a as any).url
+        }))
+      });
+
+      // Generate signed URLs for attachments
+      if (message.attachments && message.attachments.length > 0) {
+        console.log('🔵 [WS-GATEWAY] Generating signed URLs for file message...');
+        const r2Service = this.chatService['r2Service'];
+        message.attachments = await Promise.all(
+          message.attachments.map(async (att: any) => {
+            if (att.file_url) {
+              const key = att.file_url.replace(/^https?:\/\/[^\/]+\//, '');
+              console.log('🔵 [WS-GATEWAY] Key:', key);
+              const signedUrl = await r2Service.getSignedUrl(key);
+              console.log('✅ [WS-GATEWAY] Signed URL:', signedUrl);
+              return { ...att, url: signedUrl };
+            }
+            return att;
+          })
+        );
+        console.log('✅ [WS-GATEWAY] File message signed URLs:', message.attachments.map(a => ({ id: a.id, url: (a as any).url })));
+      }
 
       const broadcastPayload = {
         event: 'new_message',
@@ -835,10 +926,21 @@ export class ChatGateway
         },
       };
 
+      console.log('🔵 [WS-GATEWAY] Broadcasting file message:', {
+        event: broadcastPayload.event,
+        messageId: broadcastPayload.message.id,
+        attachments: broadcastPayload.message.attachments?.map(a => ({
+          id: a.id,
+          url: (a as any).url
+        }))
+      });
+
       await this.broadcastToChannel(data.channelId, broadcastPayload);
 
+      console.log('✅ [WS-GATEWAY] File message sent successfully');
       return { success: true, messageId: message.id };
     } catch (error) {
+      console.error('❌ [WS-GATEWAY] Send file message error:', error);
       this.logger.error(`❌ Send file message error: ${error.message}`);
       return { success: false, error: error.message };
     }
