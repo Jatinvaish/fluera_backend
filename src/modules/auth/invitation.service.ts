@@ -49,17 +49,35 @@ export class InvitationService {
       tenantId,
     );
 
-    // ✅ Step 3: Check for existing pending invitation
+    // ✅ Step 3: Check for existing user in tenant and invitation status
+    const existingUser = await this.sqlService.query(
+      `SELECT u.id FROM users u
+   JOIN tenant_members tm ON u.id = tm.user_id
+   WHERE u.email = @email AND tm.tenant_id = @tenantId`,
+      { email: dto.inviteeEmail, tenantId },
+    );
+
+    if (existingUser.length > 0) {
+      throw new BadRequestException('User already exists in this tenant');
+    }
+
     const existing = await this.sqlService.query(
-      `SELECT * FROM invitations 
-       WHERE tenant_id = @tenantId 
-         AND invitee_email = @email 
-         AND status = 'pending'`,
+      `SELECT status FROM invitations 
+   WHERE tenant_id = @tenantId 
+     AND invitee_email = @email`,
       { tenantId, email: dto.inviteeEmail },
     );
 
     if (existing.length > 0) {
-      throw new BadRequestException('Invitation already sent to this email');
+      const status = existing[0].status;
+      if (status === 'pending') {
+        throw new BadRequestException('Invitation already sent to this email');
+      }
+      if (status === 'cancelled') {
+        throw new BadRequestException(
+          'Invitation was cancelled. Please resend the invitation',
+        );
+      }
     }
 
     // ✅ Step 4: Check role limits (if applicable)
@@ -192,6 +210,21 @@ export class InvitationService {
         'An account with this email already exists',
       );
     }
+
+    //FOR TANENT WISE USER (SAME ID CAN BE USE)
+    // ✅ Step 3: Check if email is already registered with this tenant
+    // const existingUser = await this.sqlService.query(
+    //   `SELECT u.id FROM users u
+    //    JOIN tenant_members tm ON u.id = tm.user_id
+    //    WHERE u.email = @email AND tm.tenant_id = @tenantId`,
+    //   { email: invite.invitee_email, tenantId: invite.tenant_id },
+    // );
+
+    // if (existingUser.length > 0) {
+    //   throw new BadRequestException(
+    //     'An account with this email already exists in this tenant',
+    //   );
+    // }
 
     // ✅ Step 4: Hash password
     const passwordHash = await this.hashingService.hashPassword(password);
