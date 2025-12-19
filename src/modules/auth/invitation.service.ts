@@ -211,6 +211,21 @@ export class InvitationService {
       );
     }
 
+    //FOR TANENT WISE USER (SAME ID CAN BE USE)
+    // ✅ Step 3: Check if email is already registered with this tenant
+    // const existingUser = await this.sqlService.query(
+    //   `SELECT u.id FROM users u
+    //    JOIN tenant_members tm ON u.id = tm.user_id
+    //    WHERE u.email = @email AND tm.tenant_id = @tenantId`,
+    //   { email: invite.invitee_email, tenantId: invite.tenant_id },
+    // );
+
+    // if (existingUser.length > 0) {
+    //   throw new BadRequestException(
+    //     'An account with this email already exists in this tenant',
+    //   );
+    // }
+
     // ✅ Step 4: Hash password
     const passwordHash = await this.hashingService.hashPassword(password);
 

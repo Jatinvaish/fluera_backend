@@ -82,6 +82,18 @@ export class ChatService {
               messageId: msg.id,
             },
           );
+          // Generate signed URLs for attachments
+          if (msg.attachments?.length > 0) {
+            msg.attachments = await Promise.all(
+              msg.attachments.map(async (att: any) => {
+                if (att.id) {
+                  const signedUrl = await this.r2Service.getSignedUrl(att.file_url);
+                  return { ...att, url: signedUrl };
+                }
+                return att;
+              }),
+            );
+          }
         }
 
         // Parse mention IDs
@@ -1092,6 +1104,18 @@ export class ChatService {
               messageId: msg.id,
             },
           );
+          // Generate signed URLs for attachments
+          if (msg.attachments?.length > 0) {
+            msg.attachments = await Promise.all(
+              msg.attachments.map(async (att: any) => {
+                if (att.id) {
+                  const signedUrl = await this.r2Service.getSignedUrl(att.file_url);
+                  return { ...att, url: signedUrl };
+                }
+                return att;
+              }),
+            );
+          }
         }
 
         return msg;
