@@ -212,16 +212,16 @@ export class ChatGateway
           url: (a as any).url
         }))
       });
-      
+
       // Generate signed URLs for attachments if present
       if (fullMessage.attachments && fullMessage.attachments.length > 0) {
         console.log('🔵 [WS-GATEWAY] Attachments exist, checking if signed URLs already present...');
         console.log('🔵 [WS-GATEWAY] First attachment:', fullMessage.attachments[0]);
-        
+
         // Check if signed URLs already exist from getMessage
         const hasSignedUrls = fullMessage.attachments.every(a => !!(a as any).url);
         console.log('🔵 [WS-GATEWAY] Has signed URLs from getMessage:', hasSignedUrls);
-        
+
         if (!hasSignedUrls) {
           console.log('🔵 [WS-GATEWAY] Generating signed URLs for attachments...');
           const r2Service = this.chatService['r2Service'];
@@ -597,34 +597,7 @@ export class ChatGateway
   }
 
   // ==================== DELIVERY & READ RECEIPTS ====================
-  @SubscribeMessage('mark_as_delivered')
-  async handleMarkAsDelivered(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: MessageDeliveryDto,
-  ) {
-    try {
-      await this.chatService.markAsDelivered(data.messageId, client.userId);
-
-      const status: MessageReadStatus =
-        await this.chatService.getMessageReadStatus(data.messageId);
-
-      const message: EnrichedMessageResponse =
-        await this.chatService.getMessage(data.messageId);
-
-      this.broadcastToUser(message.sender_user_id, {
-        event: 'message_delivered',
-        messageId: data.messageId,
-        deliveredBy: client.userId,
-        deliveredCount: status.deliveredCount,
-        timestamp: new Date().toISOString(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error(`❌ Mark as delivered error: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-  }
+  
 
   @SubscribeMessage('mark_as_read')
   async handleMarkAsRead(
@@ -632,81 +605,32 @@ export class ChatGateway
     @MessageBody() data: any,
   ) {
     try {
-      // Handle if data is an array (take first element)
       const payload = Array.isArray(data) ? data[0] : data;
-      console.log('🚀 ~ ChatGateway ~ handleMarkAsRead ~ payload:', payload);
 
-      if (!payload?.messageId || !payload?.channelId) {
-        this.logger.warn(
-          `❌ Invalid mark_as_read data: ${JSON.stringify(data)}`,
-        );
+      if (!payload?.channelId) {
+        this.logger.warn(`❌ Invalid mark_as_read data: ${JSON.stringify(data)}`);
         return { success: false, error: 'Invalid data format' };
       }
 
-      const messageId = payload.messageId;
-      const channelId =
-        typeof payload.channelId === 'string'
-          ? parseInt(payload.channelId)
-          : payload.channelId;
+      const channelId = typeof payload.channelId === 'string'
+        ? parseInt(payload.channelId)
+        : payload.channelId;
 
-      await this.chatService.markAsRead(channelId, client.userId, messageId);
+      // ✅ Mark entire channel as read (not just one message)
+      const result = await this.chatService.markChannelAsRead(channelId, client.userId);
 
-      const status: MessageReadStatus =
-        await this.chatService.getMessageReadStatus(messageId);
-      const message: EnrichedMessageResponse =
-        await this.chatService.getMessage(messageId);
-      const userName = await this.chatService.getUserDisplayName(client.userId);
+      this.logger.log(
+        `📖 User ${client.userId} marked ${result.markedCount} messages as read in channel ${channelId}`,
+      );
 
-      this.broadcastToUser(message.sender_user_id, {
-        event: 'message_read',
-        messageId: messageId,
-        readBy: client.userId,
-        readByName: `${userName}`,
-        readCount: status.readCount,
-        timestamp: new Date().toISOString(),
-      });
-
-      return { success: true };
+      return { success: true, markedCount: result.markedCount };
     } catch (error) {
       this.logger.error(`❌ Mark as read error: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
 
-  @SubscribeMessage('bulk_mark_as_read')
-  async handleBulkMarkAsRead(
-    @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { channelId: number; upToMessageId: number },
-  ) {
-    try {
-      this.logger.log(
-        `📖 User ${client.userId} bulk marking as read in channel ${data.channelId} up to message ${data.upToMessageId}`,
-      );
 
-      await this.chatService.bulkMarkAsRead(
-        data.channelId,
-        client.userId,
-        data.upToMessageId,
-      );
-
-      this.broadcastToChannel(
-        data.channelId,
-        {
-          event: 'bulk_read_update',
-          channelId: data.channelId,
-          userId: client.userId,
-          upToMessageId: data.upToMessageId,
-          timestamp: new Date().toISOString(),
-        },
-        client.userId,
-      );
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error(`❌ Bulk mark as read error: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-  }
 
   // ==================== MEMBER MANAGEMENT ====================
   @SubscribeMessage('invite_members')

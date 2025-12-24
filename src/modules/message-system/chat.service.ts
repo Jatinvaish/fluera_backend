@@ -49,7 +49,7 @@ export class ChatService {
     beforeId?: number,
   ) {
     const cacheKey = `msgs:${channelId}:${limit}:${beforeId || 'latest'}`;
-    console.log('🚀 ~ ChatService ~ getMessages ~ beforeId:', beforeId);
+
     if (!beforeId) {
       try {
         const cached = await Promise.race([
@@ -60,7 +60,6 @@ export class ChatService {
       } catch { }
     }
 
-    // ✅ Get messages with ALL fields including reactions, mentions, attachments
     const messages = await this.sqlService.execute('sp_GetMessages_Fast', {
       channelId,
       userId,
@@ -68,16 +67,24 @@ export class ChatService {
       beforeId: beforeId || null,
     });
 
-    // ✅ Enrich messages with reactions and attachments details
+    // ✅ Enrich messages with read status
+    const userIdStr = userId.toString();
     const enrichedMessages = await Promise.all(
       messages.map(async (msg: any) => {
+        // ✅ Add read status fields
+        msg.is_read_by_me = msg.read_by_user_ids?.includes(userIdStr) || false;
+        msg.read_count = msg.read_by_user_ids
+          ? msg.read_by_user_ids.split(',').length
+          : 0;
+        msg.delivered_count = msg.delivered_to_user_ids
+          ? msg.delivered_to_user_ids.split(',').length
+          : 0;
+
         // Get reactions if count > 0
         if (msg.reaction_count > 0) {
           msg.reactions = await this.sqlService.execute(
             'sp_GetMessageReactions_Fast',
-            {
-              messageId: msg.id,
-            },
+            { messageId: msg.id },
           );
         }
 
@@ -85,34 +92,21 @@ export class ChatService {
         if (msg.attachment_count > 0) {
           msg.attachments = await this.sqlService.execute(
             'sp_GetMessageAttachments_Fast',
-            {
-              messageId: msg.id,
-            },
+            { messageId: msg.id },
           );
-          // Generate signed URLs for attachments
+
           if (msg.attachments?.length > 0) {
-            console.log(`🔵 [BACKEND] Generating signed URLs for message ${msg.id} attachments:`, msg.attachments.map((a: any) => ({ id: a.id, file_url: a.file_url })));
             msg.attachments = await Promise.all(
               msg.attachments.map(async (att: any) => {
-                if (att.id && att.file_url) {
+                if (att.file_url) {
                   const key = att.file_url.replace(/^https?:\/\/[^\/]+\//, '');
-                  console.log(`🔵 [BACKEND] Extracting key from file_url:`, { file_url: att.file_url, key });
                   const signedUrl = await this.r2Service.getSignedUrl(key);
-                  console.log(`✅ [BACKEND] Generated signed URL for attachment ${att.id}:`, signedUrl);
                   return { ...att, url: signedUrl };
                 }
                 return att;
               }),
             );
-            console.log(`✅ [BACKEND] Final attachments with signed URLs:`, msg.attachments.map((a: any) => ({ id: a.id, file_url: a.file_url, url: a.url })));
           }
-        }
-
-        // Parse mention IDs
-        if (msg.mention_ids) {
-          msg.mentions = msg.mention_ids
-            .split(',')
-            .map((id: string) => parseInt(id));
         }
 
         return msg;
@@ -738,19 +732,6 @@ export class ChatService {
 
   // ==================== READ STATUS ====================
 
-  async markAsRead(channelId: number, messageId: number, userId: number) {
-    setImmediate(async () => {
-      try {
-        await this.sqlService.execute('sp_MarkAsRead_Fast', {
-          messageId,
-          userId,
-          channelId,
-        });
-        await this.redisService.del(`user:${userId}:unread`);
-      } catch { }
-    });
-    return { success: true };
-  }
 
   async getUnreadCount(userId: number): Promise<number> {
     const cacheKey = `user:${userId}:unread`;
@@ -1028,43 +1009,8 @@ export class ChatService {
   ///
   // ==================== NEW/UPDATED METHODS IN chat.service.ts ====================
 
-  /**
-   * ✅ Mark message as delivered (NEW)
-   */
-  async markAsDelivered(messageId: number, userId: number): Promise<void> {
-    try {
-      await this.sqlService.execute('sp_MarkAsDelivered_Fast', {
-        messageId,
-        userId,
-      });
-    } catch (error) {
-      this.logger.error(`Failed to mark as delivered: ${error.message}`);
-    }
-  }
 
-  /**
-   * ✅ Bulk mark messages as read (NEW)
-   */
-  async bulkMarkAsRead(
-    channelId: number,
-    userId: number,
-    upToMessageId: number,
-  ): Promise<void> {
-    try {
-      await this.sqlService.execute('sp_BulkMarkAsRead_Fast', {
-        channelId,
-        userId,
-        upToMessageId,
-      });
 
-      // Invalidate cache
-      await this.redisService.del(`user:${userId}:unread`);
-      await this.redisService.del(`msgs:${channelId}:*`);
-    } catch (error) {
-      this.logger.error(`Failed to bulk mark as read: ${error.message}`);
-      throw error;
-    }
-  }
 
   /**
    * ✅ Get user mentions (UPDATED to use new table structure)
@@ -1143,67 +1089,13 @@ export class ChatService {
     return enrichedMessages;
   }
 
-  //
-  async getMessageReadStatus(messageId: number): Promise<MessageReadStatus> {
-    console.log(
-      '🚀 ~ ChatService ~ getMessageReadStatus ~ messageId:',
-      messageId,
-    );
-    try {
-      const result = await this.sqlService.execute(
-        'sp_GetMessageReadStatus_Fast',
-        {
-          messageId,
-        },
-      );
-
-      const data = result[0];
-      console.log('🚀 ~ ChatService ~ getMessageReadStatus ~ data:', data);
-
-      if (!data) {
-        return {
-          messageId,
-          readByUserIds: [],
-          deliveredToUserIds: [],
-          readCount: 0,
-          deliveredCount: 0,
-          totalRecipients: 0,
-        };
-      }
-
-      return {
-        messageId,
-        readByUserIds: data.read_by_user_ids
-          ? data.read_by_user_ids
-            .split(',')
-            .map((id: string) => parseInt(id.trim()))
-          : [],
-        deliveredToUserIds: data.delivered_to_user_ids
-          ? data.delivered_to_user_ids
-            .split(',')
-            .map((id: string) => parseInt(id.trim()))
-          : [],
-        readCount: data.read_count || 0,
-        deliveredCount: data.delivered_count || 0,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to get read status: ${error.message}`);
-      return {
-        messageId,
-        readByUserIds: [],
-        deliveredToUserIds: [],
-        readCount: 0,
-        deliveredCount: 0,
-      };
-    }
-  }
 
   /**
    * ✅ UPDATED: Get message with proper return type
    */
   async getMessage(messageId: number): Promise<EnrichedMessageResponse> {
     console.log('🔵 [CHAT-SERVICE] getMessage called for:', messageId);
-    
+
     const result = await this.sqlService.query(
       `SELECT 
       m.*,
@@ -1278,7 +1170,6 @@ export class ChatService {
     userId: number,
     tenantId: number,
   ): Promise<MessageResponse> {
-    console.log('🚀 ~ ChatService ~ sendMessage ~ dto:', dto);
     const validation = await this.validateFromCache(dto.channelId, userId);
     if (!validation.isMember)
       throw new ForbiddenException('Not a channel member');
@@ -1296,11 +1187,36 @@ export class ChatService {
       .map((id) => parseInt(id.trim()))
       .filter((id) => !isNaN(id) && id !== userId);
 
-    // ✅ Get user info FIRST
+    // ✅ Get user info
     const user = await this.sqlService.query(
       'SELECT first_name, last_name, avatar_url FROM users WHERE id = @userId',
       { userId },
     );
+
+    // ✅ Check if it's a direct message
+    const channel = await this.sqlService.query(
+      'SELECT channel_type FROM chat_channels WHERE id = @channelId',
+      { channelId: dto.channelId }
+    );
+
+    const isDirect = channel[0]?.channel_type === 'direct';
+
+    // ✅ For direct messages: check if recipient is online (active in last 5 min)
+    let readByUserIds = null;
+    if (isDirect && participants.length === 1) {
+      const recipientId = participants[0];
+      const onlineCheck = await this.sqlService.query(
+        `SELECT id FROM users 
+       WHERE id = @recipientId 
+       AND last_active_at > DATEADD(MINUTE, -5, GETUTCDATE())`,
+        { recipientId }
+      );
+
+      // If recipient is online, auto-mark as read
+      if (onlineCheck.length > 0) {
+        readByUserIds = recipientId.toString();
+      }
+    }
 
     const result = await this.sqlService.execute('sp_SendMessage_Fast', {
       channelId: dto.channelId,
@@ -1318,11 +1234,30 @@ export class ChatService {
 
     const message = result[0] as MessageResponse;
 
-    // ✅ Attach sender info to message
+    // ✅ Attach sender info
     if (user.length > 0) {
       (message as any).sender_first_name = user[0].first_name;
       (message as any).sender_last_name = user[0].last_name;
       (message as any).sender_avatar_url = user[0].avatar_url;
+    }
+
+    // ✅ Update read_by_user_ids if auto-marked
+    if (readByUserIds) {
+      await this.sqlService.query(
+        `UPDATE messages 
+       SET read_by_user_ids = @readByUserIds 
+       WHERE id = @messageId`,
+        { messageId: message.id, readByUserIds }
+      );
+      message.read_by_user_ids = readByUserIds;
+
+      // Don't increment unread count for auto-read messages
+      await this.sqlService.query(
+        `UPDATE chat_participants 
+       SET unread_count = unread_count - 1
+       WHERE channel_id = @channelId AND user_id = @recipientId`,
+        { channelId: dto.channelId, recipientId: participants[0] }
+      );
     }
 
     // Auto-mark as delivered
@@ -1351,6 +1286,7 @@ export class ChatService {
 
     return message;
   }
+
 
   //
   // ==================== UPDATED METHODS IN chat.service.ts ====================
@@ -1472,43 +1408,7 @@ export class ChatService {
    * ✅ UPDATED: Simplified - no longer queries separate receipts table
    * Now reads directly from messages.read_by_user_ids and messages.delivered_to_user_ids
    */
-  async updateMessageDeliveryStatus(
-    messageId: number,
-    userId: number,
-    status: 'delivered' | 'read',
-  ): Promise<void> {
-    try {
-      if (status === 'delivered') {
-        // Use existing stored procedure for delivery
-        await this.sqlService.execute('sp_MarkAsDelivered_Fast', {
-          messageId,
-          userId,
-        });
-      } else if (status === 'read') {
-        // Use existing stored procedure for read
-        // Note: This also needs channelId, get it first
-        const msg = await this.sqlService.query(
-          'SELECT channel_id FROM messages WHERE id = @messageId',
-          { messageId },
-        );
 
-        if (msg.length > 0) {
-          await this.sqlService.execute('sp_MarkAsRead_Fast', {
-            messageId,
-            userId,
-            channelId: msg[0].channel_id,
-          });
-        }
-      }
-
-      this.logger.debug(
-        `Updated ${status} status for message ${messageId} by user ${userId}`,
-      );
-    } catch (error) {
-      this.logger.error(`Failed to update delivery status: ${error.message}`);
-      throw error;
-    }
-  }
   async getUserDisplayName(userId: number): Promise<string> {
     const cacheKey = `user:${userId}:displayname`;
 
@@ -1853,5 +1753,84 @@ export class ChatService {
     if (mimeType.startsWith('video/')) return 'video';
     if (mimeType.startsWith('audio/')) return 'audio';
     return 'file';
+  }
+
+  async markChannelAsRead(channelId: number, userId: number): Promise<any> {
+    await this.validateMembership(channelId, userId);
+
+    const userIdStr = userId.toString();
+
+    // Get all unread messages in this channel
+    const unreadMessages = await this.sqlService.query(
+      `SELECT id FROM messages 
+     WHERE channel_id = @channelId 
+       AND sender_user_id != @userId
+       AND is_deleted = 0
+       AND (read_by_user_ids IS NULL OR read_by_user_ids NOT LIKE '%' + @userIdStr + '%')`,
+      { channelId, userId, userIdStr }
+    );
+
+    if (unreadMessages.length === 0) {
+      return { success: true, markedCount: 0 };
+    }
+
+    // Mark all as read
+    await this.sqlService.query(
+      `UPDATE messages 
+     SET read_by_user_ids = 
+       CASE 
+         WHEN read_by_user_ids IS NULL OR LEN(read_by_user_ids) = 0 
+         THEN @userIdStr
+         WHEN read_by_user_ids NOT LIKE '%' + @userIdStr + '%'
+         THEN read_by_user_ids + ',' + @userIdStr
+         ELSE read_by_user_ids
+       END,
+       updated_at = GETUTCDATE()
+     WHERE channel_id = @channelId 
+       AND sender_user_id != @userId
+       AND is_deleted = 0
+       AND (read_by_user_ids IS NULL OR read_by_user_ids NOT LIKE '%' + @userIdStr + '%')`,
+      { channelId, userId, userIdStr }
+    );
+
+    // Update participant unread count
+    await this.sqlService.query(
+      `UPDATE chat_participants 
+     SET unread_count = 0, 
+         mention_count = 0,
+         last_read_at = GETUTCDATE(),
+         updated_at = GETUTCDATE()
+     WHERE channel_id = @channelId AND user_id = @userId`,
+      { channelId, userId }
+    );
+
+    // Clear cache
+    await this.redisService.del(`user:${userId}:unread`);
+    await this.redisService.del(`msgs:${channelId}:*`);
+
+    // ✅ Broadcast read receipts via WebSocket in real-time
+    if (this.gateway?.server) {
+      for (const msg of unreadMessages) {
+        const message = await this.sqlService.query(
+          `SELECT sender_user_id FROM messages WHERE id = @messageId`,
+          { messageId: msg.id }
+        );
+
+        if (message.length > 0) {
+          this.gateway['broadcastToUser'](message[0].sender_user_id, {
+            event: 'message_read',
+            messageId: msg.id,
+            readBy: userId,
+            channelId: channelId,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    return {
+      success: true,
+      markedCount: unreadMessages.length
+    };
   }
 }

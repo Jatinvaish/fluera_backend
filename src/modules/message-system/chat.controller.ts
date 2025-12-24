@@ -526,14 +526,7 @@ export class ChatController {
     return this.chatService.deleteMessage(id, userId);
   }
 
-  @Post('messages/mark-read')
-  @HttpCode(HttpStatus.ACCEPTED)
-  async markAsRead(
-    @Body() dto: MarkAsReadDto,
-    @CurrentUser('id') userId: number,
-  ) {
-    return this.chatService.markAsRead(dto.channelId, dto.messageId, userId);
-  }
+
 
   @Post('messages/pin')
   @HttpCode(HttpStatus.OK)
@@ -877,25 +870,8 @@ export class ChatController {
     return this.chatService.getChannelFiles(channelId, userId, +limit);
   }
 
-  @Post('messages/:id/delivery-status')
-  @HttpCode(HttpStatus.OK)
-  async updateDeliveryStatus(
-    @Param('id', ParseIntPipe) messageId: number,
-    @Body() dto: { status: 'delivered' | 'read' },
-    @CurrentUser('id') userId: number,
-  ) {
-    await this.chatService.updateMessageDeliveryStatus(
-      messageId,
-      userId,
-      dto.status,
-    );
-    return { success: true };
-  }
 
-  @Get('messages/:id/read-status')
-  async getReadStatus(@Param('id', ParseIntPipe) messageId: number) {
-    return this.chatService.getMessageReadStatus(messageId);
-  }
+
   @Get('mentions')
   async getUserMentions(
     @Query('limit') limit: number = 50,
@@ -947,66 +923,6 @@ export class ChatController {
 
   // ==================== NEW: ENHANCED MESSAGE ENDPOINTS ====================
 
-  @Post('messages/bulk-mark-read')
-  @HttpCode(HttpStatus.OK)
-  async bulkMarkAsRead(
-    @Body() dto: { channelId: number; upToMessageId: number },
-    @CurrentUser('id') userId: number,
-  ) {
-    await this.chatService.bulkMarkAsRead(
-      dto.channelId,
-      userId,
-      dto.upToMessageId,
-    );
-
-    return {
-      success: true,
-      message: 'Messages marked as read',
-    };
-  }
-
-  /**
-   * ✅ Get detailed read status for a message
-   */
-  @Get('messages/:messageId/read-status-detailed')
-  async getDetailedReadStatus(
-    @Param('messageId', ParseIntPipe) messageId: number,
-  ) {
-    const status = await this.chatService.getMessageReadStatus(messageId);
-
-    // ✅ Get user details for read/delivered users
-    const userIds = [
-      ...status.readByUserIds,
-      ...status.deliveredToUserIds,
-    ].filter((id, index, self) => self.indexOf(id) === index);
-
-    let users = [];
-    if (userIds.length > 0) {
-      users = await this.chatService['sqlService'].query(
-        `SELECT id, first_name, last_name, avatar_url
-       FROM users
-       WHERE id IN (${userIds.join(',')})`,
-        {},
-      );
-    }
-
-    const userMap = new Map(users.map((u: any) => [u.id, u]));
-
-    return {
-      success: true,
-      data: {
-        readCount: status.readCount,
-        deliveredCount: status.deliveredCount,
-        readBy: status.readByUserIds
-          .map((id) => userMap.get(id))
-          .filter(Boolean),
-        deliveredTo: status.deliveredToUserIds
-          .map((id) => userMap.get(id))
-          .filter(Boolean),
-      },
-    };
-  }
-
   /**
    * ✅ Get thread with enhanced details
    */
@@ -1035,19 +951,6 @@ export class ChatController {
     };
   }
 
-  /**
-   * ✅ Mark message as delivered (called automatically by frontend)
-   */
-  @Post('messages/:id/mark-delivered')
-  @HttpCode(HttpStatus.OK)
-  async markAsDelivered(
-    @Param('id', ParseIntPipe) messageId: number,
-    @CurrentUser('id') userId: number,
-  ) {
-    await this.chatService.markAsDelivered(messageId, userId);
-
-    return { success: true };
-  }
 
   //
   @Get('mentions/unread-count')
@@ -1119,4 +1022,13 @@ export class ChatController {
       },
     };
   }
+  @Post('channels/:id/mark-all-read')
+  @HttpCode(HttpStatus.OK)
+  async markChannelAsRead(
+    @Param('id', ParseIntPipe) channelId: number,
+    @CurrentUser('id') userId: number,
+  ) {
+    return this.chatService.markChannelAsRead(channelId, userId);
+  }
+
 }
