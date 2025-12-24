@@ -1755,6 +1755,8 @@ export class ChatService {
     return 'file';
   }
 
+  // In chat.service.ts - UPDATE markChannelAsRead method (around line 1450)
+
   async markChannelAsRead(channelId: number, userId: number): Promise<any> {
     await this.validateMembership(channelId, userId);
 
@@ -1763,44 +1765,47 @@ export class ChatService {
     // Get all unread messages in this channel
     const unreadMessages = await this.sqlService.query(
       `SELECT id FROM messages 
-     WHERE channel_id = @channelId 
-       AND sender_user_id != @userId
-       AND is_deleted = 0
-       AND (read_by_user_ids IS NULL OR read_by_user_ids NOT LIKE '%' + @userIdStr + '%')`,
+   WHERE channel_id = @channelId 
+     AND sender_user_id != @userId
+     AND is_deleted = 0
+     AND (read_by_user_ids IS NULL OR read_by_user_ids NOT LIKE '%' + @userIdStr + '%')`,
       { channelId, userId, userIdStr }
     );
 
     if (unreadMessages.length === 0) {
-      return { success: true, markedCount: 0 };
+      return { success: true, markedCount: 0, markedMessageIds: [] };
     }
+
+    // Extract message IDs
+    const messageIds = unreadMessages.map(m => m.id);
 
     // Mark all as read
     await this.sqlService.query(
       `UPDATE messages 
-     SET read_by_user_ids = 
-       CASE 
-         WHEN read_by_user_ids IS NULL OR LEN(read_by_user_ids) = 0 
-         THEN @userIdStr
-         WHEN read_by_user_ids NOT LIKE '%' + @userIdStr + '%'
-         THEN read_by_user_ids + ',' + @userIdStr
-         ELSE read_by_user_ids
-       END,
-       updated_at = GETUTCDATE()
-     WHERE channel_id = @channelId 
-       AND sender_user_id != @userId
-       AND is_deleted = 0
-       AND (read_by_user_ids IS NULL OR read_by_user_ids NOT LIKE '%' + @userIdStr + '%')`,
+   SET read_by_user_ids = 
+     CASE 
+       WHEN read_by_user_ids IS NULL OR LEN(read_by_user_ids) = 0 
+       THEN @userIdStr
+       WHEN read_by_user_ids NOT LIKE '%' + @userIdStr + '%'
+       THEN read_by_user_ids + ',' + @userIdStr
+       ELSE read_by_user_ids
+     END,
+     updated_at = GETUTCDATE()
+   WHERE channel_id = @channelId 
+     AND sender_user_id != @userId
+     AND is_deleted = 0
+     AND (read_by_user_ids IS NULL OR read_by_user_ids NOT LIKE '%' + @userIdStr + '%')`,
       { channelId, userId, userIdStr }
     );
 
     // Update participant unread count
     await this.sqlService.query(
       `UPDATE chat_participants 
-     SET unread_count = 0, 
-         mention_count = 0,
-         last_read_at = GETUTCDATE(),
-         updated_at = GETUTCDATE()
-     WHERE channel_id = @channelId AND user_id = @userId`,
+   SET unread_count = 0, 
+       mention_count = 0,
+       last_read_at = GETUTCDATE(),
+       updated_at = GETUTCDATE()
+   WHERE channel_id = @channelId AND user_id = @userId`,
       { channelId, userId }
     );
 
@@ -1808,29 +1813,11 @@ export class ChatService {
     await this.redisService.del(`user:${userId}:unread`);
     await this.redisService.del(`msgs:${channelId}:*`);
 
-    // ✅ Broadcast read receipts via WebSocket in real-time
-    if (this.gateway?.server) {
-      for (const msg of unreadMessages) {
-        const message = await this.sqlService.query(
-          `SELECT sender_user_id FROM messages WHERE id = @messageId`,
-          { messageId: msg.id }
-        );
-
-        if (message.length > 0) {
-          this.gateway['broadcastToUser'](message[0].sender_user_id, {
-            event: 'message_read',
-            messageId: msg.id,
-            readBy: userId,
-            channelId: channelId,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
-    }
-
+    // ✅ Return message IDs so gateway can broadcast
     return {
       success: true,
-      markedCount: unreadMessages.length
+      markedCount: unreadMessages.length,
+      markedMessageIds: messageIds // ✅ ADD THIS
     };
   }
 }

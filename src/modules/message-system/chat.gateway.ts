@@ -597,7 +597,9 @@ export class ChatGateway
   }
 
   // ==================== DELIVERY & READ RECEIPTS ====================
-  
+
+
+  // In chat.gateway.ts - REPLACE the mark_as_read handler (around line 430)
 
   @SubscribeMessage('mark_as_read')
   async handleMarkAsRead(
@@ -616,12 +618,45 @@ export class ChatGateway
         ? parseInt(payload.channelId)
         : payload.channelId;
 
-      // ✅ Mark entire channel as read (not just one message)
+      // ✅ Get user display name
+      const userName = await this.chatService.getUserDisplayName(client.userId);
+
+      this.logger.log(
+        `📖 User ${client.userId} marking channel ${channelId} as read`,
+      );
+
+      // ✅ Mark entire channel as read
       const result = await this.chatService.markChannelAsRead(channelId, client.userId);
 
       this.logger.log(
-        `📖 User ${client.userId} marked ${result.markedCount} messages as read in channel ${channelId}`,
+        `✅ Marked ${result.markedCount} messages as read in channel ${channelId}`,
       );
+
+      // ✅ CRITICAL: Get all messages that were just marked as read
+      if (result.markedCount > 0 && result.markedMessageIds) {
+        // Broadcast read receipt for each message to its sender
+        for (const messageId of result.markedMessageIds) {
+          const message = await this.chatService['sqlService'].query(
+            `SELECT sender_user_id FROM messages WHERE id = @messageId`,
+            { messageId }
+          );
+
+          if (message.length > 0 && message[0].sender_user_id !== client.userId) {
+            this.logger.debug(
+              `📡 Broadcasting read receipt for message ${messageId} to sender ${message[0].sender_user_id}`,
+            );
+
+            this.broadcastToUser(message[0].sender_user_id, {
+              event: 'message_read',
+              messageId: messageId,
+              channelId: channelId,
+              readBy: client.userId,
+              readByName: userName,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+      }
 
       return { success: true, markedCount: result.markedCount };
     } catch (error) {
@@ -629,7 +664,6 @@ export class ChatGateway
       return { success: false, error: error.message };
     }
   }
-
 
 
   // ==================== MEMBER MANAGEMENT ====================
