@@ -634,13 +634,13 @@ export class ChatGateway
 
       // ✅ CRITICAL: Get all messages that were just marked as read
       if (result.markedCount > 0 && result.markedMessageIds) {
-        // Broadcast read receipt for each message to its sender
         for (const messageId of result.markedMessageIds) {
           const message = await this.chatService['sqlService'].query(
             `SELECT sender_user_id FROM messages WHERE id = @messageId`,
             { messageId }
           );
 
+          // Only broadcast to sender, not to the user who read it
           if (message.length > 0 && message[0].sender_user_id !== client.userId) {
             this.logger.debug(
               `📡 Broadcasting read receipt for message ${messageId} to sender ${message[0].sender_user_id}`,
