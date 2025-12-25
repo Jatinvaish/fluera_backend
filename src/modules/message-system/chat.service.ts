@@ -114,11 +114,11 @@ export class ChatService {
     );
 
     if (!beforeId && messages.length > 0) {
-      setImmediate(() =>
-        this.redisService.set(cacheKey, JSON.stringify(enrichedMessages), 30),
+      setImmediate(() => {
+        return this.redisService.set(cacheKey, JSON.stringify(enrichedMessages), 30);
+      },
       );
     }
-
     return enrichedMessages;
   }
 
@@ -1207,9 +1207,9 @@ export class ChatService {
       const recipientId = participants[0];
       const onlineCheck = await this.sqlService.query(
         `SELECT id FROM users 
-       WHERE id = @recipientId 
+       WHERE id = @userId 
        AND last_active_at > DATEADD(MINUTE, -5, GETUTCDATE())`,
-        { recipientId }
+        { userId }
       );
 
       // If recipient is online, auto-mark as read
@@ -1217,7 +1217,6 @@ export class ChatService {
         readByUserIds = recipientId.toString();
       }
     }
-
     const result = await this.sqlService.execute('sp_SendMessage_Fast', {
       channelId: dto.channelId,
       userId,
@@ -1232,7 +1231,7 @@ export class ChatService {
       attachmentIds: attachmentIds,
     });
 
-    const message = result[0] as MessageResponse;
+    const message: any = result[0] as MessageResponse;
 
     // ✅ Attach sender info
     if (user.length > 0) {
@@ -1262,11 +1261,11 @@ export class ChatService {
 
     // Auto-mark as delivered
     if (participants.length > 0) {
-      message.delivered_to_user_ids = participants.join(',');
+      message.delivered_to_user_ids = participants?.filter((x: any) => x !== Number(userId))?.join(',');
       await this.sqlService.query(
         `UPDATE messages 
-       SET delivered_to_user_ids = @deliveredTo 
-       WHERE id = @messageId`,
+        SET delivered_to_user_ids = @deliveredTo 
+        WHERE id = @messageId`,
         {
           messageId: message.id,
           deliveredTo: message.delivered_to_user_ids,
