@@ -169,7 +169,14 @@ export class ChatGateway
       this.logger.log(`🔌 Unknown user disconnected (Socket: ${client.id})`);
     }
   }
+  sendNotification(userId: number, notification: any) {
+    this.server.to(`user-${userId}`).emit('notification', notification);
+    this.logger.debug(`Sent notification to user ${userId}`);
+  }
 
+  sendBulkNotifications(userIds: number[], notification: any) {
+    userIds.forEach(userId => this.sendNotification(userId, notification));
+  }
   // ==================== SEND MESSAGE ====================
   @SubscribeMessage('send_message')
   async handleSendMessage(
