@@ -1,7 +1,9 @@
 // src/modules/message-system/chat-notification.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
 import { SqlServerService } from 'src/core/database';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
+import type { ChatGateway } from './chat.gateway';
 
 export enum ChatNotificationType {
   NEW_MESSAGE = 'chat.new_message',
@@ -21,7 +23,41 @@ export class ChatNotificationService {
   constructor(
     private sqlService: SqlServerService,
     private configService: ConfigService,
+    private moduleRef: ModuleRef, // ✅ ADD: For lazy gateway access
   ) {}
+
+  // ✅ ADD: Lazy gateway getter to avoid circular dependency
+  private get gateway(): ChatGateway | null {
+    try {
+      return this.moduleRef.get('ChatGateway', { strict: false });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * ✅ UPDATED: Broadcast real-time notification
+   */
+  private async broadcastNotification(recipientId: number, notification: any) {
+    try {
+      const gateway = this.gateway;
+      if (gateway?.server) {
+        // Broadcast to user's socket(s)
+        gateway['broadcastToUser'](recipientId, {
+          event: 'notification',
+          data: notification,
+        });
+        
+        this.logger.debug(
+          `🔔 Broadcasted ${notification.event_type} notification to user ${recipientId}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to broadcast notification: ${error.message}`,
+      );
+    }
+  }
 
   /**
    * Create notification for new message
@@ -38,14 +74,12 @@ export class ChatNotificationService {
   }): Promise<void> {
     try {
       for (const recipientId of params.recipientIds) {
-        // Skip sender
         if (recipientId === params.senderId) continue;
 
-        // Check if channel is muted
         const isMuted = await this.isChannelMuted(params.channelId, recipientId);
         if (isMuted) continue;
 
-        await this.createNotification({
+        const notification = {
           recipientId,
           tenantId: params.tenantId,
           eventType: ChatNotificationType.NEW_MESSAGE,
@@ -58,6 +92,20 @@ export class ChatNotificationService {
             senderId: params.senderId,
           },
           priority: 'normal',
+        };
+
+        await this.createNotification(notification);
+        
+        // ✅ ADD: Broadcast real-time
+        await this.broadcastNotification(recipientId, {
+          id: null, // Will be set after DB insert
+          event_type: notification.eventType,
+          subject: notification.subject,
+          message: notification.message,
+          data: notification.data,
+          priority: notification.priority,
+          read_at: null,
+          created_at: new Date().toISOString(),
         });
       }
     } catch (error) {
@@ -79,7 +127,7 @@ export class ChatNotificationService {
     channelName: string;
   }): Promise<void> {
     try {
-      await this.createNotification({
+      const notification = {
         recipientId: params.mentionedUserId,
         tenantId: params.tenantId,
         eventType: ChatNotificationType.MENTION,
@@ -92,6 +140,20 @@ export class ChatNotificationService {
           senderId: params.senderId,
         },
         priority: 'high',
+      };
+
+      await this.createNotification(notification);
+      
+      // ✅ ADD: Broadcast real-time
+      await this.broadcastNotification(params.mentionedUserId, {
+        id: null,
+        event_type: notification.eventType,
+        subject: notification.subject,
+        message: notification.message,
+        data: notification.data,
+        priority: notification.priority,
+        read_at: null,
+        created_at: new Date().toISOString(),
       });
     } catch (error) {
       this.logger.error(`Failed to notify mention: ${error.message}`);
@@ -115,7 +177,7 @@ export class ChatNotificationService {
       for (const recipientId of params.recipientIds) {
         if (recipientId === params.senderId) continue;
 
-        await this.createNotification({
+        const notification = {
           recipientId,
           tenantId: params.tenantId,
           eventType: ChatNotificationType.THREAD_REPLY,
@@ -129,6 +191,20 @@ export class ChatNotificationService {
             senderId: params.senderId,
           },
           priority: 'normal',
+        };
+
+        await this.createNotification(notification);
+        
+        // ✅ ADD: Broadcast real-time
+        await this.broadcastNotification(recipientId, {
+          id: null,
+          event_type: notification.eventType,
+          subject: notification.subject,
+          message: notification.message,
+          data: notification.data,
+          priority: notification.priority,
+          read_at: null,
+          created_at: new Date().toISOString(),
         });
       }
     } catch (error) {
@@ -148,7 +224,7 @@ export class ChatNotificationService {
     tenantId: number;
   }): Promise<void> {
     try {
-      await this.createNotification({
+      const notification = {
         recipientId: params.invitedUserId,
         tenantId: params.tenantId,
         eventType: ChatNotificationType.CHANNEL_INVITE,
@@ -160,6 +236,20 @@ export class ChatNotificationService {
           invitedBy: params.invitedBy,
         },
         priority: 'high',
+      };
+
+      await this.createNotification(notification);
+      
+      // ✅ ADD: Broadcast real-time
+      await this.broadcastNotification(params.invitedUserId, {
+        id: null,
+        event_type: notification.eventType,
+        subject: notification.subject,
+        message: notification.message,
+        data: notification.data,
+        priority: notification.priority,
+        read_at: null,
+        created_at: new Date().toISOString(),
       });
     } catch (error) {
       this.logger.error(`Failed to notify channel invite: ${error.message}`);
@@ -179,10 +269,9 @@ export class ChatNotificationService {
     emoji: string;
   }): Promise<void> {
     try {
-      // Don't notify if user reacts to their own message
       if (params.reactorId === params.messageAuthorId) return;
 
-      await this.createNotification({
+      const notification = {
         recipientId: params.messageAuthorId,
         tenantId: params.tenantId,
         eventType: ChatNotificationType.REACTION,
@@ -196,6 +285,20 @@ export class ChatNotificationService {
           emoji: params.emoji,
         },
         priority: 'low',
+      };
+
+      await this.createNotification(notification);
+      
+      // ✅ ADD: Broadcast real-time
+      await this.broadcastNotification(params.messageAuthorId, {
+        id: null,
+        event_type: notification.eventType,
+        subject: notification.subject,
+        message: notification.message,
+        data: notification.data,
+        priority: notification.priority,
+        read_at: null,
+        created_at: new Date().toISOString(),
       });
     } catch (error) {
       this.logger.error(`Failed to notify reaction: ${error.message}`);
@@ -252,9 +355,7 @@ export class ChatNotificationService {
       
       if (!is_muted) return false;
       
-      // Check if mute has expired
       if (mute_until && new Date(mute_until) < new Date()) {
-        // Unmute expired
         await this.sqlService.query(
           `UPDATE chat_participants
            SET is_muted = 0, mute_until = NULL
