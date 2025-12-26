@@ -647,20 +647,22 @@ export class ChatGateway
             { messageId }
           );
 
-          // Only broadcast to sender, not to the user who read it
-          if (message.length > 0 && message[0].sender_user_id !== client.userId) {
+          // ✅ Broadcast to ALL channel members (not just sender)
+          // This ensures everyone sees the read receipt update in real-time
+          if (message.length > 0) {
             this.logger.debug(
-              `📡 Broadcasting read receipt for message ${messageId} to sender ${message[0].sender_user_id}`,
+              `📡 Broadcasting read receipt for message ${messageId} to all channel members`,
             );
 
-            this.broadcastToUser(message[0].sender_user_id, {
+            // ✅ Broadcast to entire channel so all users see the update
+            await this.broadcastToChannel(channelId, {
               event: 'message_read',
               messageId: messageId,
               channelId: channelId,
               readBy: client.userId,
               readByName: userName,
               timestamp: new Date().toISOString(),
-            });
+            }, client.userId); // Exclude the reader themselves
           }
         }
       }
