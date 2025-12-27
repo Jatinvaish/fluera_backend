@@ -500,7 +500,6 @@ export class AuthController {
         {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            Origin: process.env.APP_URL, // Add this
           },
         },
       );
