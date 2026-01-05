@@ -6,6 +6,8 @@ import { SubscriptionCheckService } from './subscription-check.service';
 import { SubscriptionFeatureGuard } from './guards/subscription-feature.guard';
 import { AuditLoggerService } from '../global-modules/audit-logs/audit-logs.service';
 import { SubscriptionSchedulerService } from './subscription-scheduler.service';
+import { SubscriptionOffersService } from './subscription-offers.service';
+import { SubscriptionPermissionService } from './subscription-permission.service';
 
 @Global()
 @Module({
@@ -16,7 +18,15 @@ import { SubscriptionSchedulerService } from './subscription-scheduler.service';
     SubscriptionFeatureGuard,
     AuditLoggerService,
     SubscriptionSchedulerService,
+    SubscriptionOffersService,
+    SubscriptionPermissionService,
   ],
-  exports: [SubscriptionsService, SubscriptionCheckService, AuditLoggerService],
+  exports: [
+    SubscriptionsService,
+    SubscriptionCheckService,
+    AuditLoggerService,
+    SubscriptionOffersService,
+    SubscriptionPermissionService,
+  ],
 })
 export class SubscriptionsModule {}

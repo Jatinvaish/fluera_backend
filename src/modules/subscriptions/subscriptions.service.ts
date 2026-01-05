@@ -24,7 +24,7 @@ export class SubscriptionsService {
   constructor(
     private sqlService: SqlServerService,
     private auditLogger: AuditLoggerService,
-  ) {}
+  ) { }
 
   // ============================================
   // SUBSCRIPTION PLANS MANAGEMENT
@@ -43,18 +43,61 @@ export class SubscriptionsService {
 
       const planType = tenant?.[0]?.tenant_type || null;
 
-      const result: any = await this.sqlService.execute(
-        'sp_ListSubscriptionPlans',
-        {
-          planType: planType,
-          planTier: query.planTier || null,
-          includeInactive: query.includeInactive || false,
-        },
+      // Build WHERE clause
+      const conditions: string[] = [];
+      const params: any = {};
+
+      if (planType) {
+        conditions.push('(plan_type = @planType OR plan_type = \'all\')');
+        params.planType = planType;
+      }
+
+      if (query.planTier) {
+        conditions.push('plan_tier = @planTier');
+        params.planTier = query.planTier;
+      }
+
+      if (!query.includeInactive) {
+        conditions.push('is_active = 1');
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      // Build ORDER BY clause
+      const allowedSortFields = ['plan_name', 'plan_type', 'plan_tier', 'price_monthly', 'price_quarterly', 'price_yearly', 'is_active', 'created_at'];
+      const sortBy = query.sortBy && allowedSortFields.includes(query.sortBy) ? query.sortBy : 'created_at';
+      const sortOrder = query.sortOrder === 'desc' ? 'DESC' : 'ASC';
+
+      // Get total count
+      const countResult: any = await this.sqlService.query(
+        `SELECT COUNT(*) as total FROM subscription_plans ${whereClause}`,
+        params,
+      );
+      const total = countResult[0]?.total || 0;
+
+      // Calculate pagination
+      const page = query.page || 1;
+      const pageSize = query.pageSize || 10;
+      const offset = (page - 1) * pageSize;
+
+      // Get paginated data
+      const result: any = await this.sqlService.query(
+        `SELECT * FROM subscription_plans 
+         ${whereClause}
+         ORDER BY ${sortBy} ${sortOrder}
+         OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY`,
+        { ...params, offset, pageSize },
       );
 
       return {
         success: true,
         data: result || [],
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
       };
     } catch (error) {
       this.logger.error('Failed to list plans:', error);
@@ -88,6 +131,32 @@ export class SubscriptionsService {
     }
   }
 
+  async getAllActiveSubscriptionsForSelect() {
+    try {
+      const query = `
+      SELECT 
+        id,
+        plan_name,
+        plan_slug,
+        plan_type,
+        plan_tier
+      FROM subscription_plans
+      WHERE is_active = 1
+      ORDER BY plan_name ASC
+    `;
+
+      const result: any = await this.sqlService.query(query);
+
+      return {
+        success: true,
+        data: result || [],
+      };
+    } catch (error) {
+      this.logger.error('Failed to get active subscriptions for select:', error);
+      throw new BadRequestException('Failed to get active subscriptions');
+    }
+  }
+
   /**
    * Create new plan (Admin only)
    */
@@ -103,7 +172,7 @@ export class SubscriptionsService {
       const result: any = await this.sqlService.query(
         `INSERT INTO subscription_plans (
           plan_name, plan_slug, plan_type, plan_tier, is_free, is_default,
-          price_monthly, price_yearly, currency, billing_cycle, trial_days,
+          price_monthly, price_quarterly, price_yearly, currency, billing_cycle, trial_days,
           max_staff, max_storage_gb, max_campaigns, max_invitations, max_integrations,
           max_creators, max_brands, max_file_size_mb, max_api_calls_per_day,
           features, priority_support, custom_branding, white_label, sso_enabled,
@@ -112,7 +181,7 @@ export class SubscriptionsService {
         OUTPUT INSERTED.*
         VALUES (
           @planName, @planSlug, @planType, @planTier, @isFree, @isDefault,
-          @priceMonthly, @priceYearly, @currency, @billingCycle, @trialDays,
+          @priceMonthly, @priceQuarterly, @priceYearly, @currency, @billingCycle, @trialDays,
           @maxStaff, @maxStorageGb, @maxCampaigns, @maxInvitations, @maxIntegrations,
           @maxCreators, @maxBrands, @maxFileSizeMb, @maxApiCallsPerDay,
           @features, @prioritySupport, @customBranding, @whiteLabel, @ssoEnabled,
@@ -126,6 +195,7 @@ export class SubscriptionsService {
           isFree: dto.isFree || false,
           isDefault: dto.isDefault || false,
           priceMonthly: dto.priceMonthly || null,
+          priceQuarterly: dto.priceQuarterly || null,
           priceYearly: dto.priceYearly || null,
           currency: dto.currency || 'USD',
           billingCycle: dto.billingCycle || null,
@@ -183,8 +253,17 @@ export class SubscriptionsService {
     }
 
     try {
-      // Get current plan
-      const currentPlan = await this.getPlanById(planId);
+      // Get current plan - use direct query instead of stored proc to avoid filtering
+      const currentPlanResult: any = await this.sqlService.query(
+        'SELECT * FROM subscription_plans WHERE id = @planId',
+        { planId },
+      );
+
+      if (!currentPlanResult || currentPlanResult.length === 0) {
+        throw new NotFoundException('Plan not found');
+      }
+
+      const currentPlan = currentPlanResult[0];
 
       const updates: string[] = [];
       const params: any = { planId, userId };
@@ -195,7 +274,7 @@ export class SubscriptionsService {
       }
       if (dto.isActive !== undefined) {
         updates.push('is_active = @isActive');
-        params.isActive = dto.isActive;
+        params.isActive = dto.isActive ? 1 : 0;
       }
       if (dto.priceMonthly !== undefined) {
         updates.push('price_monthly = @priceMonthly');
@@ -204,6 +283,10 @@ export class SubscriptionsService {
       if (dto.priceYearly !== undefined) {
         updates.push('price_yearly = @priceYearly');
         params.priceYearly = dto.priceYearly;
+      }
+      if (dto.priceQuarterly !== undefined) {
+        updates.push('price_quarterly = @priceQuarterly');
+        params.priceQuarterly = dto.priceQuarterly;
       }
       if (dto.maxStaff !== undefined) {
         updates.push('max_staff = @maxStaff');
@@ -262,7 +345,7 @@ export class SubscriptionsService {
         entityType: 'subscription_plans',
         entityId: planId,
         actionType: 'UPDATE',
-        oldValues: currentPlan.data,
+        oldValues: currentPlan,
         newValues: result[0],
         severity: 'high',
       });
@@ -322,107 +405,6 @@ export class SubscriptionsService {
     }
   }
 
-  // ============================================
-  // CUSTOM PLANS
-  // ============================================
-
-  /**
-   * Create custom plan for tenant (Admin only)
-   */
-  async createCustomPlan(
-    dto: CreateCustomPlanDto,
-    userId: number,
-    userType: string,
-  ) {
-    if (userType !== 'super_admin' && userType !== 'owner') {
-      throw new ForbiddenException('Only super admins can create custom plans');
-    }
-
-    try {
-      const customFeaturesJson = dto.customFeatures
-        ? JSON.stringify(dto.customFeatures)
-        : null;
-
-      const result: any = await this.sqlService.execute('sp_CreateCustomPlan', {
-        tenantId: dto.tenantId,
-        basePlanId: dto.basePlanId || null,
-        customPlanName: dto.customPlanName || null,
-        maxStaff: dto.maxStaff || null,
-        maxStorageGb: dto.maxStorageGb || null,
-        maxCampaigns: dto.maxCampaigns || null,
-        maxInvitations: dto.maxInvitations || null,
-        maxCreators: dto.maxCreators || null,
-        maxBrands: dto.maxBrands || null,
-        maxIntegrations: dto.maxIntegrations || null,
-        maxFileSizeMb: dto.maxFileSizeMb || null,
-        maxApiCallsPerDay: dto.maxApiCallsPerDay || null,
-        customPriceMonthly: dto.customPriceMonthly || null,
-        customPriceYearly: dto.customPriceYearly || null,
-        currency: dto.currency || null,
-        customFeatures: customFeaturesJson,
-        prioritySupport: dto.prioritySupport || null,
-        customBranding: dto.customBranding || null,
-        whiteLabel: dto.whiteLabel || null,
-        ssoEnabled: dto.ssoEnabled || null,
-        expiresAt: dto.expiresAt || null,
-        notes: dto.notes || null,
-        createdBy: userId,
-      });
-
-      await this.auditLogger.log({
-        tenantId: dto.tenantId,
-        userId,
-        entityType: 'tenant_custom_plans',
-        entityId: result[0].id,
-        actionType: 'CREATE',
-        newValues: result[0],
-        severity: 'high',
-      });
-
-      return {
-        success: true,
-        data: result[0],
-        message: 'Custom plan created successfully',
-      };
-    } catch (error) {
-      this.logger.error('Failed to create custom plan:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get custom plan for tenant
-   */
-  async getCustomPlan(tenantId: number) {
-    try {
-      const result: any = await this.sqlService.query(
-        `SELECT tcp.*, sp.plan_name as base_plan_name
-         FROM tenant_custom_plans tcp
-         LEFT JOIN subscription_plans sp ON tcp.base_plan_id = sp.id
-         WHERE tcp.tenant_id = @tenantId AND tcp.is_active = 1`,
-        { tenantId },
-      );
-
-      if (!result || result.length === 0) {
-        return {
-          success: true,
-          data: null,
-          message: 'No custom plan found',
-        };
-      }
-
-      return {
-        success: true,
-        data: result[0],
-      };
-    } catch (error) {
-      this.logger.error(
-        `Failed to get custom plan for tenant ${tenantId}:`,
-        error,
-      );
-      throw error;
-    }
-  }
 
   // ============================================
   // SUBSCRIPTION MANAGEMENT
@@ -485,6 +467,12 @@ export class SubscriptionsService {
     tenantId: number,
     dto: ChangeSubscriptionDto,
     userId: number,
+    paymentData?: {
+      paymentId: number;
+      paymentMethodId: number;
+      offerId?: number;
+      discountAmount?: number;
+    },
   ) {
     try {
       await this.getPlanById(dto.planId);
@@ -523,6 +511,77 @@ export class SubscriptionsService {
         },
       );
 
+      // Reset permissions based on new plan and get permission diff
+      let permissionData = null;
+      try {
+        const permResult: any = await this.sqlService.execute(
+          'sp_ResetTenantPermissionsOnPlanChange',
+          {
+            tenantId,
+            oldPlanId: currentPlanId,
+            newPlanId: dto.planId,
+            userId,
+          },
+        );
+        permissionData = permResult[0];
+        this.logger.log(
+          `Permissions reset for tenant ${tenantId} after plan change`,
+        );
+      } catch (permError) {
+        this.logger.error(
+          'Failed to reset permissions after plan change:',
+          permError,
+        );
+        // Don't fail the subscription change if permission reset fails
+      }
+
+      // Update subscription history with payment details and permissions
+      const updateFields: string[] = [];
+      const updateParams: any = { tenantId, planId: dto.planId };
+
+      if (paymentData) {
+        updateFields.push('payment_id = @paymentId');
+        updateParams.paymentId = paymentData.paymentId;
+
+        if (paymentData.offerId) {
+          updateFields.push('offer_id = @offerId');
+          updateParams.offerId = paymentData.offerId;
+        }
+
+        if (paymentData.discountAmount) {
+          updateFields.push('discount_amount = @discountAmount');
+          updateParams.discountAmount = paymentData.discountAmount;
+        }
+      }
+
+      if (permissionData) {
+        updateFields.push('previous_permissions = @previousPermissions');
+        updateFields.push('new_permissions = @newPermissions');
+        updateParams.previousPermissions = (permissionData as any).previous_permissions;
+        updateParams.newPermissions = (permissionData as any).new_permissions;
+      }
+
+      if (updateFields.length > 0) {
+        await this.sqlService.query(
+          `UPDATE subscription_history
+           SET ${updateFields.join(', ')}
+           WHERE tenant_id = @tenantId
+             AND to_plan_id = @planId
+             AND created_at = (SELECT MAX(created_at) FROM subscription_history WHERE tenant_id = @tenantId)`,
+          updateParams,
+        );
+      }
+
+      // Update tenant's default payment method if provided
+      if (paymentData?.paymentMethodId) {
+        await this.sqlService.query(
+          `UPDATE payment_methods SET is_default = 0 WHERE tenant_id = @tenantId;
+           UPDATE payment_methods SET is_default = 1, last_used_at = GETUTCDATE() 
+           WHERE id = @paymentMethodId AND tenant_id = @tenantId`,
+          { tenantId, paymentMethodId: paymentData.paymentMethodId },
+        );
+      }
+
       // ✅ Send payment success email
       try {
         const newPlan = await this.getPlanById(dto.planId);
@@ -556,6 +615,8 @@ export class SubscriptionsService {
           newPlanId: dto.planId,
           billingCycle: dto.billingCycle,
           changeType,
+          permissionsReset: true,
+          paymentId: paymentData?.paymentId,
         },
         severity: 'high',
       });
@@ -702,6 +763,244 @@ export class SubscriptionsService {
     } catch (error) {
       this.logger.error(
         `Failed to get subscription history for tenant ${tenantId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Save payment method for auto-renewal
+   */
+  async savePaymentMethod(
+    tenantId: number,
+    userId: number,
+    dto: {
+      methodType: string;
+      provider: string;
+      providerCustomerId: string;
+      providerPaymentMethodId: string;
+      cardLastFour?: string;
+      cardBrand?: string;
+      cardExpMonth?: number;
+      cardExpYear?: number;
+      cardHolderName?: string;
+      billingAddress?: any;
+      isDefault?: boolean;
+      autoRenewEnabled?: boolean;
+    },
+  ) {
+    try {
+      const result: any = await this.sqlService.query(
+        `INSERT INTO payment_methods (
+          tenant_id, user_id, method_type, provider,
+          provider_customer_id, provider_payment_method_id,
+          card_last_four, card_brand, card_exp_month, card_exp_year,
+          card_holder_name, billing_address, currency,
+          is_default, is_verified, verified_at, auto_renew_enabled,
+          created_by, created_at
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @tenantId, @userId, @methodType, @provider,
+          @providerCustomerId, @providerPaymentMethodId,
+          @cardLastFour, @cardBrand, @cardExpMonth, @cardExpYear,
+          @cardHolderName, @billingAddress, @currency,
+          @isDefault, 1, GETUTCDATE(), @autoRenewEnabled,
+          @userId, GETUTCDATE()
+        )`,
+        {
+          tenantId,
+          userId,
+          methodType: dto.methodType,
+          provider: dto.provider,
+          providerCustomerId: dto.providerCustomerId,
+          providerPaymentMethodId: dto.providerPaymentMethodId,
+          cardLastFour: dto.cardLastFour || null,
+          cardBrand: dto.cardBrand || null,
+          cardExpMonth: dto.cardExpMonth || null,
+          cardExpYear: dto.cardExpYear || null,
+          cardHolderName: dto.cardHolderName || null,
+          billingAddress: dto.billingAddress
+            ? JSON.stringify(dto.billingAddress)
+            : null,
+          currency: 'USD',
+          isDefault: dto.isDefault || false,
+          autoRenewEnabled: dto.autoRenewEnabled || false,
+        },
+      );
+
+      // If set as default, unset other defaults
+      if (dto.isDefault) {
+        await this.sqlService.query(
+          `UPDATE payment_methods SET is_default = 0 
+           WHERE tenant_id = @tenantId AND id != @paymentMethodId`,
+          { tenantId, paymentMethodId: result[0].id },
+        );
+      }
+
+      await this.auditLogger.log({
+        tenantId,
+        userId,
+        entityType: 'payment_methods',
+        entityId: result[0].id,
+        actionType: 'CREATE',
+        newValues: {
+          methodType: dto.methodType,
+          cardLastFour: dto.cardLastFour,
+          autoRenewEnabled: dto.autoRenewEnabled,
+        },
+        severity: 'high',
+      });
+
+      return {
+        success: true,
+        data: result[0],
+        message: 'Payment method saved successfully',
+      };
+    } catch (error) {
+      this.logger.error('Failed to save payment method:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get tenant payment methods
+   */
+  async getPaymentMethods(tenantId: number) {
+    try {
+      const result: any = await this.sqlService.query(
+        `SELECT 
+          id, method_type, provider, card_last_four, card_brand,
+          card_exp_month, card_exp_year, card_holder_name,
+          is_default, is_verified, auto_renew_enabled,
+          last_used_at, created_at
+         FROM payment_methods
+         WHERE tenant_id = @tenantId
+         ORDER BY is_default DESC, created_at DESC`,
+        { tenantId },
+      );
+
+      return {
+        success: true,
+        data: result || [],
+      };
+    } catch (error) {
+      this.logger.error('Failed to get payment methods:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete payment method
+   */
+  async deletePaymentMethod(
+    tenantId: number,
+    paymentMethodId: number,
+    userId: number,
+  ) {
+    try {
+      const result: any = await this.sqlService.query(
+        `DELETE FROM payment_methods
+         OUTPUT DELETED.*
+         WHERE id = @paymentMethodId AND tenant_id = @tenantId`,
+        { paymentMethodId, tenantId },
+      );
+
+      if (result.length === 0) {
+        throw new NotFoundException('Payment method not found');
+      }
+
+      await this.auditLogger.log({
+        tenantId,
+        userId,
+        entityType: 'payment_methods',
+        entityId: paymentMethodId,
+        actionType: 'DELETE',
+        severity: 'medium',
+      });
+
+      return {
+        success: true,
+        message: 'Payment method deleted successfully',
+      };
+    } catch (error) {
+      this.logger.error('Failed to delete payment method:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get permission differences from subscription history
+   */
+  async getPermissionsDiff(historyId: number) {
+    try {
+      const result: any = await this.sqlService.query(
+        `SELECT 
+          id,
+          tenant_id,
+          from_plan_id,
+          to_plan_id,
+          change_type,
+          previous_permissions,
+          new_permissions,
+          created_at
+         FROM subscription_history
+         WHERE id = @historyId`,
+        { historyId },
+      );
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException('Subscription history not found');
+      }
+
+      const history = result[0];
+      const previousPerms = history.previous_permissions
+        ? JSON.parse(history.previous_permissions)
+        : [];
+      const newPerms = history.new_permissions
+        ? JSON.parse(history.new_permissions)
+        : [];
+
+      // Calculate differences
+      const previousKeys = new Set(
+        previousPerms.map((p: any) => p.permission_key),
+      );
+      const newKeys = new Set(newPerms.map((p: any) => p.permission_key));
+
+      const added = newPerms.filter(
+        (p: any) => !previousKeys.has(p.permission_key),
+      );
+      const removed = previousPerms.filter(
+        (p: any) => !newKeys.has(p.permission_key),
+      );
+      const unchanged = newPerms.filter((p: any) =>
+        previousKeys.has(p.permission_key),
+      );
+
+      return {
+        success: true,
+        data: {
+          historyId,
+          changeType: history.change_type,
+          changedAt: history.created_at,
+          summary: {
+            previousCount: previousPerms.length,
+            newCount: newPerms.length,
+            addedCount: added.length,
+            removedCount: removed.length,
+            unchangedCount: unchanged.length,
+          },
+          permissions: {
+            added,
+            removed,
+            unchanged,
+          },
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to get permissions diff for history ${historyId}:`,
         error,
       );
       throw error;

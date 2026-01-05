@@ -67,6 +67,18 @@ export class CreateAgencyDto {
   industry?: string;
 
   @IsOptional()
+  @IsString()
+  websiteUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  companySize?: string;
+
+  @IsOptional()
   metadata?: Record<string, any>;
 }
 
@@ -96,6 +108,10 @@ export class CreateBrandDto {
   industry?: string;
 
   @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
   metadata?: Record<string, any>;
 }
 
@@ -119,6 +135,10 @@ export class CreateCreatorDto {
   @IsOptional()
   @IsString()
   bio?: string;
+
+  @IsOptional()
+  @IsString()
+  location?: string;
 
   @IsOptional()
   metadata?: Record<string, any>;

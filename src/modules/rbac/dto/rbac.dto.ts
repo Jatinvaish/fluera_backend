@@ -31,6 +31,30 @@ export class CreateRoleDto {
   hierarchyLevel?: number = 0;
 }
 
+export class CloneRoleDto {
+  @IsNumber()
+  @Type(() => Number)
+  sourceRoleId: number;
+
+  @IsString()
+  newName: string;
+
+  @IsString()
+  @IsOptional()
+  newDisplayName?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  copyPermissions?: boolean = true;
+
+  @IsBoolean()
+  @IsOptional()
+  copyLimits?: boolean = false;
+}
 export class UpdateRoleDto {
   @IsString()
   @IsOptional()
@@ -112,7 +136,6 @@ export class ListPermissionsDto {
   @IsOptional()
   @IsEnum(['system', 'custom', 'all'])
   scope?: 'system' | 'custom' | 'all' = 'all';
- 
 
   @IsOptional()
   @IsInt()
@@ -124,6 +147,18 @@ export class ListPermissionsDto {
   @IsInt()
   @Min(1)
   page?: number = 1;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
+
+  @IsOptional()
+  @IsEnum(['ASC', 'DESC'])
+  sortOrder?: 'ASC' | 'DESC';
 }
 
 export class GetPermissionDto {

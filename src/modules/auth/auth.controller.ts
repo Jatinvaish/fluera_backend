@@ -211,7 +211,7 @@ export class AuthController {
       email: result.data.user.email,
       userType: result.data.user.userType,
       tenantId: parseInt(result.data.tenant.id),
-      onboardingRequired: false, // ✅ CRITICAL: Set to false
+      onboardingRequired: false,
     });
 
     // ✅ Create session
@@ -228,11 +228,46 @@ export class AuthController {
       user: {
         ...result.data.user,
         tenantId: result.data.tenant.id,
-        onboardingRequired: false, // ✅ Explicitly set
+        onboardingRequired: false,
         onboardingCompleted: true,
       },
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
+    };
+  }
+
+  @Post('invitation/accept-existing')
+  @Public()
+  async acceptInvitationExisting(@Body() dto: { token: string; password: string }) {
+    console.log('🚀 ~ AuthController ~ acceptInvitationExisting ~ dto:', dto);
+    
+    // Get invitation details
+    const invitation = await this.invitationService.getInvitationByToken(dto.token);
+    
+    // Verify user credentials
+    const loginResult = await this.authService.login(
+      { email: invitation.invitee_email, password: dto.password },
+      {},
+    );
+
+    // Accept invitation (add user to tenant)
+    const result = await this.invitationService.acceptInvitation(
+      dto.token,
+      dto.password,
+      {},
+    );
+
+    return {
+      success: true,
+      message: 'Invitation accepted successfully',
+      user: {
+        ...loginResult.user,
+        tenantId: result.data.tenant.id,
+        onboardingRequired: false,
+        onboardingCompleted: true,
+      },
+      accessToken: loginResult.accessToken,
+      refreshToken: loginResult.refreshToken,
     };
   }
   @Get('invitation/details')
@@ -267,6 +302,7 @@ export class AuthController {
           role_display_name: details.role_display_name,
           invitation_message: details.invitation_message,
           expires_at: details.expires_at,
+          user_exists: details.user_exists || false,
         },
       };
     } catch (error) {
@@ -293,6 +329,61 @@ export class AuthController {
       userId,
       tenantId,
     );
+  }
+
+  @Post('switch-tenant')
+  @HttpCode(HttpStatus.OK)
+  async switchTenant(
+    @Body() dto: { tenantId: number },
+    @CurrentUser('id') userId: number,
+    @CurrentUser() currentUser: any,
+  ) {
+    // Verify user has access to this tenant
+    const tenantAccess = await this.authService['sqlService'].query(
+      `SELECT tm.id, tm.tenant_id, tm.role_id, t.name as tenant_name
+       FROM tenant_members tm
+       JOIN tenants t ON tm.tenant_id = t.id
+       WHERE tm.user_id = @userId AND tm.tenant_id = @tenantId AND tm.is_active = 1`,
+      { userId, tenantId: dto.tenantId },
+    );
+
+    if (tenantAccess.length === 0) {
+      throw new BadRequestException('You do not have access to this tenant');
+    }
+
+    // Generate new tokens with new tenant context
+    const tokens = await this.authService['generateTokens']({
+      id: userId,
+      email: currentUser.email,
+      userType: currentUser.userType,
+      tenantId: dto.tenantId,
+      onboardingRequired: false,
+    });
+
+    // Create new session with new tenant
+    await this.authService['createSession'](
+      userId,
+      tokens.refreshToken,
+      undefined,
+      dto.tenantId,
+    );
+
+    return {
+      success: true,
+      message: 'Tenant switched successfully',
+      user: {
+        id: currentUser.id,
+        email: currentUser.email,
+        firstName: currentUser.firstName,
+        lastName: currentUser.lastName,
+        userType: currentUser.userType,
+        tenantId: dto.tenantId.toString(),
+        onboardingRequired: false,
+        onboardingCompleted: true,
+      },
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
   // ============================================
   // GOOGLE OAUTH FLOW

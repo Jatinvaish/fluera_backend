@@ -1,7 +1,6 @@
 // src/modules/message-system/chat-notification.service.ts
-import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, Logger,   } from '@nestjs/common';
 import { SqlServerService } from 'src/core/database';
-import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import type { ChatGateway } from './chat.gateway';
 
@@ -22,7 +21,6 @@ export class ChatNotificationService {
 
   constructor(
     private sqlService: SqlServerService,
-    private configService: ConfigService,
     private moduleRef: ModuleRef, // ✅ ADD: For lazy gateway access
   ) {}
 

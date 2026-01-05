@@ -6,7 +6,6 @@ import { CurrentUser, TenantId, Unencrypted } from '../../core/decorators';
 import {
   CreateRoleDto,
   UpdateRoleDto,
-  ListRolesDto,
   GetRoleDto,
   DeleteRoleDto,
   CreatePermissionDto,
@@ -36,6 +35,7 @@ import {
   CreateRoleLimitDto,
   UpdateRoleLimitDto,
   GetRoleLimitsDto,
+  CloneRoleDto,
 } from './dto/rbac.dto';
 
 @Controller('rbac')
@@ -422,5 +422,26 @@ export class RbacController {
   async getRoleLimits(@Body() dto: GetRoleLimitsDto) {
     return this.rbacService.getRoleLimits(Number(dto.roleId));
   }
-  
+  @Post('roles/clone')
+  @Permissions('roles:create')
+  async cloneRole(
+    @Body() dto: CloneRoleDto,
+    @CurrentUser('id') userId: number,
+    @CurrentUser('userType') userType: string,
+    @TenantId() tenantId: number
+  ) {
+    return this.rbacService.cloneRole(
+      dto.sourceRoleId,
+      dto.newName,
+      userId,
+      tenantId,
+      userType,
+      {
+        newDisplayName: dto.newDisplayName,
+        description: dto.description,
+        copyPermissions: dto.copyPermissions,
+        copyLimits: dto.copyLimits,
+      }
+    );
+  }
 }

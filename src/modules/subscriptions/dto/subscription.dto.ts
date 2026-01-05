@@ -1,14 +1,18 @@
 // src/modules/subscriptions/dto/subscription.dto.ts
-import { 
-  IsString, 
-  IsOptional, 
-  IsNumber, 
-  IsBoolean, 
-  IsEnum, 
+import { Type } from 'class-transformer';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsEnum,
   IsObject,
   IsDateString,
   Min,
-  IsInt
+  IsInt,
+  IsNotEmpty,
+  ArrayMinSize,
+  IsArray
 } from 'class-validator';
 
 export enum PlanType {
@@ -68,6 +72,10 @@ export class CreatePlanDto {
   @IsNumber()
   @IsOptional()
   priceMonthly?: number;
+
+  @IsNumber()
+  @IsOptional()
+  priceQuarterly?: number;
 
   @IsNumber()
   @IsOptional()
@@ -160,6 +168,10 @@ export class UpdatePlanDto {
   @IsNumber()
   @IsOptional()
   priceMonthly?: number;
+
+  @IsNumber()
+  @IsOptional()
+  priceQuarterly?: number;
 
   @IsNumber()
   @IsOptional()
@@ -356,4 +368,297 @@ export class ListPlansQueryDto {
   @IsBoolean()
   @IsOptional()
   includeInactive?: boolean = false;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  page?: number = 1;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  pageSize?: number = 10;
+
+  @IsString()
+  @IsOptional()
+  sortBy?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsEnum(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'asc';
+}
+
+// ============================================
+// CREATE OFFER
+// ============================================
+export enum OfferType {
+  PERCENTAGE = 'percentage',
+  FIXED_AMOUNT = 'fixed_amount',
+  TRIAL_EXTENSION = 'trial_extension'
+}
+
+export class CreateOfferDto {
+  @IsString()
+  offerCode: string;
+
+  @IsString()
+  offerName: string;
+
+  @IsEnum(OfferType)
+  offerType: OfferType;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  discountPercent?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  discountAmount?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  trialExtensionDays?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  minPurchaseAmount?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  maxDiscountAmount?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  usageLimit?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  usagePerUserLimit?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isFestivalOffer?: boolean = false;
+
+  @IsString()
+  @IsOptional()
+  festivalName?: string;
+
+  @IsDateString()
+  startDate: string;
+
+  @IsDateString()
+  endDate: string;
+
+  @IsOptional()
+  applicablePlans?: number[];
+
+  @IsOptional()
+  applicableBillingCycles?: string[];
+
+  @IsOptional()
+  applicableCycles?: string[];
+}
+
+export class UpdateOfferDto {
+  @IsString()
+  @IsOptional()
+  offerName?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  discountPercent?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  discountAmount?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  usageLimit?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
+  @IsDateString()
+  @IsOptional()
+  startDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  endDate?: string;
+}
+
+
+// ==================== Subscription Features DTOs ====================
+
+export class CreateSubscriptionFeatureDto {
+  @IsNotEmpty()
+  @IsInt()
+  subscription_id: number;
+
+  @IsOptional()
+  @IsNumber()
+  feature_price?: number;
+
+  @IsOptional()
+  @IsString()
+  restricted_to?: string;
+
+  @IsNotEmpty()
+  @IsString()
+  name: string;
+}
+
+export class UpdateSubscriptionFeatureDto {
+  @IsNotEmpty()
+  @IsInt()
+  id: number;
+
+  @IsOptional()
+  @IsInt()
+  subscription_id?: number;
+
+  @IsOptional()
+  @IsNumber()
+  feature_price?: number;
+
+  @IsOptional()
+  @IsString()
+  restricted_to?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
+export class ListSubscriptionFeaturesDto {
+  @IsOptional()
+  @IsInt()
+  subscription_id?: number;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  limit?: number = 50;
+
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
+
+  @IsOptional()
+  @IsEnum(['ASC', 'DESC'])
+  sortOrder?: 'ASC' | 'DESC';
+}
+
+// ==================== Subscription Feature Permissions DTOs ====================
+
+export class CreateSubscriptionFeaturePermissionDto {
+  @IsNotEmpty()
+  @IsInt()
+  subscription_id: number;
+
+  @IsNotEmpty()
+  @IsInt()
+  feature_id: number;
+
+  @IsNotEmpty()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsInt({ each: true })
+  @Type(() => Number)
+  permission_ids: number[];
+
+  @IsOptional()
+  @IsNumber()
+  permission_price?: number;
+
+  @IsOptional()
+  @IsString()
+  restricted_to?: string;
+ 
+}
+
+// update-subscription-feature-permission.dto.ts
+export class UpdateSubscriptionFeaturePermissionDto {
+  @IsNotEmpty()
+  @IsInt()
+  id: number;
+
+  @IsOptional()
+  @IsInt()
+  subscription_id?: number;
+
+  @IsOptional()
+  @IsInt()
+  feature_id?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsInt({ each: true })
+  @Type(() => Number)
+  permission_ids?: number[];
+
+  @IsOptional()
+  @IsNumber()
+  permission_price?: number;
+
+  @IsOptional()
+  @IsString()
+  restricted_to?: string;
+ 
+}
+
+
+export class ListSubscriptionFeaturePermissionsDto {
+  @IsOptional()
+  @IsInt()
+  subscription_id?: number;
+
+  @IsOptional()
+  @IsInt()
+  feature_id?: number;
+
+  @IsOptional()
+  @IsInt()
+  permission_id?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  limit?: number = 50;
+
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
+
+  @IsOptional()
+  @IsEnum(['ASC', 'DESC'])
+  sortOrder?: 'ASC' | 'DESC';
 }

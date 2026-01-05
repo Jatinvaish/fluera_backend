@@ -178,6 +178,9 @@ export class ChatGateway
     userIds.forEach(userId => this.sendNotification(userId, notification));
   }
   // ==================== SEND MESSAGE ====================
+
+  // In chat.gateway.ts - REPLACE the send_message handler with this SIMPLE FIX:
+
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: AuthSocket,
@@ -204,69 +207,82 @@ export class ChatGateway
       });
 
       // Get full message with attachments and signed URLs
-      console.log('🔵 [WS-GATEWAY] About to call getMessage for:', message.id);
       const fullMessage = await this.chatService.getMessage(message.id);
-      console.log('🔵 [WS-GATEWAY] getMessage returned');
+
       console.log('🔵 [WS-GATEWAY] Full message fetched:', {
         messageId: fullMessage.id,
         hasAttachments: !!fullMessage.attachments,
-        attachmentCount: fullMessage.attachments?.length || 0,
-        attachments: fullMessage.attachments?.map(a => ({
-          id: a.id,
-          file_name: a.file_name,
-          file_url: a.file_url,
-          hasUrl: !!(a as any).url,
-          url: (a as any).url
-        }))
+        attachmentCount: fullMessage.attachments?.length || 0
       });
 
-      // Generate signed URLs for attachments if present
-      if (fullMessage.attachments && fullMessage.attachments.length > 0) {
-        console.log('🔵 [WS-GATEWAY] Attachments exist, checking if signed URLs already present...');
-        console.log('🔵 [WS-GATEWAY] First attachment:', fullMessage.attachments[0]);
+      // ✅ ADD MISSING FIELDS to match getMessages API response
+      const userIdStr = client.userId.toString();
 
-        // Check if signed URLs already exist from getMessage
-        const hasSignedUrls = fullMessage.attachments.every(a => !!(a as any).url);
-        console.log('🔵 [WS-GATEWAY] Has signed URLs from getMessage:', hasSignedUrls);
+      const enrichedMessage = {
+        ...fullMessage,
+        // ✅ Fields from getMessages that getMessage doesn't include:
+        am_i_mentioned: fullMessage.mentioned_user_ids?.includes(userIdStr) ? 1 : 0,
+        is_read_by_me: fullMessage.read_by_user_ids?.includes(userIdStr) || false,
+        read_count: fullMessage.read_by_user_ids
+          ? fullMessage.read_by_user_ids.split(',').filter(id => id.trim()).length
+          : 0,
+        delivered_count: fullMessage.delivered_to_user_ids
+          ? fullMessage.delivered_to_user_ids.split(',').filter(id => id.trim()).length
+          : 0,
 
-        if (!hasSignedUrls) {
-          console.log('🔵 [WS-GATEWAY] Generating signed URLs for attachments...');
-          const r2Service = this.chatService['r2Service'];
-          fullMessage.attachments = await Promise.all(
-            fullMessage.attachments.map(async (att: any) => {
-              if (att.file_url) {
-                const key = att.file_url.replace(/^https?:\/\/[^\/]+\//, '');
-                console.log('🔵 [WS-GATEWAY] Generating signed URL for key:', key);
-                const signedUrl = await r2Service.getSignedUrl(key);
-                console.log('✅ [WS-GATEWAY] Signed URL generated:', signedUrl);
-                return { ...att, url: signedUrl };
-              }
-              return att;
-            })
+        // ✅ Reply fields (if this is a reply)
+        reply_message_id: fullMessage.reply_to_message_id || null,
+        reply_message_content: null,
+        reply_sender_user_id: null,
+        reply_sender_first_name: null,
+        reply_sender_last_name: null,
+        reply_sender_avatar_url: null,
+        reply_sent_at: null,
+        reply_is_deleted: null,
+        reply_has_attachments: null,
+
+        // Ensure sender info is present
+        first_name: fullMessage.sender_first_name || client.user.firstName,
+        last_name: fullMessage.sender_last_name || client.user.lastName,
+        avatar_url: fullMessage.sender_avatar_url || client.user.avatarUrl,
+      };
+
+      // ✅ If this is a reply, fetch the parent message details
+      console.log("🚀 ~ ChatGateway ~ handleSendMessage ~ data:", data)
+      if (data.replyToMessageId) {
+        try {
+          const replyMessage = await this.chatService['sqlService'].query(
+            `SELECT m.id, content, sender_user_id, sent_at, is_deleted, has_attachments,
+                  u.first_name, u.last_name, u.avatar_url
+           FROM messages m
+           INNER JOIN users u ON m.sender_user_id = u.id
+           WHERE m.id = @replyToMessageId`,
+            { replyToMessageId: data.replyToMessageId }
           );
+
+          if (replyMessage.length > 0) {
+            const reply = replyMessage[0];
+            enrichedMessage.reply_message_id = reply.id;
+            enrichedMessage.reply_message_content = reply.content;
+            enrichedMessage.reply_sender_user_id = reply.sender_user_id;
+            enrichedMessage.reply_sender_first_name = reply.first_name;
+            enrichedMessage.reply_sender_last_name = reply.last_name;
+            enrichedMessage.reply_sender_avatar_url = reply.avatar_url;
+            enrichedMessage.reply_sent_at = reply.sent_at;
+            enrichedMessage.reply_is_deleted = reply.is_deleted;
+            enrichedMessage.reply_has_attachments = reply.has_attachments;
+          }
+        } catch (error) {
+          console.error('❌ Failed to fetch reply message:', error);
         }
-        console.log('✅ [WS-GATEWAY] All signed URLs ready:', fullMessage.attachments.map(a => ({ id: a.id, url: (a as any).url })));
       }
 
       const broadcastPayload = {
         event: 'new_message',
-        message: {
-          ...fullMessage,
-          sender_first_name: fullMessage.sender_first_name || client.user.firstName,
-          sender_last_name: fullMessage.sender_last_name || client.user.lastName,
-          sender_avatar_url: fullMessage.sender_avatar_url || client.user.avatarUrl,
-        },
+        message: enrichedMessage,
       };
 
-      console.log('🔵 [WS-GATEWAY] Broadcasting payload:', {
-        event: broadcastPayload.event,
-        messageId: broadcastPayload.message.id,
-        attachments: broadcastPayload.message.attachments?.map(a => ({
-          id: a.id,
-          file_url: a.file_url,
-          url: (a as any).url
-        }))
-      });
+      console.log('🔵 [WS-GATEWAY] Broadcasting payload with all fields');
 
       await this.broadcastToChannel(data.channelId, broadcastPayload);
 
@@ -277,7 +293,7 @@ export class ChatGateway
             channelId: data.channelId,
             messageId: message.id,
             mentionedBy: client.userId,
-            mentionedByName: `${client.user.firstName} ${client.user.lastName}`,
+            mentionedByName: `${enrichedMessage.first_name} ${enrichedMessage.last_name}`,
             messagePreview: data.content.substring(0, 100),
             timestamp: new Date().toISOString(),
           });
@@ -382,6 +398,7 @@ export class ChatGateway
       );
       const payload = Array.isArray(data) ? data[0] : data;
       const userName = await this.chatService.getUserDisplayName(client.userId);
+      console.log("🚀 ~ ChatGateway ~ handleAddReaction ~ userName:", userName)
       this.logger.log(
         `⌨️ User ${client.userId} (${userName}) started typing in channel ${payload.channelId}`,
       );

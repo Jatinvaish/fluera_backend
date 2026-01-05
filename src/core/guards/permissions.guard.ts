@@ -1,13 +1,13 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RESOURCE_PERMISSION_KEY, ResourcePermissionConfig } from '../decorators/resource-permission.decorator';
-import { PermissionsService } from 'src/modules/permissions/resource-permission.service';
+import { RbacPermissionFilterService } from 'src/modules/rbac/rbac-permission-filter.service';
 
 @Injectable()
 export class ResourcePermissionGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
-    private permissionsService: PermissionsService,
+    private permissionsService: RbacPermissionFilterService,
   ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

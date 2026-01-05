@@ -195,69 +195,66 @@ export class InvitationService {
       );
     }
 
-    // ✅ Step 3: Check if email is already registered
+    // ✅ Step 3: Check if user already exists globally
     const existingUser = await this.sqlService.query(
-      `SELECT id FROM users WHERE email = @email`,
+      `SELECT id, email, first_name, last_name, user_type FROM users WHERE email = @email`,
       { email: invite.invitee_email },
     );
-    console.log(
-      '🚀 ~ InvitationService ~ acceptInvitation ~ existingUser:',
-      existingUser,
+
+    // ✅ Step 4: Check if user is already a member of this tenant
+    const existingMember = await this.sqlService.query(
+      `SELECT tm.id FROM tenant_members tm
+       JOIN users u ON tm.user_id = u.id
+       WHERE u.email = @email AND tm.tenant_id = @tenantId`,
+      { email: invite.invitee_email, tenantId: invite.tenant_id },
     );
 
-    if (existingUser.length > 0) {
+    if (existingMember.length > 0) {
       throw new BadRequestException(
-        'An account with this email already exists',
+        'You are already a member of this tenant',
       );
     }
 
-    //FOR TANENT WISE USER (SAME ID CAN BE USE)
-    // ✅ Step 3: Check if email is already registered with this tenant
-    // const existingUser = await this.sqlService.query(
-    //   `SELECT u.id FROM users u
-    //    JOIN tenant_members tm ON u.id = tm.user_id
-    //    WHERE u.email = @email AND tm.tenant_id = @tenantId`,
-    //   { email: invite.invitee_email, tenantId: invite.tenant_id },
-    // );
-
-    // if (existingUser.length > 0) {
-    //   throw new BadRequestException(
-    //     'An account with this email already exists in this tenant',
-    //   );
-    // }
-
-    // ✅ Step 4: Hash password
-    const passwordHash = await this.hashingService.hashPassword(password);
-
-    // ✅ Step 5: Execute transaction to create user and assign role
+    // ✅ Step 5: Execute transaction to create/update user and assign role
     return this.sqlService.transaction(async (transaction) => {
-      // Create user account
-      const userResult = await transaction
-        .request()
-        .input('email', invite.invitee_email)
-        .input('passwordHash', passwordHash)
-        .input(
-          'firstName',
-          userData.firstName || invite.invitee_name?.split(' ')[0] || 'User',
-        )
-        .input(
-          'lastName',
-          userData.lastName ||
-            invite.invitee_name?.split(' ').slice(1).join(' ') ||
-            '',
-        )
-        .input('userType', invite.invitee_type || 'staff').query(`
-      INSERT INTO users (
-        email, password_hash, first_name, last_name,
-        user_type, status, email_verified_at, 
-        onboarding_completed_at, created_at
-      ) OUTPUT INSERTED.*
-      VALUES (@email, @passwordHash, @firstName, @lastName,
-              @userType, 'active', GETUTCDATE(), 
-              GETUTCDATE(), GETUTCDATE())
-    `);
+      let user;
 
-      const user = userResult.recordset[0];
+      if (existingUser.length > 0) {
+        // ✅ User exists - just use existing user
+        user = existingUser[0];
+        console.log('✅ Using existing user:', user.email);
+      } else {
+        // ✅ New user - create account
+        const passwordHash = await this.hashingService.hashPassword(password);
+        
+        const userResult = await transaction
+          .request()
+          .input('email', invite.invitee_email)
+          .input('passwordHash', passwordHash)
+          .input(
+            'firstName',
+            userData.firstName || invite.invitee_name?.split(' ')[0] || 'User',
+          )
+          .input(
+            'lastName',
+            userData.lastName ||
+              invite.invitee_name?.split(' ').slice(1).join(' ') ||
+              '',
+          )
+          .input('userType', invite.invitee_type || 'staff').query(`
+        INSERT INTO users (
+          email, password_hash, first_name, last_name,
+          user_type, status, email_verified_at, 
+          onboarding_completed_at, created_at
+        ) OUTPUT INSERTED.*
+        VALUES (@email, @passwordHash, @firstName, @lastName,
+                @userType, 'active', GETUTCDATE(), 
+                GETUTCDATE(), GETUTCDATE())
+      `);
+
+        user = userResult.recordset[0];
+        console.log('✅ Created new user:', user.email);
+      }
 
       // ✅ Assign role to user via RBAC system
       await transaction
@@ -323,7 +320,7 @@ export class InvitationService {
 
   async getInvitationByToken(token: string) {
     const result = await this.sqlService.query(
-      `SELECT i.*, t.name as tenant_name, r.name as role_name
+      `SELECT i.*, t.name as tenant_name, r.name as role_name, r.display_name as role_display_name
        FROM invitations i
        JOIN tenants t ON i.tenant_id = t.id
        LEFT JOIN roles r ON i.role_id = r.id
@@ -335,7 +332,18 @@ export class InvitationService {
       throw new NotFoundException('Invitation not found');
     }
 
-    return result[0];
+    const invitation = result[0];
+
+    // Check if user already exists
+    const existingUser = await this.sqlService.query(
+      `SELECT id FROM users WHERE email = @email`,
+      { email: invitation.invitee_email },
+    );
+
+    return {
+      ...invitation,
+      user_exists: existingUser.length > 0,
+    };
   }
 
   async listInvitations(tenantId: number, filters: any = {}) {

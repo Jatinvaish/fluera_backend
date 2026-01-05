@@ -15,7 +15,7 @@ export class RbacService {
   constructor(
     private sqlService: SqlServerService,
     private filterService: RbacPermissionFilterService,
-  ) {}
+  ) { }
 
   // ============================================
   // ROLES MANAGEMENT
@@ -28,6 +28,9 @@ export class RbacService {
       page: filters.page || 1,
       limit: filters.limit || 50,
       userType,
+      sortBy: filters.sortBy || 'created_at',
+      sortOrder: filters.sortOrder || 'desc',
+      search: filters.search || null,
     });
 
     return {
@@ -215,6 +218,9 @@ export class RbacService {
       scope: filters.scope || 'all',
       page: filters.page || 1,
       limit: filters.limit || 50,
+      sortBy: filters.sortBy || 'created_at',
+      sortOrder: filters.sortOrder || 'desc',
+      search: filters.search || null,
     });
 
     return {
@@ -306,7 +312,7 @@ export class RbacService {
     let permissions: any[] = [];
 
     if (userType === 'owner' || userType === 'super_admin') {
-      // Super admin sees all permissions
+      // Show permissions from tenant's subscription plan
       permissions = await this.sqlService.query(
         `SELECT 
         p.id as permission_id,
@@ -323,7 +329,7 @@ export class RbacService {
         { roleId },
       );
     } else {
-      // Regular users see only permissions they themselves have
+      // Regular users see intersection of subscription permissions and their role permissions
       permissions = await this.sqlService.query(
         `SELECT DISTINCT
         p.id as permission_id,
@@ -335,13 +341,19 @@ export class RbacService {
         p.is_system_permission,
         CASE WHEN target_rp.permission_id IS NOT NULL THEN 1 ELSE 0 END as is_checked
        FROM permissions p
+       INNER JOIN subscription_feature_permissions sfp ON p.id = sfp.permission_id
+       INNER JOIN subscription_features sf ON sfp.feature_id = sf.id
+       INNER JOIN tenants t ON sf.subscription_id = t.subscription_plan_id
        INNER JOIN role_permissions user_rp ON p.id = user_rp.permission_id
        INNER JOIN user_roles ur ON user_rp.role_id = ur.role_id
        LEFT JOIN role_permissions target_rp ON p.id = target_rp.permission_id AND target_rp.role_id = @roleId
-       WHERE ur.user_id = @userId 
+       WHERE t.id = @tenantId
+         AND ur.user_id = @userId 
          AND ur.is_active = 1
+         AND sfp.is_deleted = 0 
+         AND sf.is_deleted = 0
        ORDER BY p.category, p.resource, p.action`,
-        { roleId, userId },
+        { roleId, userId, tenantId },
       );
     }
 
@@ -354,9 +366,7 @@ export class RbacService {
         permissions_tree: grouped,
         summary: {
           total_permissions: permissions.length,
-          assigned_permissions: permissions.filter(
-            (p: any) => p.is_checked === 1,
-          ).length,
+          assigned_permissions: permissions.filter((p: any) => p.is_checked === 1).length,
           total_categories: grouped.length,
         },
       },
@@ -1555,4 +1565,143 @@ export class RbacService {
       message: 'Assignable permissions retrieved successfully',
     };
   }
+  async cloneRole(
+    sourceRoleId: number,
+    newName: string,
+    userId: number,
+    tenantId: number,
+    userType: string,
+    options: {
+      newDisplayName?: string;
+      description?: string;
+      copyPermissions?: boolean;
+      copyLimits?: boolean;
+    } = {}
+  ) {
+    // Validate source role
+    const sourceRole: any = await this.sqlService.query(
+      `SELECT * FROM roles WHERE id = @roleId`,
+      { roleId: sourceRoleId }
+    );
+
+    if (sourceRole.length === 0) {
+      throw new NotFoundException('Source role not found');
+    }
+
+    const source = sourceRole[0];
+
+    // Check if user can access source role
+    if (userType !== 'owner' && userType !== 'superadmin' && userType !== 'super_admin') {
+      if (source.tenant_id && Number(source.tenant_id) !== Number(tenantId)) {
+        throw new ForbiddenException('Cannot clone roles from other tenants');
+      }
+      if (source.is_system_role) {
+        throw new ForbiddenException('Cannot clone system roles unless you are a super admin');
+      }
+    }
+
+    // Check if new name already exists in tenant
+    const nameCheck: any = await this.sqlService.query(
+      `SELECT id FROM roles WHERE name = @name AND (tenant_id = @tenantId OR tenant_id IS NULL)`,
+      { name: newName, tenantId }
+    );
+
+    if (nameCheck.length > 0) {
+      throw new ConflictException(`Role with name '${newName}' already exists`);
+    }
+
+    // Create new role
+    const newRoleResult: any = await this.sqlService.query(
+      `INSERT INTO roles (
+        tenant_id, name, display_name, description, 
+        is_system_role, is_default, hierarchy_level, created_by
+      )
+      OUTPUT INSERTED.*
+      VALUES (
+        @tenantId, @name, @displayName, @description,
+        0, 0, @hierarchyLevel, @userId
+      )`,
+      {
+        tenantId: source.is_system_role ? null : tenantId,
+        name: newName,
+        displayName: options.newDisplayName || newName,
+        description: options.description || `Cloned from ${source.display_name}`,
+        hierarchyLevel: source.hierarchy_level,
+        userId,
+      }
+    );
+
+    const newRole = newRoleResult[0];
+
+    // Copy permissions if requested
+    let copiedPermissions = 0;
+    if (options.copyPermissions !== false) {
+      const permissions: any = await this.sqlService.query(
+        `SELECT permission_id FROM role_permissions WHERE role_id = @roleId`,
+        { roleId: sourceRoleId }
+      );
+
+      for (const perm of permissions) {
+        try {
+          await this.sqlService.query(
+            `INSERT INTO role_permissions (role_id, permission_id, created_by)
+             VALUES (@roleId, @permissionId, @userId)`,
+            {
+              roleId: newRole.id,
+              permissionId: perm.permission_id,
+              userId,
+            }
+          );
+          copiedPermissions++;
+        } catch (error) {
+          console.error('Error copying permission:', error);
+        }
+      }
+    }
+
+    // Copy limits if requested
+    let copiedLimits = 0;
+    if (options.copyLimits === true) {
+      const limits: any = await this.sqlService.query(
+        `SELECT limit_type, limit_value, reset_period
+         FROM role_limits WHERE role_id = @roleId`,
+        { roleId: sourceRoleId }
+      );
+
+      for (const limit of limits) {
+        try {
+          await this.sqlService.query(
+            `INSERT INTO role_limits (role_id, limit_type, limit_value, current_usage, reset_period, last_reset_at, created_by)
+             VALUES (@roleId, @limitType, @limitValue, 0, @resetPeriod, GETUTCDATE(), @userId)`,
+            {
+              roleId: newRole.id,
+              limitType: limit.limit_type,
+              limitValue: limit.limit_value,
+              resetPeriod: limit.reset_period,
+              userId,
+            }
+          );
+          copiedLimits++;
+        } catch (error) {
+          console.error('Error copying limit:', error);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        newRole,
+        sourceRole: {
+          id: source.id,
+          name: source.name,
+          display_name: source.display_name,
+        },
+        copiedPermissions,
+        copiedLimits,
+      },
+      message: `Role cloned successfully. ${copiedPermissions} permissions and ${copiedLimits} limits copied.`,
+    };
+  }
+
 }

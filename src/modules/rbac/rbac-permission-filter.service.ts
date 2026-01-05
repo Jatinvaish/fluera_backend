@@ -4,7 +4,7 @@ import { SqlServerService } from '../../core/database/sql-server.service';
 
 @Injectable()
 export class RbacPermissionFilterService {
-  constructor(private sqlService: SqlServerService) {}
+  constructor(private sqlService: SqlServerService) { }
 
   /**
    * ✅ Check if user is global admin
@@ -53,7 +53,7 @@ export class RbacPermissionFilterService {
 
     // Filter permissions by what user has
     const userPermSet = new Set(userPermissions);
-    
+
     return {
       ...permissionsTree,
       permissions_tree: permissionsTree.permissions_tree.map((category: any) => ({
@@ -115,11 +115,11 @@ export class RbacPermissionFilterService {
 
     // Filter to only permissions user has
     const userPermSet = new Set(userPermissions);
-    
+
     return changes.filter(change => {
       const perm = allPermissions.find(p => p.id === change.permissionId);
       if (!perm) return false;
-      
+
       return userPermSet.has(perm.permission_key);
     });
   }
@@ -152,5 +152,26 @@ export class RbacPermissionFilterService {
     );
 
     return result;
+  }
+  async checkResourcePermission(
+    userId: number,
+    tenantId: number,
+    resourceType: string,
+    resourceId: number,
+    permissionType: string,
+  ): Promise<boolean> {
+    const result = await this.sqlService.execute('sp_CheckResourcePermission', {
+      userId,
+      tenantId,
+      resourceType,
+      resourceId,
+      permissionType,
+    });
+
+    // SP returns 2 result sets: direct permissions and role-based permissions
+    const hasDirectPermission = result[0]?.has_permission > 0;
+    const hasRolePermission = result[1]?.has_role_permission > 0;
+
+    return hasDirectPermission || hasRolePermission;
   }
 }

@@ -34,25 +34,25 @@
   import { SystemEventsModule } from './modules/global-modules/system-events/system-events.module';
   import { RbacModule } from './modules/rbac/rbac.module';
   import { EmailModule } from './modules/email-templates/email.module';
-  import { PermissionsModule } from './modules/permissions/permissions.module';
   import { ChatModule } from './modules/message-system/chat.module';
 
   // Chat components
   import { ChatService } from './modules/message-system/chat.service';
   import { PresenceService } from './modules/message-system/presence.service';
-  import { ChatController } from './modules/message-system/chat.controller';
-  import { CollaborationController } from './modules/message-system/collaboration.controller';
 
   // Ultra-fast chat
 
   import { JwtService } from '@nestjs/jwt';
   import { ResourcePermissionGuard } from './core/guards/permissions.guard';
-  import { TenantsController } from './modules/tenants/tenant.controller';
   import { TenantsModule } from './modules/tenants/tenant.module';
   import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
   import { UsageTrackingMiddleware } from './core/middlewares/usage-tracking.middleware';
   import { ScheduleModule } from '@nestjs/schedule';
   import { FileUploadModule } from './common/file-upload.module';
+  import { ProfilesModule } from './modules/profiles/profiles.module';
+import { CollaborationModule } from './modules/collaboration/collaboration.module';
+import { SocialPlatformModule } from './modules/social-platforms/social-platform.module';
+import { CampaignModule } from './modules/campaign-tracking/campaign.module';
 
   @Module({
     imports: [
@@ -71,16 +71,19 @@
 
       // Features
       AuthModule,
-      PermissionsModule,
       SystemConfigModule,
       AuditLogsModule,
       SystemEventsModule,
+      CollaborationModule,
       RbacModule,
       EmailModule,
       ChatModule,
       TenantsModule, //(Assuming TenantsModule is imported elsewhere if needed)
       SubscriptionsModule,
       FileUploadModule,
+      ProfilesModule,
+      SocialPlatformModule,
+      CampaignModule,
     ],
 
     providers: [

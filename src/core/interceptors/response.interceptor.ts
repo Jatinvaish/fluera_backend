@@ -43,15 +43,24 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, any> {
       map((data) => {
         const statusCode = reply.statusCode || 200;
 
-        const apiResponse: ApiResponse<T> = {
+        // Preserve pagination and other metadata
+        const responseData = data?.data !== undefined ? data.data : data;
+        const pagination = data?.pagination;
+
+        const apiResponse: any = {
           success: true,
           statusCode,
           message: data?.message || 'Operation successful',
-          data: data?.data || data,
+          data: responseData,
           timestamp: new Date().toISOString(),
           correlationId: request['correlationId'] || 'unknown',
           path: request.url,
         };
+
+        // Add pagination if it exists
+        if (pagination) {
+          apiResponse.pagination = pagination;
+        }
 
         if (encryptionEnabled) {
           const jsonString = JSON.stringify(apiResponse);

@@ -49,7 +49,7 @@ export class AuthService {
     private redisService: RedisService,
     private auditLogger: AuditLoggerService,
     private emailService: EmailService,
-  ) {}
+  ) { }
 
   /**
    * Register new user with E2E encryption keys
@@ -210,7 +210,18 @@ export class AuthService {
       email,
       hasEncryptionKeys: !!userKey,
     });
-
+    await this.sqlService.query(
+      `UPDATE notifications
+       SET recipient_id = @userId,
+           updated_at = GETUTCDATE()
+       WHERE JSON_VALUE(data, '$.inviteeEmail') = @email
+         AND recipient_id IS NULL
+         AND event_type = 'agency_invitation_to_creator_for_join'`,
+      {
+        userId: user.id,
+        email: user.email
+      },
+    );
     const tokens = await this.generateTokens({
       id: user.id,
       email: user.email,
@@ -413,7 +424,23 @@ export class AuthService {
           deviceInfo?.userAgent,
         )
         .catch((err) => this.logger.error('Failed to log auth event', err));
-
+      const userEmail = user.email;
+      await this.sqlService.query(
+        `UPDATE notifications
+        SET recipient_id = @userId,
+            tenant_id = CASE 
+              WHEN @primaryTenant IS NOT NULL THEN @primaryTenant 
+              ELSE tenant_id 
+            END,
+            updated_at = GETUTCDATE()
+        WHERE JSON_VALUE(data, '$.inviteeEmail') = @userEmail
+     AND recipient_id IS NULL`,
+        {
+          userId: user.id,
+          userEmail,
+          primaryTenant: primaryTenant || null
+        },
+      );
       return {
         user: {
           id: user.id,
@@ -934,7 +961,6 @@ export class AuthService {
     return this.sqlService.transaction(async (transaction) => {
       const slug = this.generateSlug(dto.name);
 
-      // ✅ USE SP INSTEAD OF INLINE SQL
       const tenantResult = await this.sqlService.execute('sp_CreateTenant', {
         tenant_type: 'agency',
         name: dto.name,
@@ -946,35 +972,53 @@ export class AuthService {
       });
 
       const tenantId = tenantResult[0].id;
-      // ✅ ASSIGN DEFAULT FREE PLAN
+
       await this.assignDefaultFreePlan(tenantId, 'agency');
 
-      // Update user details
-      await transaction
-        .request()
-        .input('userId', userId)
-        .input('firstName', dto.firstName)
-        .input('lastName', dto.lastName)
-        .input('phone', dto.phone || null).query(`
-        UPDATE users 
+      await this.sqlService.query(
+        `INSERT INTO agency_profiles (
+          tenant_id, agency_name, website_url, industry_specialization, 
+          description, company_size
+        )
+        VALUES (
+          @tenantId, @agencyName, @websiteUrl, @industrySpecialization,
+          @description, @companySize
+        )`,
+        {
+          tenantId,
+          agencyName: dto.name,
+          websiteUrl: dto.websiteUrl || null,
+          industrySpecialization: dto.industry || null,
+          description: dto.description || null,
+          companySize: dto.companySize || null,
+        }
+      );
+
+      await this.sqlService.query(
+        `UPDATE users 
         SET first_name = @firstName,
             last_name = @lastName,
             phone = @phone,
             user_type = 'agency_admin',
             onboarding_completed_at = GETUTCDATE(),
             updated_at = GETUTCDATE()
-        WHERE id = @userId
-      `);
+        WHERE id = @userId`,
+        {
+          userId,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone || null,
+        }
+      );
 
-      // Get user email
-      const userEmail = await transaction
-        .request()
-        .input('userId', userId)
-        .query('SELECT email FROM users WHERE id = @userId');
+      const userEmail = await this.sqlService.query(
+        'SELECT email FROM users WHERE id = @userId',
+        { userId }
+      );
 
       const tokens = await this.generateTokens({
         id: userId,
-        email: userEmail.recordset[0].email,
+        email: userEmail[0].email,
         userType: 'agency_admin',
         tenantId,
         onboardingRequired: false,
@@ -987,7 +1031,6 @@ export class AuthService {
         tenantId,
       );
 
-      // ✅ Audit log for tenant creation
       await this.auditLogger.log({
         tenantId,
         userId,
@@ -1004,7 +1047,6 @@ export class AuthService {
         severity: 'medium',
       });
 
-      // ✅ Audit log for user role assignment
       await this.auditLogger.log({
         tenantId,
         userId,
@@ -1022,7 +1064,6 @@ export class AuthService {
         severity: 'medium',
       });
 
-      // Log system event
       await this.logSystemEvent(
         userId,
         'tenant.created',
@@ -1039,17 +1080,17 @@ export class AuthService {
         message: 'Agency created successfully',
         user: {
           id: userId,
-          email: userEmail.recordset[0].email,
+          email: userEmail[0].email,
           firstName: dto.firstName,
           lastName: dto.lastName,
           userType: 'agency_admin',
           tenantId,
           onboardingRequired: false,
-          onboardingCompleted: true, // ✅ Add this
+          onboardingCompleted: true,
         },
         tenantId,
-        accessToken: tokens.accessToken, // ✅ Ensure this is included
-        refreshToken: tokens.refreshToken, // ✅ Ensure this is included
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       };
     });
   }
@@ -1072,13 +1113,15 @@ export class AuthService {
       // ✅ ASSIGN DEFAULT FREE PLAN
       await this.assignDefaultFreePlan(tenantId, 'brand');
 
+      // Create brand profile with onboarding data
       await transaction
         .request()
         .input('tenantId', tenantId)
         .input('website', dto.website || null)
-        .input('industry', dto.industry || null).query(`
-        INSERT INTO brand_profiles (tenant_id, website_url, industry)
-        VALUES (@tenantId, @website, @industry)
+        .input('industry', dto.industry || null)
+        .input('description', dto.description || null).query(`
+        INSERT INTO brand_profiles (tenant_id, website_url, industry, description)
+        VALUES (@tenantId, @website, @industry, @description)
       `);
 
       await transaction
@@ -1200,13 +1243,15 @@ export class AuthService {
       // ✅ ASSIGN DEFAULT FREE PLAN
       await this.assignDefaultFreePlan(tenantId, 'creator');
 
+      // Create creator profile with onboarding data
       await transaction
         .request()
         .input('tenantId', tenantId)
         .input('stageName', dto.stageName || null)
-        .input('bio', dto.bio || null).query(`
-        INSERT INTO creator_profiles (tenant_id, stage_name, bio, availability_status)
-        VALUES (@tenantId, @stageName, @bio, 'available')
+        .input('bio', dto.bio || null)
+        .input('location', dto.location || null).query(`
+        INSERT INTO creator_profiles (tenant_id, stage_name, bio, location, availability_status)
+        VALUES (@tenantId, @stageName, @bio, @location, 'available')
       `);
       await transaction
         .request()
@@ -1240,7 +1285,18 @@ export class AuthService {
         undefined,
         tenantId,
       );
-
+      await this.sqlService.query(
+        `UPDATE notifications
+       SET recipient_id = @userId,
+           updated_at = GETUTCDATE()
+       WHERE JSON_VALUE(data, '$.inviteeEmail') = @email
+         AND recipient_id IS NULL
+         AND event_type = 'agency_invitation_to_creator_for_join'`,
+        {
+          userId: userId,
+          email: userEmail.recordset[0].email
+        },
+      );
       // ✅ Audit log for tenant creation
       await this.auditLogger.log({
         tenantId,
