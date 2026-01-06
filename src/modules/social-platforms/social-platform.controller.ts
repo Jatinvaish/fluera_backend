@@ -8,37 +8,45 @@ import {
   Query,
   UseGuards,
   Res,
-  BadRequestException
+  BadRequestException,
+  ForbiddenException
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/core/guards';
 import { CurrentUser, TenantId, Public } from 'src/core/decorators';
 import { SocialPlatformService } from './social-platform.service';
 import { SocialPlatform } from './platform.types';
 import type { FastifyReply } from 'fastify';
+import { SqlServerService } from 'src/core/database';
 
 @Controller('social-platforms')
 @UseGuards(JwtAuthGuard)
 export class SocialPlatformController {
-  constructor(private platformService: SocialPlatformService) {}
+  constructor(
+    private platformService: SocialPlatformService,
+    private sqlService: SqlServerService
+  ) {}
 
-  /**
-   * GET /api/v1/social-platforms/connect/:platform
-   * Initiate OAuth flow for connecting a platform
-   * 
-   * Query params:
-   * - creatorProfileId: number (required)
-   * 
-   * Returns: Redirects to platform OAuth page
-   */
   @Get('connect/:platform')
   async connectPlatform(
     @Param('platform') platform: string,
     @Query('creatorProfileId') creatorProfileId: string,
     @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number,
     @Res() res: FastifyReply
   ) {
     if (!creatorProfileId) {
       throw new BadRequestException('creatorProfileId is required');
+    }
+
+    // ✅ Verify creator profile belongs to user's tenant
+    const creator = await this.sqlService.query(
+      `SELECT id FROM creator_profiles 
+       WHERE id = @id AND tenant_id = @tenantId`,
+      { id: parseInt(creatorProfileId), tenantId }
+    );
+
+    if (creator.length === 0) {
+      throw new ForbiddenException('Creator profile not found or access denied');
     }
 
     const platformEnum = platform.toLowerCase() as SocialPlatform;
@@ -55,17 +63,6 @@ export class SocialPlatformController {
     return res.redirect(authUrl, 302);
   }
 
-  /**
-   * GET /api/v1/social-platforms/callback/:platform
-   * OAuth callback handler - called by platform after authorization
-   * 
-   * Query params:
-   * - code: string (from platform)
-   * - state: string (encoded connection data)
-   * - error: string (optional, if user denied)
-   * 
-   * Returns: Redirects to frontend with success/error
-   */
   @Get('callback/:platform')
   @Public()
   async handleCallback(
@@ -78,18 +75,16 @@ export class SocialPlatformController {
   ) {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-    // Handle user denial or errors
     if (error) {
-      const message = errorDescription || error;
       return res.redirect(
-        `${frontendUrl}/creator/social-accounts?error=${encodeURIComponent(message)}`,
+        `${frontendUrl}/creator/social-accounts?error=${encodeURIComponent(errorDescription || error)}`,
         302
       );
     }
 
     if (!code || !state) {
       return res.redirect(
-        `${frontendUrl}/creator/social-accounts?error=Missing authorization code`,
+        `${frontendUrl}/creator/social-accounts?error=Missing+authorization+code`,
         302
       );
     }
@@ -108,152 +103,119 @@ export class SocialPlatformController {
       );
     } catch (err: any) {
       return res.redirect(
-        `${frontendUrl}/creator/social-accounts?error=${encodeURIComponent(err.message || 'Connection failed')}`,
+        `${frontendUrl}/creator/social-accounts?error=${encodeURIComponent(err.message || 'Connection+failed')}`,
         302
       );
     }
   }
 
-  /**
-   * GET /api/v1/social-platforms/accounts
-   * Get all connected social accounts for the current user's creator profile
-   * 
-   * Query params:
-   * - creatorProfileId: number (required)
-   * 
-   * Response:
-   * {
-   *   success: true,
-   *   accounts: [
-   *     {
-   *       id: number,
-   *       platform: string,
-   *       username: string,
-   *       followerCount: number,
-   *       lastSyncedAt: date,
-   *       needsReconnect: boolean,
-   *       contentCount: number
-   *     }
-   *   ]
-   * }
-   */
-  @Get('accounts')
+  @Post('accounts')
   async getConnectedAccounts(
-    @Query('creatorProfileId') creatorProfileId: string
+    @Query('creatorProfileId') creatorProfileId: string,
+    @TenantId() tenantId: number
   ) {
     if (!creatorProfileId) {
       throw new BadRequestException('creatorProfileId is required');
+    }
+
+    // ✅ Verify access
+    const creator = await this.sqlService.query(
+      `SELECT id FROM creator_profiles 
+       WHERE id = @id AND tenant_id = @tenantId`,
+      { id: parseInt(creatorProfileId), tenantId }
+    );
+
+    if (creator.length === 0) {
+      throw new ForbiddenException('Creator profile not found or access denied');
     }
 
     return this.platformService.getConnectedAccounts(parseInt(creatorProfileId));
   }
 
-  /**
-   * POST /api/v1/social-platforms/sync/:accountId
-   * Manually trigger content sync for a connected account
-   * 
-   * Query params:
-   * - fullSync: boolean (optional, default false)
-   * 
-   * Response:
-   * {
-   *   success: true,
-   *   contentCount: number,
-   *   message: string
-   * }
-   */
   @Post('sync/:accountId')
   async syncAccount(
     @Param('accountId') accountId: string,
-    @Query('fullSync') fullSync?: string
+    @Query('fullSync') fullSync?: string,
+    @TenantId() tenantId?: number
   ) {
+    // ✅ Verify account belongs to tenant
+    const account = await this.sqlService.query(
+      `SELECT id FROM creator_social_accounts 
+       WHERE id = @id AND tenant_id = @tenantId`,
+      { id: parseInt(accountId), tenantId }
+    );
+
+    if (account.length === 0) {
+      throw new ForbiddenException('Social account not found or access denied');
+    }
+
     const isFullSync = fullSync === 'true';
     return this.platformService.syncContent(parseInt(accountId), isFullSync);
   }
 
-  /**
-   * DELETE /api/v1/social-platforms/disconnect/:accountId
-   * Disconnect and deactivate a social account
-   * 
-   * Response:
-   * {
-   *   success: true,
-   *   message: string
-   * }
-   */
-  @Delete('disconnect/:accountId')
+  @Post('disconnect/:accountId')
   async disconnectAccount(
     @Param('accountId') accountId: string,
-    @CurrentUser('id') userId: number
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number
   ) {
+    // ✅ Verify account belongs to tenant
+    const account = await this.sqlService.query(
+      `SELECT id FROM creator_social_accounts 
+       WHERE id = @id AND tenant_id = @tenantId`,
+      { id: parseInt(accountId), tenantId }
+    );
+
+    if (account.length === 0) {
+      throw new ForbiddenException('Social account not found or access denied');
+    }
+
     return this.platformService.disconnectAccount(parseInt(accountId), userId);
   }
 
-  /**
-   * GET /api/v1/social-platforms/stats
-   * Get aggregated statistics across all connected platforms
-   * 
-   * Query params:
-   * - creatorProfileId: number (required)
-   * 
-   * Response:
-   * {
-   *   success: true,
-   *   totals: {
-   *     totalFollowers: number,
-   *     totalContent: number,
-   *     totalViews: number,
-   *     totalEngagements: number,
-   *     platformCount: number
-   *   },
-   *   byPlatform: [...]
-   * }
-   */
-  @Get('stats')
+  @Post('stats')
   async getStats(
-    @Query('creatorProfileId') creatorProfileId: string
+    @Query('creatorProfileId') creatorProfileId: string,
+    @TenantId() tenantId: number
   ) {
     if (!creatorProfileId) {
       throw new BadRequestException('creatorProfileId is required');
     }
 
+    // ✅ Verify access
+    const creator = await this.sqlService.query(
+      `SELECT id FROM creator_profiles 
+       WHERE id = @id AND tenant_id = @tenantId`,
+      { id: parseInt(creatorProfileId), tenantId }
+    );
+
+    if (creator.length === 0) {
+      throw new ForbiddenException('Creator profile not found or access denied');
+    }
+
     return this.platformService.getCreatorStats(parseInt(creatorProfileId));
   }
 
-  /**
-   * GET /api/v1/social-platforms/reauthenticate/:accountId
-   * Get new authorization URL for expired account
-   * 
-   * Response:
-   * {
-   *   authUrl: string
-   * }
-   */
-  @Get('reauthenticate/:accountId')
+  @Post('reauthenticate/:accountId')
   async reauthenticate(
     @Param('accountId') accountId: string,
-    @CurrentUser('id') userId: number
+    @CurrentUser('id') userId: number,
+    @TenantId() tenantId: number
   ) {
+    // ✅ Verify account belongs to tenant
+    const account = await this.sqlService.query(
+      `SELECT id FROM creator_social_accounts 
+       WHERE id = @id AND tenant_id = @tenantId`,
+      { id: parseInt(accountId), tenantId }
+    );
+
+    if (account.length === 0) {
+      throw new ForbiddenException('Social account not found or access denied');
+    }
+
     return this.platformService.reauthenticate(parseInt(accountId), userId);
   }
 
-  /**
-   * GET /api/v1/social-platforms/supported
-   * Get list of supported platforms
-   * 
-   * Response:
-   * {
-   *   platforms: [
-   *     {
-   *       id: string,
-   *       name: string,
-   *       icon: string,
-   *       supportsMetrics: boolean,
-   *       supportsRevenue: boolean
-   *     }
-   *   ]
-   * }
-   */
   @Get('supported')
   @Public()
   async getSupportedPlatforms() {
@@ -265,7 +227,7 @@ export class SocialPlatformController {
           icon: 'instagram',
           supportsMetrics: true,
           supportsRevenue: false,
-          description: 'Connect your Instagram account to track posts, reels, and stories'
+          description: 'Connect Instagram to track posts, reels, and stories'
         },
         {
           id: SocialPlatform.YOUTUBE,
@@ -273,7 +235,7 @@ export class SocialPlatformController {
           icon: 'youtube',
           supportsMetrics: true,
           supportsRevenue: true,
-          description: 'Connect your YouTube channel to track videos and revenue'
+          description: 'Connect YouTube to track videos and revenue'
         },
         {
           id: SocialPlatform.TIKTOK,
@@ -281,7 +243,7 @@ export class SocialPlatformController {
           icon: 'tiktok',
           supportsMetrics: true,
           supportsRevenue: false,
-          description: 'Connect your TikTok account to track videos and engagement'
+          description: 'Connect TikTok to track videos and engagement'
         },
         {
           id: SocialPlatform.TWITTER,
@@ -289,7 +251,7 @@ export class SocialPlatformController {
           icon: 'twitter',
           supportsMetrics: true,
           supportsRevenue: false,
-          description: 'Connect your Twitter/X account to track tweets and engagement'
+          description: 'Connect Twitter/X to track tweets and engagement'
         },
         {
           id: SocialPlatform.FACEBOOK,
@@ -297,7 +259,7 @@ export class SocialPlatformController {
           icon: 'facebook',
           supportsMetrics: true,
           supportsRevenue: false,
-          description: 'Connect your Facebook page to track posts and engagement'
+          description: 'Connect Facebook page to track posts and engagement'
         },
         {
           id: SocialPlatform.TWITCH,
@@ -305,7 +267,7 @@ export class SocialPlatformController {
           icon: 'twitch',
           supportsMetrics: true,
           supportsRevenue: true,
-          description: 'Connect your Twitch channel to track streams and subscriptions'
+          description: 'Connect Twitch to track streams and subscriptions'
         }
       ]
     };

@@ -1,3 +1,4 @@
+// src/modules/social-platforms/social-platform.module.ts
 import { Module } from '@nestjs/common';
 import { SocialPlatformController } from './social-platform.controller';
 import { SocialPlatformService } from './social-platform.service';
@@ -17,9 +18,7 @@ import { TwitchService } from './twitch.service';
     TikTokService,
     FacebookService,
     TwitterService,
-    SocialPlatformModule,
-    TwitchService,
-    // Add other platform services here as you implement them
+    TwitchService
   ],
   exports: [SocialPlatformService]
 })
