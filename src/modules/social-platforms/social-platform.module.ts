@@ -6,6 +6,7 @@ import { YouTubeService } from './youtube.service';
 import { FacebookService } from './facebook.service';
 import { TikTokService } from './tiktok.service';
 import { TwitterService } from './twitter.service';
+import { TwitchService } from './twitch.service';
 
 @Module({
   controllers: [SocialPlatformController],
@@ -16,6 +17,8 @@ import { TwitterService } from './twitter.service';
     TikTokService,
     FacebookService,
     TwitterService,
+    SocialPlatformModule,
+    TwitchService,
     // Add other platform services here as you implement them
   ],
   exports: [SocialPlatformService]
