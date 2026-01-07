@@ -8,6 +8,7 @@ import { FacebookService } from './facebook.service';
 import { TikTokService } from './tiktok.service';
 import { TwitterService } from './twitter.service';
 import { TwitchService } from './twitch.service';
+import { MetricsHistoryService } from './metrics-history.service';
 
 @Module({
   controllers: [SocialPlatformController],
@@ -18,8 +19,9 @@ import { TwitchService } from './twitch.service';
     TikTokService,
     FacebookService,
     TwitterService,
+    MetricsHistoryService ,
     TwitchService
   ],
-  exports: [SocialPlatformService]
+  exports: [SocialPlatformService,MetricsHistoryService]
 })
 export class SocialPlatformModule {}

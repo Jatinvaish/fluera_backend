@@ -9,6 +9,7 @@ import { TwitterService } from './twitter.service';
 import { FacebookService } from './facebook.service';
 import * as crypto from 'crypto';
 import { TwitchService } from './twitch.service';
+import { MetricsHistoryService } from './metrics-history.service';
 
 @Injectable()
 export class SocialPlatformService {
@@ -22,7 +23,8 @@ export class SocialPlatformService {
     private tiktokService: TikTokService,
     private twitterService: TwitterService,
     private facebookService: FacebookService,
-    private twitchService: TwitchService
+    private twitchService: TwitchService,
+    private metricsHistory: MetricsHistoryService // ✅ ADD
   ) {
     //todo
     //@ts-ignore
@@ -50,7 +52,7 @@ export class SocialPlatformService {
   getAuthUrl(platform: SocialPlatform, creatorProfileId: number, userId: number): string {
     try {
       const service = this.getPlatformService(platform);
-      
+
       // Generate code verifier for PKCE if needed (Twitter)
       let codeVerifier: string | undefined;
       if (platform === SocialPlatform.TWITTER) {
@@ -149,9 +151,8 @@ export class SocialPlatformService {
     fullSync: boolean = false
   ): Promise<{ success: boolean; contentCount: number; message: string }> {
     try {
-      // Get account details
       const accounts = await this.sqlService.query(
-        `SELECT sa.*, sa.tenant_id, sa.creator_profile_id
+        `SELECT sa.*, sa.tenant_id, sa.creator_profile_id, sa.follower_count
          FROM creator_social_accounts sa
          WHERE sa.id = @id AND sa.account_status = 'active'`,
         { id: socialAccountId }
@@ -163,23 +164,24 @@ export class SocialPlatformService {
 
       const account = accounts[0];
       const service = this.getPlatformService(account.platform as SocialPlatform);
-
-      // Get valid access token (auto-refresh if expired)
       const accessToken = await service.getValidToken(socialAccountId);
 
-      // Determine sync window
-      const since = fullSync ? undefined : account.last_synced_at;
+      // ✅ Track follower growth
+      await this.metricsHistory.trackFollowerGrowth(
+        socialAccountId,
+        account.tenant_id,
+        account.platform,
+        account.follower_count
+      );
 
-      // Fetch content from platform
+      const since = fullSync ? undefined : account.last_synced_at;
       const contentItems = await service.fetchContent(accessToken, {
         limit: fullSync ? 100 : 25,
         since
       });
 
       let savedCount = 0;
-      let failedCount = 0;
 
-      // Save each content item
       for (const item of contentItems) {
         try {
           const contentId = await service.saveContent(
@@ -189,19 +191,65 @@ export class SocialPlatformService {
             null
           );
 
-          // Save metrics if available
+          // ✅ Save metrics with history
           if (item.metrics) {
-            await service.saveContentMetrics(contentId, item.metrics);
+            await this.metricsHistory.saveDailySnapshot(
+              contentId,
+              account.platform,
+              item.metrics
+            );
           }
 
-          // Fetch detailed metrics if platform supports it
+          // ✅ Fetch detailed metrics
           if (service.config.supportsMetrics) {
             try {
               const detailedMetrics = await service.fetchContentMetrics(
                 accessToken,
                 item.contentId
               );
-              await service.saveContentMetrics(contentId, detailedMetrics);
+
+              await this.metricsHistory.saveDailySnapshot(
+                contentId,
+                account.platform,
+                detailedMetrics
+              );
+
+              // ✅ For YouTube, fetch historical time-series
+              if (account.platform === 'youtube' && fullSync) {
+                const endDate = new Date();
+                const startDate = new Date();
+                startDate.setDate(startDate.getDate() - 90); // Last 90 days
+
+                const dailyMetrics = await service.fetchDailyAnalytics?.(
+                  accessToken,
+                  item.contentId,
+                  startDate,
+                  endDate
+                );
+
+                if (dailyMetrics && dailyMetrics.length > 0) {
+                  for (const dayData of dailyMetrics) {
+                    await this.metricsHistory.saveDailySnapshot(
+                      contentId,
+                      account.platform,
+                      {
+                        views: dayData.views,
+                        likes: dayData.likes,
+                        comments: dayData.comments,
+                        shares: dayData.shares,
+                        watchTimeMinutes: dayData.watchTimeMinutes,
+                        avgViewDurationSeconds: dayData.avgViewDuration,
+                        impressions: dayData.impressions,
+                        clickThroughRate: dayData.ctr,
+                        subscribersGained: dayData.subscribersGained
+                      },
+                      new Date(dayData.date)
+                    );
+                  }
+                  this.logger.log(`Saved ${dailyMetrics.length} historical snapshots for video ${item.contentId}`);
+                }
+              }
+
             } catch (metricsError) {
               this.logger.warn(`Failed to fetch detailed metrics for ${item.contentId}`);
             }
@@ -210,7 +258,6 @@ export class SocialPlatformService {
           savedCount++;
         } catch (error) {
           this.logger.error(`Failed to save content ${item.contentId}`, error);
-          failedCount++;
         }
       }
 
@@ -222,7 +269,7 @@ export class SocialPlatformService {
         { id: socialAccountId }
       );
 
-      // Sync audience demographics if supported
+      // ✅ Sync audience demographics
       if (service.config.supportsAudience && service.fetchAudienceDemographics) {
         try {
           const demographics = await service.fetchAudienceDemographics(accessToken);
@@ -238,20 +285,19 @@ export class SocialPlatformService {
         }
       }
 
-      this.logger.log(
-        `Synced ${savedCount} content items for account ${socialAccountId} (${failedCount} failed)`
-      );
+      this.logger.log(`Synced ${savedCount} content items for account ${socialAccountId}`);
 
       return {
         success: true,
         contentCount: savedCount,
-        message: `Synced ${savedCount} content items${failedCount > 0 ? `, ${failedCount} failed` : ''}`
+        message: `Synced ${savedCount} content items successfully`
       };
     } catch (error) {
       this.logger.error(`Content sync failed for account ${socialAccountId}`, error);
       throw error;
     }
   }
+
 
   /**
    * Get all connected accounts for a creator
@@ -286,7 +332,7 @@ export class SocialPlatformService {
       success: true,
       accounts: accounts.map(acc => ({
         ...acc,
-        needsReconnect: acc.token_expires_at && 
+        needsReconnect: acc.token_expires_at &&
           new Date(acc.token_expires_at) < new Date(),
         isSyncing: false // TODO: Check platform_sync_jobs table
       }))
@@ -364,7 +410,7 @@ export class SocialPlatformService {
       totalFollowers: stats.reduce((sum, s) => sum + (s.follower_count || 0), 0),
       totalContent: stats.reduce((sum, s) => sum + (s.total_content || 0), 0),
       totalViews: stats.reduce((sum, s) => sum + (s.total_views || 0), 0),
-      totalEngagements: stats.reduce((sum, s) => 
+      totalEngagements: stats.reduce((sum, s) =>
         sum + (s.total_likes || 0) + (s.total_comments || 0) + (s.total_shares || 0), 0
       ),
       platformCount: stats.length
@@ -426,4 +472,57 @@ export class SocialPlatformService {
 
     return { authUrl };
   }
+  async getAnalytics(socialAccountId: number): Promise<any> {
+    const account = await this.sqlService.query(
+      `SELECT sa.*, sa.follower_count
+       FROM creator_social_accounts sa
+       WHERE sa.id = @id`,
+      { id: socialAccountId }
+    );
+
+    if (account.length === 0) {
+      throw new BadRequestException('Social account not found');
+    }
+
+    const a = account[0];
+
+    // Get recent content
+    const recentContent = await this.sqlService.query(
+      `SELECT TOP 10 id, content_id, published_at
+       FROM creator_content
+       WHERE social_account_id = @socialAccountId
+       ORDER BY published_at DESC`,
+      { socialAccountId }
+    );
+
+    // Calculate derived metrics for each content
+    const contentAnalytics = await Promise.all(
+      recentContent.map(async (content) => {
+        const derived = await this.metricsHistory.calculateDerivedMetrics(
+          content.id,
+          a.follower_count
+        );
+
+        return {
+          contentId: content.content_id,
+          publishedAt: content.published_at,
+          ...derived
+        };
+      })
+    );
+
+    // Calculate authenticity score
+    const authenticityScore = await this.metricsHistory.calculateAuthenticityScore(
+      socialAccountId
+    );
+
+    return {
+      accountId: socialAccountId,
+      platform: a.platform,
+      followerCount: a.follower_count,
+      authenticityScore,
+      recentContent: contentAnalytics
+    };
+  }
+
 }

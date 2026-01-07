@@ -24,7 +24,7 @@ export class SocialPlatformController {
   constructor(
     private platformService: SocialPlatformService,
     private sqlService: SqlServerService
-  ) {}
+  ) { }
 
   @Get('connect/:platform')
   async connectPlatform(
@@ -41,7 +41,7 @@ export class SocialPlatformController {
     // ✅ Verify creator profile belongs to user's tenant
     const creator = await this.sqlService.query(
       `SELECT id FROM creator_profiles 
-       WHERE id = @id AND tenant_id = @tenantId`,
+        WHERE id = @id AND tenant_id = @tenantId`,
       { id: parseInt(creatorProfileId), tenantId }
     );
 
@@ -121,7 +121,7 @@ export class SocialPlatformController {
     // ✅ Verify access
     const creator = await this.sqlService.query(
       `SELECT id FROM creator_profiles 
-       WHERE id = @id AND tenant_id = @tenantId`,
+        WHERE id = @id AND tenant_id = @tenantId`,
       { id: parseInt(creatorProfileId), tenantId }
     );
 
@@ -141,7 +141,7 @@ export class SocialPlatformController {
     // ✅ Verify account belongs to tenant
     const account = await this.sqlService.query(
       `SELECT id FROM creator_social_accounts 
-       WHERE id = @id AND tenant_id = @tenantId`,
+        WHERE id = @id AND tenant_id = @tenantId`,
       { id: parseInt(accountId), tenantId }
     );
 
@@ -162,7 +162,7 @@ export class SocialPlatformController {
     // ✅ Verify account belongs to tenant
     const account = await this.sqlService.query(
       `SELECT id FROM creator_social_accounts 
-       WHERE id = @id AND tenant_id = @tenantId`,
+        WHERE id = @id AND tenant_id = @tenantId`,
       { id: parseInt(accountId), tenantId }
     );
 
@@ -185,7 +185,7 @@ export class SocialPlatformController {
     // ✅ Verify access
     const creator = await this.sqlService.query(
       `SELECT id FROM creator_profiles 
-       WHERE id = @id AND tenant_id = @tenantId`,
+        WHERE id = @id AND tenant_id = @tenantId`,
       { id: parseInt(creatorProfileId), tenantId }
     );
 
@@ -205,7 +205,7 @@ export class SocialPlatformController {
     // ✅ Verify account belongs to tenant
     const account = await this.sqlService.query(
       `SELECT id FROM creator_social_accounts 
-       WHERE id = @id AND tenant_id = @tenantId`,
+        WHERE id = @id AND tenant_id = @tenantId`,
       { id: parseInt(accountId), tenantId }
     );
 
@@ -271,5 +271,27 @@ export class SocialPlatformController {
         }
       ]
     };
+  }
+  @Post('analytics')
+  async getAnalytics(
+    @Query('accountId') accountId: string,
+    @TenantId() tenantId: number
+  ) {
+    if (!accountId) {
+      throw new BadRequestException('accountId is required');
+    }
+
+    // Verify account belongs to tenant
+    const account = await this.sqlService.query(
+      `SELECT id FROM creator_social_accounts 
+       WHERE id = @id AND tenant_id = @tenantId`,
+      { id: parseInt(accountId), tenantId }
+    );
+
+    if (account.length === 0) {
+      throw new ForbiddenException('Social account not found or access denied');
+    }
+
+    return this.platformService.getAnalytics(parseInt(accountId));
   }
 }
